@@ -282,8 +282,9 @@ pub struct Bill {
     pub payer_user_id: String,
     pub amount_cents: i64,      // always an integer; currency implicit from ledger
     pub description: String,
-    pub participant_user_ids: Vec<String>,
-    pub split_method: SplitMethod,
+    /// Who pays how much, as relative share weights.
+    /// Equal split = everyone gets 1 share. Participants are always derivable from this field.
+    pub shares: Vec<Share>,
     pub created_at: i64,
     pub created_by_device: String,  // NodeId; for audit/debug
     pub deleted: bool,          // tombstone
@@ -291,10 +292,9 @@ pub struct Bill {
 }
 
 #[derive(Clone, Reconcile, Hydrate)]
-pub enum SplitMethod {
-    Equal(Vec<String>),         // user_ids who split equally; explicit so new members are never charged implicitly
-    Shares(Vec<Share>),         // proportional: [{user_id, shares: u32}, ...]
-    Exact(Vec<ExactAmount>),    // exact cents per user
+pub struct Share {
+    pub user_id: String,
+    pub shares: u32,            // relative weight; equal split = 1 for everyone
 }
 
 #[derive(Clone, Reconcile, Hydrate)]
@@ -302,8 +302,7 @@ pub struct Amendment {
     pub id: String,             // ULID
     pub new_amount_cents: Option<i64>,
     pub new_description: Option<String>,
-    pub new_participants: Option<Vec<String>>,
-    pub new_split_method: Option<SplitMethod>,
+    pub new_shares: Option<Vec<Share>>,  // replaces entire shares list
     pub author_user_id: String,
     pub created_at: i64,
     pub reason: Option<String>,
@@ -340,8 +339,7 @@ pub struct EffectiveBill {
     pub payer_user_id: String,
     pub amount_cents: i64,
     pub description: String,
-    pub participants: Vec<String>,
-    pub split_method: SplitMethod,
+    pub shares: Vec<Share>,
     pub was_amended: bool,
     pub is_deleted: bool,
     pub last_modified_at: i64,
@@ -349,27 +347,17 @@ pub struct EffectiveBill {
 }
 ```
 
-`EffectiveBill::from(bill)` applies amendments in `created_at` order; later amendments overwrite earlier ones at the field level. Ties in `created_at` are broken by `amendment.id` (lexical).
+`EffectiveBill::from(bill)` applies amendments in `created_at` order; later amendments overwrite earlier ones at the field level. Ties in `created_at` are broken by `amendment.id` (lexical). Participants are always derivable as `shares.iter().map(|s| &s.user_id)`.
 
-### 4.5 Why `SplitMethod::Equal` carries an explicit user list
+### 4.5 Why there is only one split mode (Shares)
 
-All three `SplitMethod` variants are self-contained: they embed the exact set of users they apply to. `Equal(Vec<String>)` is therefore explicit rather than implicit.
+Earlier drafts had three modes: `Equal`, `Shares`, and `Exact`. All three collapsed into `Shares`:
 
-If `Equal` were a unit variant with no payload, it would have to inherit its participant list from `Bill.participant_user_ids`. This creates a hidden coupling: adding a new person to the group after the bill was created, or applying an amendment that changes participants without touching the split method, could silently change who `Equal` charges. With `Equal(Vec<String>)`, the list is frozen at the time the method is set — new members are never charged without an explicit amendment.
+- **Equal** among N people = give everyone 1 share. `[{alice,1},{bob,1},{carol,1}]`
+- **Proportional** = different weights. `[{alice,2},{bob,1}]`
+- **Exact cent amounts** = use cent values directly as weights. Alice pays $30, Bob pays $70 → `[{alice,30},{bob,70}]`
 
-As a consequence, `participant_user_ids` is always derivable from the `SplitMethod`:
-
-```rust
-fn participants(method: &SplitMethod) -> Vec<&str> {
-    match method {
-        SplitMethod::Equal(users)   => users.iter().map(|s| s.as_str()).collect(),
-        SplitMethod::Shares(shares) => shares.iter().map(|s| s.user_id.as_str()).collect(),
-        SplitMethod::Exact(exacts)  => exacts.iter().map(|e| e.user_id.as_str()).collect(),
-    }
-}
-```
-
-`Bill.participant_user_ids` is kept in the schema for quick access and backwards compatibility, but it must always equal the list derivable from `split_method`. This invariant is enforced at the service layer.
+A single `Vec<Share>` covers all cases. The share weights are relative — only their ratios matter, not their absolute values. `[{alice,1},{bob,1}]` and `[{alice,50},{bob,50}]` are identical splits.
 
 ### 4.6 Why amendments (and why append-only)
 

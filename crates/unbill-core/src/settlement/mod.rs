@@ -1,7 +1,7 @@
 // Settlement algorithm: who owes whom after applying all bills.
 // See DESIGN.md §8 for the minimum-cash-flow greedy algorithm.
 
-use crate::model::{Bill, EffectiveBill, Member, SplitMethod};
+use crate::model::{EffectiveBill, Member, Share};
 
 /// A single suggested settlement transaction.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -18,15 +18,8 @@ pub struct Settlement {
 }
 
 /// Compute minimum-cash-flow settlement from a list of effective bills and members.
-///
-/// # Invariants upheld
-/// - `sum(t.amount_cents for t in result) == sum(bill.amount_cents for non-deleted bills)`
-///   is *not* an invariant — the total settled is the net transfer, not gross spend.
-/// - The net balance across all users sums to zero.
-/// - The number of transactions is at most `n - 1` where `n` is the number of users
-///   with a non-zero balance.
 pub fn compute(members: &[Member], bills: &[EffectiveBill]) -> Settlement {
-    // Step 1: compute net balance per user (positive = owed money, negative = owes money).
+    // Step 1: net balance per user (positive = owed money, negative = owes money).
     let mut balances: std::collections::HashMap<String, i64> = members
         .iter()
         .filter(|m| !m.removed)
@@ -38,16 +31,13 @@ pub fn compute(members: &[Member], bills: &[EffectiveBill]) -> Settlement {
             continue;
         }
         let share_cents = split_amounts(bill);
-        // Payer is credited the full amount.
         *balances.entry(bill.payer_user_id.clone()).or_default() += bill.amount_cents;
-        // Each participant is debited their share.
         for (user_id, amount) in share_cents {
             *balances.entry(user_id).or_default() -= amount;
         }
     }
 
     // Step 2: greedy minimum cash flow.
-    // Sort into creditors (balance > 0) and debtors (balance < 0).
     let mut creditors: Vec<(String, i64)> = balances
         .iter()
         .filter(|(_, &b)| b > 0)
@@ -56,10 +46,9 @@ pub fn compute(members: &[Member], bills: &[EffectiveBill]) -> Settlement {
     let mut debtors: Vec<(String, i64)> = balances
         .iter()
         .filter(|(_, &b)| b < 0)
-        .map(|(id, &b)| (id.clone(), -b)) // store as positive debt
+        .map(|(id, &b)| (id.clone(), -b))
         .collect();
 
-    // Sort descending so the largest values are processed first.
     creditors.sort_by(|a, b| b.1.cmp(&a.1));
     debtors.sort_by(|a, b| b.1.cmp(&a.1));
 
@@ -92,61 +81,38 @@ pub fn compute(members: &[Member], bills: &[EffectiveBill]) -> Settlement {
     Settlement { transactions }
 }
 
-/// Compute the per-participant share amounts for a bill, in cents.
-/// Rounding remainder is assigned to the earliest participants.
+/// Compute the per-participant cent amounts for a bill from its share weights.
+/// Rounding remainder (from integer division) is assigned to the earliest participants.
 pub fn split_amounts(bill: &EffectiveBill) -> Vec<(String, i64)> {
-    match &bill.split_method {
-        SplitMethod::Equal(users) => {
-            if users.is_empty() {
-                return vec![];
-            }
-            let n = users.len() as i64;
-            let base = bill.amount_cents / n;
-            let remainder = bill.amount_cents % n;
-            users
-                .iter()
-                .enumerate()
-                .map(|(i, uid)| {
-                    let extra = if (i as i64) < remainder { 1 } else { 0 };
-                    (uid.clone(), base + extra)
-                })
-                .collect()
-        }
-        SplitMethod::Shares(shares) => {
-            let total_shares: u32 = shares.iter().map(|s| s.shares).sum();
-            if total_shares == 0 {
-                return shares.iter().map(|s| (s.user_id.clone(), 0)).collect();
-            }
-            let mut amounts: Vec<(String, i64)> = shares
-                .iter()
-                .map(|s| {
-                    let amount = (bill.amount_cents * s.shares as i64) / total_shares as i64;
-                    (s.user_id.clone(), amount)
-                })
-                .collect();
-            // Distribute rounding remainder.
-            let assigned: i64 = amounts.iter().map(|(_, a)| a).sum();
-            let mut remainder = bill.amount_cents - assigned;
-            for (_, amount) in amounts.iter_mut() {
-                if remainder == 0 {
-                    break;
-                }
-                *amount += 1;
-                remainder -= 1;
-            }
-            amounts
-        }
-        SplitMethod::Exact(exacts) => exacts
-            .iter()
-            .map(|e| (e.user_id.clone(), e.amount_cents))
-            .collect(),
+    let total_shares: u32 = bill.shares.iter().map(|s| s.shares).sum();
+    if total_shares == 0 {
+        return bill.shares.iter().map(|s| (s.user_id.clone(), 0)).collect();
     }
+    let mut amounts: Vec<(String, i64)> = bill
+        .shares
+        .iter()
+        .map(|s| {
+            let amount = (bill.amount_cents * s.shares as i64) / total_shares as i64;
+            (s.user_id.clone(), amount)
+        })
+        .collect();
+    // Distribute rounding remainder to the earliest participants.
+    let assigned: i64 = amounts.iter().map(|(_, a)| a).sum();
+    let mut remainder = bill.amount_cents - assigned;
+    for (_, amount) in amounts.iter_mut() {
+        if remainder == 0 {
+            break;
+        }
+        *amount += 1;
+        remainder -= 1;
+    }
+    amounts
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Device, EffectiveBill, Member, SplitMethod};
+    use crate::model::{EffectiveBill, Member, Share};
 
     fn member(id: &str) -> Member {
         Member {
@@ -159,20 +125,17 @@ mod tests {
         }
     }
 
-    fn simple_bill(
-        id: &str,
-        payer: &str,
-        amount_cents: i64,
-        participants: &[&str],
-    ) -> EffectiveBill {
-        let users: Vec<String> = participants.iter().map(|s| s.to_string()).collect();
+    /// Equal split: give every participant 1 share.
+    fn equal_bill(id: &str, payer: &str, amount_cents: i64, participants: &[&str]) -> EffectiveBill {
         EffectiveBill {
             id: id.to_string(),
             payer_user_id: payer.to_string(),
             amount_cents,
             description: String::new(),
-            participants: users.clone(),
-            split_method: SplitMethod::Equal(users),
+            shares: participants
+                .iter()
+                .map(|u| Share { user_id: u.to_string(), shares: 1 })
+                .collect(),
             was_amended: false,
             is_deleted: false,
             last_modified_at: 0,
@@ -184,7 +147,7 @@ mod tests {
 
     #[test]
     fn test_split_equal_exact_division() {
-        let bill = simple_bill("b1", "alice", 300, &["alice", "bob", "carol"]);
+        let bill = equal_bill("b1", "alice", 300, &["alice", "bob", "carol"]);
         let shares = split_amounts(&bill);
         assert_eq!(shares.len(), 3);
         for (_, cents) in &shares {
@@ -195,82 +158,44 @@ mod tests {
     }
 
     #[test]
-    fn test_split_equal_remainder_distributed_to_earliest() {
+    fn test_split_remainder_distributed_to_earliest() {
         // $10 split 3 ways: 334, 333, 333
-        let bill = simple_bill("b1", "alice", 1000, &["alice", "bob", "carol"]);
+        let bill = equal_bill("b1", "alice", 1000, &["alice", "bob", "carol"]);
         let shares = split_amounts(&bill);
         let total: i64 = shares.iter().map(|(_, c)| c).sum();
-        assert_eq!(total, 1000, "split must sum to original amount");
-        // First participant gets the remainder cent.
+        assert_eq!(total, 1000);
         assert_eq!(shares[0].1, 334);
         assert_eq!(shares[1].1, 333);
         assert_eq!(shares[2].1, 333);
     }
 
     #[test]
-    fn test_split_shares_proportional() {
-        use crate::model::Share;
+    fn test_split_proportional_shares() {
         let bill = EffectiveBill {
             id: "b1".into(),
             payer_user_id: "alice".into(),
             amount_cents: 300,
             description: String::new(),
-            participants: vec!["alice".into(), "bob".into()],
-            split_method: SplitMethod::Shares(vec![
-                Share {
-                    user_id: "alice".into(),
-                    shares: 2,
-                },
-                Share {
-                    user_id: "bob".into(),
-                    shares: 1,
-                },
-            ]),
+            shares: vec![
+                Share { user_id: "alice".into(), shares: 2 },
+                Share { user_id: "bob".into(), shares: 1 },
+            ],
             was_amended: false,
             is_deleted: false,
             last_modified_at: 0,
             history: vec![],
         };
-        let shares = split_amounts(&bill);
-        let alice = shares.iter().find(|(id, _)| id == "alice").unwrap().1;
-        let bob = shares.iter().find(|(id, _)| id == "bob").unwrap().1;
+        let amounts = split_amounts(&bill);
+        let alice = amounts.iter().find(|(id, _)| id == "alice").unwrap().1;
+        let bob = amounts.iter().find(|(id, _)| id == "bob").unwrap().1;
         assert_eq!(alice, 200);
         assert_eq!(bob, 100);
         assert_eq!(alice + bob, 300);
     }
 
-    #[test]
-    fn test_split_exact() {
-        use crate::model::ExactAmount;
-        let bill = EffectiveBill {
-            id: "b1".into(),
-            payer_user_id: "alice".into(),
-            amount_cents: 700,
-            description: String::new(),
-            participants: vec!["alice".into(), "bob".into()],
-            split_method: SplitMethod::Exact(vec![
-                ExactAmount {
-                    user_id: "alice".into(),
-                    amount_cents: 300,
-                },
-                ExactAmount {
-                    user_id: "bob".into(),
-                    amount_cents: 400,
-                },
-            ]),
-            was_amended: false,
-            is_deleted: false,
-            last_modified_at: 0,
-            history: vec![],
-        };
-        let shares = split_amounts(&bill);
-        assert_eq!(shares.iter().find(|(id, _)| id == "alice").unwrap().1, 300);
-        assert_eq!(shares.iter().find(|(id, _)| id == "bob").unwrap().1, 400);
-    }
-
     // --- compute (settlement) ---
 
-    fn net_balances(
+    fn net_transfer_balances(
         members: &[Member],
         bills: &[EffectiveBill],
     ) -> std::collections::HashMap<String, i64> {
@@ -286,12 +211,10 @@ mod tests {
 
     #[test]
     fn test_settlement_balances_to_zero() {
-        // Alice paid $90 for all three; each owes $30.
-        // Net: alice +60, bob -30, carol -30.
+        // Alice paid $90 for all three; each owes $30. Net: alice +60, bob -30, carol -30.
         let members = vec![member("alice"), member("bob"), member("carol")];
-        let bills = vec![simple_bill("b1", "alice", 9000, &["alice", "bob", "carol"])];
+        let bills = vec![equal_bill("b1", "alice", 9000, &["alice", "bob", "carol"])];
         let s = compute(&members, &bills);
-        // Total settled must move exactly 6000 cents to alice.
         let total_to_alice: i64 = s
             .transactions
             .iter()
@@ -299,7 +222,6 @@ mod tests {
             .map(|t| t.amount_cents)
             .sum();
         assert_eq!(total_to_alice, 6000);
-        // And no money flows the wrong way.
         assert!(s.transactions.iter().all(|t| t.amount_cents > 0));
     }
 
@@ -307,26 +229,20 @@ mod tests {
     fn test_settlement_net_sum_zero() {
         let members = vec![member("alice"), member("bob"), member("carol")];
         let bills = vec![
-            simple_bill("b1", "alice", 6000, &["alice", "bob", "carol"]),
-            simple_bill("b2", "bob", 3000, &["alice", "bob"]),
+            equal_bill("b1", "alice", 6000, &["alice", "bob", "carol"]),
+            equal_bill("b2", "bob", 3000, &["alice", "bob"]),
         ];
-        let net = net_balances(&members, &bills);
-        // After applying suggested transactions, net balances should sum to zero
-        // (they already do by construction, but the settlement should not change that invariant).
+        let net = net_transfer_balances(&members, &bills);
         let sum: i64 = net.values().sum();
-        assert_eq!(sum, 0, "net transfer balances must sum to zero");
+        assert_eq!(sum, 0);
     }
 
     #[test]
     fn test_settlement_at_most_n_minus_one_transactions() {
         let members: Vec<Member> = (0..5).map(|i| member(&format!("u{i}"))).collect();
-        let bills = vec![simple_bill(
-            "b1",
-            "u0",
-            5000,
-            &["u0", "u1", "u2", "u3", "u4"],
-        )];
-        let s = compute(&members, &bills);
+        let participants: Vec<&str> = (0..5).map(|_| "").collect();
+        let bill = equal_bill("b1", "u0", 5000, &["u0", "u1", "u2", "u3", "u4"]);
+        let s = compute(&members, &[bill]);
         assert!(
             s.transactions.len() <= members.len() - 1,
             "got {} transactions for {} members",
@@ -337,24 +253,19 @@ mod tests {
 
     #[test]
     fn test_settlement_already_settled() {
-        // Alice paid $30, split equally with bob. Bob then paid $30, split equally with alice.
-        // Net: everyone is even. No transactions needed.
         let members = vec![member("alice"), member("bob")];
         let bills = vec![
-            simple_bill("b1", "alice", 3000, &["alice", "bob"]),
-            simple_bill("b2", "bob", 3000, &["alice", "bob"]),
+            equal_bill("b1", "alice", 3000, &["alice", "bob"]),
+            equal_bill("b2", "bob", 3000, &["alice", "bob"]),
         ];
         let s = compute(&members, &bills);
-        assert!(
-            s.transactions.is_empty(),
-            "already-settled ledger should produce no transactions"
-        );
+        assert!(s.transactions.is_empty());
     }
 
     #[test]
     fn test_settlement_deleted_bills_ignored() {
         let members = vec![member("alice"), member("bob")];
-        let mut bill = simple_bill("b1", "alice", 10000, &["alice", "bob"]);
+        let mut bill = equal_bill("b1", "alice", 10000, &["alice", "bob"]);
         bill.is_deleted = true;
         let s = compute(&members, &[bill]);
         assert!(
@@ -368,9 +279,8 @@ mod tests {
         let mut eve = member("eve");
         eve.removed = true;
         let members = vec![member("alice"), member("bob"), eve];
-        let bills = vec![simple_bill("b1", "alice", 3000, &["alice", "bob"])];
+        let bills = vec![equal_bill("b1", "alice", 3000, &["alice", "bob"])];
         let s = compute(&members, &bills);
-        // eve should appear in no transaction
         assert!(
             s.transactions
                 .iter()
