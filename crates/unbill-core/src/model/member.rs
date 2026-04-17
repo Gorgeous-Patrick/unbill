@@ -9,7 +9,7 @@ pub struct Ledger {
     pub created_at: i64,
     pub members: Vec<Member>,
     pub bills: Vec<super::bill::Bill>,
-    pub invitations: Vec<Invitation>,
+    // Invitations are NOT part of the CRDT. They live in device-local SQLite. See DESIGN.md §6.3.
 }
 
 #[derive(Clone, Debug, Reconcile, Hydrate)]
@@ -29,13 +29,15 @@ pub struct Device {
     pub added_at: i64,
 }
 
-#[derive(Clone, Debug, Reconcile, Hydrate)]
+/// A pending join invitation. Held in `UnbillService` memory only — never
+/// persisted or synced. Consumed (removed from the map) on first use or expiry.
+#[derive(Clone, Debug)]
 pub struct Invitation {
-    pub token: String,
+    pub token: String, // random 32 bytes, hex-encoded
+    pub ledger_id: String,
     pub created_by_user_id: String,
     pub created_at: i64,
     pub expires_at: i64,
-    pub used_by_node_id: Option<String>,
 }
 
 /// Lightweight summary for list views (no CRDT bytes needed).

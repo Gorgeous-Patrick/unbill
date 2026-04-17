@@ -11,6 +11,10 @@ use crate::storage::LedgerStore;
 
 pub struct UnbillService {
     pub(crate) store: Arc<dyn LedgerStore>,
+    /// Pending join invitations, keyed by token. In-memory only — tokens are
+    /// short-lived (~1 hour) and do not survive a restart by design.
+    pending_invitations:
+        std::sync::Mutex<std::collections::HashMap<String, crate::model::Invitation>>,
     events: broadcast::Sender<ServiceEvent>,
 }
 
@@ -37,7 +41,11 @@ pub enum ServiceEvent {
 impl UnbillService {
     pub fn new(store: Arc<dyn LedgerStore>) -> Arc<Self> {
         let (events, _) = broadcast::channel(256);
-        Arc::new(Self { store, events })
+        Arc::new(Self {
+            store,
+            pending_invitations: std::sync::Mutex::new(std::collections::HashMap::new()),
+            events,
+        })
     }
 
     // Ledger lifecycle

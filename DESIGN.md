@@ -256,7 +256,7 @@ pub struct Ledger {
     pub created_at: i64,        // unix millis
     pub members: Vec<Member>,
     pub bills: Vec<Bill>,
-    pub invitations: Vec<Invitation>,
+    // Invitations are NOT stored here — they live in device-local storage. See §6.3.
 }
 
 #[derive(Clone, Reconcile, Hydrate)]
@@ -309,13 +309,13 @@ pub struct Amendment {
     pub reason: Option<String>,
 }
 
-#[derive(Clone, Reconcile, Hydrate)]
+// Invitation is NOT persisted. It lives in UnbillService memory only. See §6.3.
 pub struct Invitation {
     pub token: String,          // random 32 bytes, hex-encoded
+    pub ledger_id: String,
     pub created_by_user_id: String,
     pub created_at: i64,
     pub expires_at: i64,
-    pub used_by_node_id: Option<String>,  // None if unused; some(node_id) once consumed
 }
 ```
 
@@ -530,9 +530,9 @@ A single *user* may have multiple *devices*, each with its own NodeId. The ledge
 
 Adding a new member Bob to the ledger is a three-step dance:
 
-1. Existing member Alice creates an `Invitation` record in the ledger (random token, expires in ~1 hour).
-2. Alice transmits the invitation out-of-band to Bob: a URL of the form `unbill://join?ledger=<id>&token=<t>&bootstrap=<alice_node_id>`. Delivery is via QR code, iMessage, AirDrop, email, etc.
-3. Bob's app connects to Alice using the bootstrap NodeId, presents the token during handshake. Alice's app verifies the token, appends Bob (and his initial device) to `members`, marks the invitation as used, then begins sync. Bob receives the full ledger, in which he is now listed as a member.
+1. Existing member Alice calls `invite_member`. Her device generates a random token, holds it in **memory** inside `UnbillService`, and returns a URL of the form `unbill://join?ledger=<id>&token=<t>&bootstrap=<alice_node_id>`. The token never enters the CRDT document or SQLite.
+2. Alice transmits the URL out-of-band to Bob: QR code, iMessage, AirDrop, email, etc.
+3. Bob's app connects to Alice using the bootstrap NodeId, presents the token during the handshake. Alice's app verifies the token against her local `invitations` table (not expired, not used), marks it used, appends Bob and his device to `Ledger.members` in the CRDT, then begins sync. Bob receives the full ledger, in which he is now listed as a member.
 
 Once a member, Bob's device(s) can sync with any other member's device(s). Authorization on incoming connections is:
 
@@ -946,7 +946,7 @@ Living list. Each should be resolved in the appropriate module's `DESIGN.md` bef
 
 1. **sqlx vs rusqlite.** sqlx is native async but adds build complexity. rusqlite is simpler but needs `spawn_blocking`. Decision deferred to `storage/DESIGN.md`.
 2. **Lazy vs eager ledger loading at startup.** Load all on boot (simple, memory-hungry for many ledgers) or lazily (complex, necessary if users have hundreds of ledgers)?
-3. **Invitation token storage.** In the ledger (so all members can see pending invites) or in device-local state (so they're private)?
+3. ~~**Invitation token storage.**~~ **Resolved:** Invitations are held in memory inside `UnbillService` (`HashMap<token, Invitation>`). They do not survive a restart — that is acceptable because the join requires Alice's device to be online anyway, and a restarted app simply generates a new token. No SQLite table needed. The CRDT records only the outcome (a new `Member`). See §6.3.
 4. **Multi-device onboarding.** How does Alice add her second device? Copy key file? QR code between her own devices? Design needs UX thinking.
 5. **Notification strategy on mobile.** iOS backgrounding kills long-lived connections. Do we need silent push, and if so, whose infrastructure?
 6. **Backup and restore.** The "user owns their data" promise implies losing a phone = losing ledgers (unless synced to another device). Should we offer explicit device backup to e.g. iCloud Drive?
