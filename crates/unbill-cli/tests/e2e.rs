@@ -16,7 +16,9 @@ struct Env {
 
 impl Env {
     fn new() -> Self {
-        Self { dir: tempfile::tempdir().unwrap() }
+        Self {
+            dir: tempfile::tempdir().unwrap(),
+        }
     }
 
     fn run(&self, args: &[&str]) -> Output {
@@ -74,15 +76,28 @@ fn create_ledger(env: &Env) -> String {
 }
 
 const ALICE: &str = "00000000000000000000000001";
-const BOB: &str   = "00000000000000000000000002";
+const BOB: &str = "00000000000000000000000002";
 const CAROL: &str = "00000000000000000000000003";
 
-fn add_bill(env: &Env, ledger_id: &str, payer: &str, amount: &str, desc: &str, participants: &[&str]) -> String {
-    let mut args = vec!["bill", "add",
-        "--ledger-id", ledger_id,
-        "--payer", payer,
-        "--amount", amount,
-        "--description", desc,
+fn add_bill(
+    env: &Env,
+    ledger_id: &str,
+    payer: &str,
+    amount: &str,
+    desc: &str,
+    participants: &[&str],
+) -> String {
+    let mut args = vec![
+        "bill",
+        "add",
+        "--ledger-id",
+        ledger_id,
+        "--payer",
+        payer,
+        "--amount",
+        amount,
+        "--description",
+        desc,
     ];
     for p in participants {
         args.push("--participant");
@@ -107,8 +122,14 @@ fn test_init_prints_device_id() {
 #[test]
 fn test_device_id_is_stable_across_calls() {
     let env = Env::new();
-    let id1 = env.json(&["init"])["device_id"].as_str().unwrap().to_owned();
-    let id2 = env.json(&["init"])["device_id"].as_str().unwrap().to_owned();
+    let id1 = env.json(&["init"])["device_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let id2 = env.json(&["init"])["device_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     assert_eq!(id1, id2);
 }
 
@@ -159,7 +180,10 @@ fn test_delete_ledger_removes_it_from_list() {
 fn test_invalid_currency_is_rejected() {
     let env = Env::new();
     let stderr = env.fail(&["ledger", "create", "Bad", "ZZZ"]);
-    assert!(stderr.contains("currency"), "expected error about currency, got: {stderr}");
+    assert!(
+        stderr.contains("currency"),
+        "expected error about currency, got: {stderr}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -189,12 +213,19 @@ fn test_amend_bill_updates_amount_and_marks_amended() {
     let lid = create_ledger(&env);
     let bid = add_bill(&env, &lid, ALICE, "10", "Lunch", &[ALICE, BOB]);
 
-    env.ok(&["bill", "amend",
-        "--ledger-id", &lid,
-        "--bill-id", &bid,
-        "--author", ALICE,
-        "--amount", "12.50",
-        "--description", "Lunch + coffee",
+    env.ok(&[
+        "bill",
+        "amend",
+        "--ledger-id",
+        &lid,
+        "--bill-id",
+        &bid,
+        "--author",
+        ALICE,
+        "--amount",
+        "12.50",
+        "--description",
+        "Lunch + coffee",
     ]);
 
     let bills = env.json(&["bill", "list", "--ledger-id", &lid]);
@@ -213,7 +244,9 @@ fn test_delete_bill_sets_deleted_flag() {
     env.ok(&["bill", "delete", "--ledger-id", &lid, "--bill-id", &bid]);
 
     let bills = env.json(&["bill", "list", "--ledger-id", &lid]);
-    assert!(bills.as_array().unwrap()[0]["is_deleted"].as_bool().unwrap());
+    assert!(bills.as_array().unwrap()[0]["is_deleted"]
+        .as_bool()
+        .unwrap());
 }
 
 #[test]
@@ -226,7 +259,9 @@ fn test_restore_bill_clears_deleted_flag() {
     env.ok(&["bill", "restore", "--ledger-id", &lid, "--bill-id", &bid]);
 
     let bills = env.json(&["bill", "list", "--ledger-id", &lid]);
-    assert!(!bills.as_array().unwrap()[0]["is_deleted"].as_bool().unwrap());
+    assert!(!bills.as_array().unwrap()[0]["is_deleted"]
+        .as_bool()
+        .unwrap());
 }
 
 #[test]
@@ -235,12 +270,20 @@ fn test_amend_with_no_fields_is_rejected() {
     let lid = create_ledger(&env);
     let bid = add_bill(&env, &lid, ALICE, "10", "X", &[ALICE]);
 
-    let stderr = env.fail(&["bill", "amend",
-        "--ledger-id", &lid,
-        "--bill-id", &bid,
-        "--author", ALICE,
+    let stderr = env.fail(&[
+        "bill",
+        "amend",
+        "--ledger-id",
+        &lid,
+        "--bill-id",
+        &bid,
+        "--author",
+        ALICE,
     ]);
-    assert!(stderr.contains("at least one"), "expected validation error, got: {stderr}");
+    assert!(
+        stderr.contains("at least one"),
+        "expected validation error, got: {stderr}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -319,17 +362,30 @@ fn test_amendments_persist_across_process_restarts() {
     let env = Env::new();
     let lid = create_ledger(&env);
     let bid = add_bill(&env, &lid, ALICE, "10", "Coffee", &[ALICE, BOB]);
-    env.ok(&["bill", "amend",
-        "--ledger-id", &lid,
-        "--bill-id", &bid,
-        "--author", ALICE,
-        "--amount", "15",
+    env.ok(&[
+        "bill",
+        "amend",
+        "--ledger-id",
+        &lid,
+        "--bill-id",
+        &bid,
+        "--author",
+        ALICE,
+        "--amount",
+        "15",
     ]);
 
     // New process reads the amended value.
     let bills = env.json(&["bill", "list", "--ledger-id", &lid]);
-    assert_eq!(bills.as_array().unwrap()[0]["amount_cents"].as_i64().unwrap(), 1500);
-    assert!(bills.as_array().unwrap()[0]["was_amended"].as_bool().unwrap());
+    assert_eq!(
+        bills.as_array().unwrap()[0]["amount_cents"]
+            .as_i64()
+            .unwrap(),
+        1500
+    );
+    assert!(bills.as_array().unwrap()[0]["was_amended"]
+        .as_bool()
+        .unwrap());
 }
 
 // ---------------------------------------------------------------------------

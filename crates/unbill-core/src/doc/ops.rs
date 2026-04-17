@@ -8,7 +8,7 @@ use autosurgeon::{hydrate, reconcile};
 
 use crate::error::UnbillError;
 use crate::model::{
-    Amendment, BillAmendment, Bill, Currency, EffectiveBill, Ledger, Member, NewBill, NodeId,
+    Amendment, Bill, BillAmendment, Currency, EffectiveBill, Ledger, Member, NewBill, NodeId,
     Timestamp, Ulid,
 };
 
@@ -180,7 +180,13 @@ mod tests {
             payer_user_id: payer,
             amount_cents,
             description: "Dinner".into(),
-            shares: participants.iter().map(|&u| Share { user_id: u, shares: 1 }).collect(),
+            shares: participants
+                .iter()
+                .map(|&u| Share {
+                    user_id: u,
+                    shares: 1,
+                })
+                .collect(),
         }
     }
 
@@ -203,7 +209,13 @@ mod tests {
     fn test_add_bill_appears_in_list_bills() {
         let mut doc = fresh_doc();
         let alice = uid(1);
-        let bill_id = add_bill(&mut doc, simple_bill(alice, &[alice, uid(2)], 3000), device(), ts(1)).unwrap();
+        let bill_id = add_bill(
+            &mut doc,
+            simple_bill(alice, &[alice, uid(2)], 3000),
+            device(),
+            ts(1),
+        )
+        .unwrap();
         let bills = list_bills(&doc).unwrap();
         assert_eq!(bills.len(), 1);
         assert_eq!(bills[0].id, bill_id);
@@ -216,8 +228,20 @@ mod tests {
     fn test_add_multiple_bills_preserves_order() {
         let mut doc = fresh_doc();
         let alice = uid(1);
-        let id1 = add_bill(&mut doc, simple_bill(alice, &[alice], 1000), device(), ts(1)).unwrap();
-        let id2 = add_bill(&mut doc, simple_bill(alice, &[alice], 2000), device(), ts(2)).unwrap();
+        let id1 = add_bill(
+            &mut doc,
+            simple_bill(alice, &[alice], 1000),
+            device(),
+            ts(1),
+        )
+        .unwrap();
+        let id2 = add_bill(
+            &mut doc,
+            simple_bill(alice, &[alice], 2000),
+            device(),
+            ts(2),
+        )
+        .unwrap();
         let bills = list_bills(&doc).unwrap();
         assert_eq!(bills[0].id, id1);
         assert_eq!(bills[1].id, id2);
@@ -229,7 +253,13 @@ mod tests {
     fn test_amend_bill_updates_effective_view() {
         let mut doc = fresh_doc();
         let alice = uid(1);
-        let bill_id = add_bill(&mut doc, simple_bill(alice, &[alice], 1000), device(), ts(1)).unwrap();
+        let bill_id = add_bill(
+            &mut doc,
+            simple_bill(alice, &[alice], 1000),
+            device(),
+            ts(1),
+        )
+        .unwrap();
         amend_bill(
             &mut doc,
             &bill_id,
@@ -274,7 +304,8 @@ mod tests {
     fn test_delete_bill_sets_tombstone() {
         let mut doc = fresh_doc();
         let alice = uid(1);
-        let bill_id = add_bill(&mut doc, simple_bill(alice, &[alice], 500), device(), ts(1)).unwrap();
+        let bill_id =
+            add_bill(&mut doc, simple_bill(alice, &[alice], 500), device(), ts(1)).unwrap();
         delete_bill(&mut doc, &bill_id).unwrap();
         let bills = list_bills(&doc).unwrap();
         assert!(bills[0].is_deleted);
@@ -284,7 +315,8 @@ mod tests {
     fn test_restore_bill_clears_tombstone() {
         let mut doc = fresh_doc();
         let alice = uid(1);
-        let bill_id = add_bill(&mut doc, simple_bill(alice, &[alice], 500), device(), ts(1)).unwrap();
+        let bill_id =
+            add_bill(&mut doc, simple_bill(alice, &[alice], 500), device(), ts(1)).unwrap();
         delete_bill(&mut doc, &bill_id).unwrap();
         restore_bill(&mut doc, &bill_id).unwrap();
         let bills = list_bills(&doc).unwrap();
@@ -334,7 +366,13 @@ mod tests {
     fn test_save_and_reload_preserves_bills() {
         let mut doc = fresh_doc();
         let alice = uid(1);
-        let bill_id = add_bill(&mut doc, simple_bill(alice, &[alice, uid(2)], 6000), device(), ts(1)).unwrap();
+        let bill_id = add_bill(
+            &mut doc,
+            simple_bill(alice, &[alice, uid(2)], 6000),
+            device(),
+            ts(1),
+        )
+        .unwrap();
 
         let bytes = doc.save();
         let reloaded = AutoCommit::load(&bytes).unwrap();

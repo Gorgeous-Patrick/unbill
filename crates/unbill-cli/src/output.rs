@@ -80,10 +80,14 @@ pub fn bill_out(b: &EffectiveBill) -> BillOut {
         was_amended: b.was_amended,
         is_deleted: b.is_deleted,
         last_modified_at_ms: b.last_modified_at.as_millis(),
-        shares: b.shares.iter().map(|s| ShareOut {
-            user_id: s.user_id.to_string(),
-            shares: s.shares,
-        }).collect(),
+        shares: b
+            .shares
+            .iter()
+            .map(|s| ShareOut {
+                user_id: s.user_id.to_string(),
+                shares: s.shares,
+            })
+            .collect(),
     }
 }
 
@@ -97,11 +101,15 @@ pub fn member_out(m: &Member) -> MemberOut {
 
 pub fn settlement_out(s: &Settlement) -> SettlementOut {
     SettlementOut {
-        transactions: s.transactions.iter().map(|t| TransactionOut {
-            from_user_id: t.from_user_id.to_string(),
-            to_user_id: t.to_user_id.to_string(),
-            amount_cents: t.amount_cents,
-        }).collect(),
+        transactions: s
+            .transactions
+            .iter()
+            .map(|t| TransactionOut {
+                from_user_id: t.from_user_id.to_string(),
+                to_user_id: t.to_user_id.to_string(),
+                amount_cents: t.amount_cents,
+            })
+            .collect(),
     }
 }
 
@@ -118,12 +126,18 @@ pub fn fmt_amount(cents: i64) -> String {
 /// Whole numbers are treated as full currency units (e.g. "12" → 1200).
 pub fn parse_amount(s: &str) -> anyhow::Result<i64> {
     if let Some((whole, frac)) = s.split_once('.') {
-        let whole: i64 = whole.parse().map_err(|_| anyhow::anyhow!("invalid amount: {s:?}"))?;
+        let whole: i64 = whole
+            .parse()
+            .map_err(|_| anyhow::anyhow!("invalid amount: {s:?}"))?;
         let frac_padded = format!("{:0<2}", frac);
-        let cents: i64 = frac_padded[..2].parse().map_err(|_| anyhow::anyhow!("invalid amount fraction: {s:?}"))?;
+        let cents: i64 = frac_padded[..2]
+            .parse()
+            .map_err(|_| anyhow::anyhow!("invalid amount fraction: {s:?}"))?;
         Ok(whole * 100 + cents)
     } else {
-        let whole: i64 = s.parse().map_err(|_| anyhow::anyhow!("invalid amount: {s:?}"))?;
+        let whole: i64 = s
+            .parse()
+            .map_err(|_| anyhow::anyhow!("invalid amount: {s:?}"))?;
         Ok(whole * 100)
     }
 }
@@ -134,5 +148,9 @@ pub fn print_json<T: serde::Serialize>(v: &T) -> anyhow::Result<()> {
 }
 
 pub fn truncate(s: &str, max: usize) -> &str {
-    if s.len() <= max { s } else { &s[..max] }
+    if s.len() <= max {
+        s
+    } else {
+        &s[..max]
+    }
 }

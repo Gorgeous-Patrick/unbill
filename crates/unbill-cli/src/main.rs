@@ -57,59 +57,89 @@ pub enum Command {
 #[derive(clap::Subcommand)]
 pub enum LedgerCmd {
     /// Create a new ledger with a name and ISO 4217 currency code (e.g. USD).
-    Create { name: String, currency: String },
+    Create {
+        name: String,
+        currency: String,
+    },
     List,
-    Show { ledger_id: String },
+    Show {
+        ledger_id: String,
+    },
     /// Export a ledger to a file. (Available from M3.)
-    Export { ledger_id: String, output: String },
+    Export {
+        ledger_id: String,
+        output: String,
+    },
     /// Import a ledger from a file. (Available from M3.)
-    Import { file: String },
-    Delete { ledger_id: String },
+    Import {
+        file: String,
+    },
+    Delete {
+        ledger_id: String,
+    },
 }
 
 #[derive(clap::Subcommand)]
 pub enum BillCmd {
     /// Add a bill to a ledger.
     Add {
-        #[arg(long)] ledger_id: String,
+        #[arg(long)]
+        ledger_id: String,
         /// User ID of who paid.
-        #[arg(long)] payer: String,
+        #[arg(long)]
+        payer: String,
         /// Amount in the ledger's currency (e.g. 12.50).
-        #[arg(long)] amount: String,
-        #[arg(long)] description: String,
+        #[arg(long)]
+        amount: String,
+        #[arg(long)]
+        description: String,
         /// Participant user IDs (equal shares). Repeat for each participant.
-        #[arg(long = "participant")] participants: Vec<String>,
+        #[arg(long = "participant")]
+        participants: Vec<String>,
     },
     /// List all bills in a ledger.
     List {
-        #[arg(long)] ledger_id: String,
+        #[arg(long)]
+        ledger_id: String,
     },
     /// Amend a bill. At least one of --amount, --description, --participant must be provided.
     Amend {
-        #[arg(long)] ledger_id: String,
-        #[arg(long)] bill_id: String,
+        #[arg(long)]
+        ledger_id: String,
+        #[arg(long)]
+        bill_id: String,
         /// User ID of the person making this amendment.
-        #[arg(long)] author: String,
-        #[arg(long)] amount: Option<String>,
-        #[arg(long)] description: Option<String>,
+        #[arg(long)]
+        author: String,
+        #[arg(long)]
+        amount: Option<String>,
+        #[arg(long)]
+        description: Option<String>,
         /// Replace all participants (equal shares). Repeat for each.
-        #[arg(long = "participant")] participants: Vec<String>,
-        #[arg(long)] reason: Option<String>,
+        #[arg(long = "participant")]
+        participants: Vec<String>,
+        #[arg(long)]
+        reason: Option<String>,
     },
     Delete {
-        #[arg(long)] ledger_id: String,
-        #[arg(long)] bill_id: String,
+        #[arg(long)]
+        ledger_id: String,
+        #[arg(long)]
+        bill_id: String,
     },
     Restore {
-        #[arg(long)] ledger_id: String,
-        #[arg(long)] bill_id: String,
+        #[arg(long)]
+        ledger_id: String,
+        #[arg(long)]
+        bill_id: String,
     },
 }
 
 #[derive(clap::Subcommand)]
 pub enum MemberCmd {
     List {
-        #[arg(long)] ledger_id: String,
+        #[arg(long)]
+        ledger_id: String,
     },
     /// Invite a new member. (Available from M4.)
     Invite { ledger_id: String },
@@ -159,7 +189,9 @@ async fn run() -> anyhow::Result<()> {
     match cli.command {
         Command::Init => commands::init(&svc, json).await,
         Command::Ledger { sub } => match sub {
-            LedgerCmd::Create { name, currency } => commands::ledger_create(&svc, name, currency, json).await,
+            LedgerCmd::Create { name, currency } => {
+                commands::ledger_create(&svc, name, currency, json).await
+            }
             LedgerCmd::List => commands::ledger_list(&svc, json).await,
             LedgerCmd::Show { ledger_id } => commands::ledger_show(&svc, &ledger_id, json).await,
             LedgerCmd::Delete { ledger_id } => commands::ledger_delete(&svc, &ledger_id).await,
@@ -168,15 +200,53 @@ async fn run() -> anyhow::Result<()> {
             }
         },
         Command::Bill { sub } => match sub {
-            BillCmd::Add { ledger_id, payer, amount, description, participants } => {
-                commands::bill_add(&svc, &ledger_id, &payer, &amount, description, participants, json).await
+            BillCmd::Add {
+                ledger_id,
+                payer,
+                amount,
+                description,
+                participants,
+            } => {
+                commands::bill_add(
+                    &svc,
+                    &ledger_id,
+                    &payer,
+                    &amount,
+                    description,
+                    participants,
+                    json,
+                )
+                .await
             }
             BillCmd::List { ledger_id } => commands::bill_list(&svc, &ledger_id, json).await,
-            BillCmd::Amend { ledger_id, bill_id, author, amount, description, participants, reason } => {
-                commands::bill_amend(&svc, &ledger_id, &bill_id, &author, amount.as_deref(), description, participants, reason, json).await
+            BillCmd::Amend {
+                ledger_id,
+                bill_id,
+                author,
+                amount,
+                description,
+                participants,
+                reason,
+            } => {
+                commands::bill_amend(
+                    &svc,
+                    &ledger_id,
+                    &bill_id,
+                    &author,
+                    amount.as_deref(),
+                    description,
+                    participants,
+                    reason,
+                    json,
+                )
+                .await
             }
-            BillCmd::Delete { ledger_id, bill_id } => commands::bill_delete(&svc, &ledger_id, &bill_id).await,
-            BillCmd::Restore { ledger_id, bill_id } => commands::bill_restore(&svc, &ledger_id, &bill_id).await,
+            BillCmd::Delete { ledger_id, bill_id } => {
+                commands::bill_delete(&svc, &ledger_id, &bill_id).await
+            }
+            BillCmd::Restore { ledger_id, bill_id } => {
+                commands::bill_restore(&svc, &ledger_id, &bill_id).await
+            }
         },
         Command::Member { sub } => match sub {
             MemberCmd::List { ledger_id } => commands::member_list(&svc, &ledger_id, json).await,

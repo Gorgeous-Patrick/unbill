@@ -34,7 +34,10 @@ impl LedgerStore for InMemoryStore {
             .ledgers
             .entry(id)
             .and_modify(|s| s.meta = meta.clone())
-            .or_insert_with(|| StoredLedger { meta: meta.clone(), bytes: vec![] });
+            .or_insert_with(|| StoredLedger {
+                meta: meta.clone(),
+                bytes: vec![],
+            });
         Ok(())
     }
 
@@ -45,7 +48,11 @@ impl LedgerStore for InMemoryStore {
 
     async fn load_ledger_bytes(&self, ledger_id: &str) -> Result<Vec<u8>> {
         let inner = self.inner.lock().unwrap();
-        Ok(inner.ledgers.get(ledger_id).map(|s| s.bytes.clone()).unwrap_or_default())
+        Ok(inner
+            .ledgers
+            .get(ledger_id)
+            .map(|s| s.bytes.clone())
+            .unwrap_or_default())
     }
 
     async fn save_ledger_bytes(&self, ledger_id: &str, bytes: &[u8]) -> Result<()> {

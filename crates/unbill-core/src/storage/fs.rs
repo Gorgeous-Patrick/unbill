@@ -50,8 +50,7 @@ impl MetaJson {
     }
 
     fn into_ledger_meta(self) -> std::result::Result<LedgerMeta, String> {
-        let ledger_id =
-            Ulid::from_string(&self.ledger_id).map_err(|e| e.to_string())?;
+        let ledger_id = Ulid::from_string(&self.ledger_id).map_err(|e| e.to_string())?;
         let currency = Currency::from_code(&self.currency)
             .ok_or_else(|| format!("unknown currency code {:?}", self.currency))?;
         Ok(LedgerMeta {
@@ -213,12 +212,24 @@ mod tests {
 
         assert!(store.load_ledger_bytes(&id).await.unwrap().is_empty());
 
-        store.save_ledger_bytes(&id, b"snapshot data").await.unwrap();
-        assert_eq!(store.load_ledger_bytes(&id).await.unwrap(), b"snapshot data");
+        store
+            .save_ledger_bytes(&id, b"snapshot data")
+            .await
+            .unwrap();
+        assert_eq!(
+            store.load_ledger_bytes(&id).await.unwrap(),
+            b"snapshot data"
+        );
 
         // Overwrite
-        store.save_ledger_bytes(&id, b"updated snapshot").await.unwrap();
-        assert_eq!(store.load_ledger_bytes(&id).await.unwrap(), b"updated snapshot");
+        store
+            .save_ledger_bytes(&id, b"updated snapshot")
+            .await
+            .unwrap();
+        assert_eq!(
+            store.load_ledger_bytes(&id).await.unwrap(),
+            b"updated snapshot"
+        );
     }
 
     #[tokio::test]
@@ -243,9 +254,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = FsStore::new(dir.path().to_path_buf());
 
-        assert!(store.load_device_meta("device_key.bin").await.unwrap().is_none());
+        assert!(store
+            .load_device_meta("device_key.bin")
+            .await
+            .unwrap()
+            .is_none());
 
-        store.save_device_meta("device_key.bin", b"secret").await.unwrap();
+        store
+            .save_device_meta("device_key.bin", b"secret")
+            .await
+            .unwrap();
         let loaded = store.load_device_meta("device_key.bin").await.unwrap();
         assert_eq!(loaded.as_deref(), Some(b"secret".as_ref()));
     }

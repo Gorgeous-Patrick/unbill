@@ -33,7 +33,12 @@ pub async fn init(svc: &UnbillService, json: bool) -> anyhow::Result<()> {
 // Ledger
 // ---------------------------------------------------------------------------
 
-pub async fn ledger_create(svc: &UnbillService, name: String, currency: String, json: bool) -> anyhow::Result<()> {
+pub async fn ledger_create(
+    svc: &UnbillService,
+    name: String,
+    currency: String,
+    json: bool,
+) -> anyhow::Result<()> {
     let id = svc.create_ledger(name, currency).await?;
     if json {
         print_json(&serde_json::json!({ "ledger_id": id }))?;
@@ -60,7 +65,9 @@ pub async fn ledger_list(svc: &UnbillService, json: bool) -> anyhow::Result<()> 
 
 pub async fn ledger_show(svc: &UnbillService, ledger_id: &str, json: bool) -> anyhow::Result<()> {
     let ledgers = svc.list_ledgers().await?;
-    let meta = ledgers.iter().find(|m| m.ledger_id.to_string() == ledger_id)
+    let meta = ledgers
+        .iter()
+        .find(|m| m.ledger_id.to_string() == ledger_id)
         .ok_or_else(|| anyhow!("ledger not found: {ledger_id}"))?;
     let bills = svc.list_bills(ledger_id).await?;
     let members = svc.list_members(ledger_id).await?;
@@ -102,19 +109,33 @@ pub async fn bill_add(
     let payer_id = parse_ulid(payer)?;
     let amount_cents = parse_amount(amount)?;
     let shares = if participants.is_empty() {
-        vec![Share { user_id: payer_id, shares: 1 }]
+        vec![Share {
+            user_id: payer_id,
+            shares: 1,
+        }]
     } else {
-        participants.iter()
-            .map(|p| parse_ulid(p).map(|u| Share { user_id: u, shares: 1 }))
+        participants
+            .iter()
+            .map(|p| {
+                parse_ulid(p).map(|u| Share {
+                    user_id: u,
+                    shares: 1,
+                })
+            })
             .collect::<anyhow::Result<Vec<_>>>()?
     };
 
-    let bill_id = svc.add_bill(ledger_id, NewBill {
-        payer_user_id: payer_id,
-        amount_cents,
-        description,
-        shares,
-    }).await?;
+    let bill_id = svc
+        .add_bill(
+            ledger_id,
+            NewBill {
+                payer_user_id: payer_id,
+                amount_cents,
+                description,
+                shares,
+            },
+        )
+        .await?;
 
     if json {
         print_json(&serde_json::json!({ "bill_id": bill_id }))?;
@@ -133,16 +154,24 @@ pub async fn bill_list(svc: &UnbillService, ledger_id: &str, json: bool) -> anyh
             println!("no bills");
             return Ok(());
         }
-        println!("{:<26}  {:>10}  {:<32}  {}", "ID", "AMOUNT", "DESCRIPTION", "FLAGS");
+        println!(
+            "{:<26}  {:>10}  {:<32}  {}",
+            "ID", "AMOUNT", "DESCRIPTION", "FLAGS"
+        );
         for b in &bills {
             let flags = match (b.was_amended, b.is_deleted) {
-                (true, true)  => "amended,deleted",
+                (true, true) => "amended,deleted",
                 (true, false) => "amended",
                 (false, true) => "deleted",
-                _             => "",
+                _ => "",
             };
-            println!("{:<26}  {:>10}  {:<32}  {}",
-                b.id, fmt_amount(b.amount_cents), truncate(&b.description, 32), flags);
+            println!(
+                "{:<26}  {:>10}  {:<32}  {}",
+                b.id,
+                fmt_amount(b.amount_cents),
+                truncate(&b.description, 32),
+                flags
+            );
         }
     }
     Ok(())
@@ -163,31 +192,52 @@ pub async fn bill_amend(
     let new_shares = if participants.is_empty() {
         None
     } else {
-        Some(participants.iter()
-            .map(|p| parse_ulid(p).map(|u| Share { user_id: u, shares: 1 }))
-            .collect::<anyhow::Result<Vec<_>>>()?)
+        Some(
+            participants
+                .iter()
+                .map(|p| {
+                    parse_ulid(p).map(|u| Share {
+                        user_id: u,
+                        shares: 1,
+                    })
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?,
+        )
     };
 
     if new_amount_cents.is_none() && description.is_none() && new_shares.is_none() {
         bail!("at least one of --amount, --description, --participant must be provided");
     }
 
-    svc.amend_bill(ledger_id, bill_id, BillAmendment {
-        new_amount_cents,
-        new_description: description,
-        new_shares,
-        author_user_id: parse_ulid(author)?,
-        reason,
-    }).await?;
+    svc.amend_bill(
+        ledger_id,
+        bill_id,
+        BillAmendment {
+            new_amount_cents,
+            new_description: description,
+            new_shares,
+            author_user_id: parse_ulid(author)?,
+            reason,
+        },
+    )
+    .await?;
     Ok(())
 }
 
-pub async fn bill_delete(svc: &UnbillService, ledger_id: &str, bill_id: &str) -> anyhow::Result<()> {
+pub async fn bill_delete(
+    svc: &UnbillService,
+    ledger_id: &str,
+    bill_id: &str,
+) -> anyhow::Result<()> {
     svc.delete_bill(ledger_id, bill_id).await?;
     Ok(())
 }
 
-pub async fn bill_restore(svc: &UnbillService, ledger_id: &str, bill_id: &str) -> anyhow::Result<()> {
+pub async fn bill_restore(
+    svc: &UnbillService,
+    ledger_id: &str,
+    bill_id: &str,
+) -> anyhow::Result<()> {
     svc.restore_bill(ledger_id, bill_id).await?;
     Ok(())
 }
@@ -226,8 +276,12 @@ pub async fn settlement(svc: &UnbillService, ledger_id: &str, json: bool) -> any
             return Ok(());
         }
         for t in &s.transactions {
-            println!("{}  →  {}    {}",
-                t.from_user_id, t.to_user_id, fmt_amount(t.amount_cents));
+            println!(
+                "{}  →  {}    {}",
+                t.from_user_id,
+                t.to_user_id,
+                fmt_amount(t.amount_cents)
+            );
         }
     }
     Ok(())

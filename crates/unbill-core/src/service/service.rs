@@ -28,10 +28,22 @@ pub struct UnbillService {
 
 #[derive(Clone, Debug)]
 pub enum ServiceEvent {
-    LedgerUpdated { ledger_id: String },
-    PeerConnected { ledger_id: String, peer: String },
-    PeerDisconnected { ledger_id: String, peer: String },
-    SyncError { ledger_id: String, peer: String, error: String },
+    LedgerUpdated {
+        ledger_id: String,
+    },
+    PeerConnected {
+        ledger_id: String,
+        peer: String,
+    },
+    PeerDisconnected {
+        ledger_id: String,
+        peer: String,
+    },
+    SyncError {
+        ledger_id: String,
+        peer: String,
+        error: String,
+    },
 }
 
 impl UnbillService {
@@ -45,8 +57,7 @@ impl UnbillService {
         for meta in metas {
             let id = meta.ledger_id.to_string();
             let bytes = store.load_ledger_bytes(&id).await?;
-            let doc = LedgerDoc::from_bytes(&bytes)
-                .map_err(|e| UnbillError::Other(e))?;
+            let doc = LedgerDoc::from_bytes(&bytes).map_err(|e| UnbillError::Other(e))?;
             ledgers.insert(id, Arc::new(Mutex::new(doc)));
         }
 
@@ -65,8 +76,9 @@ impl UnbillService {
     // -----------------------------------------------------------------------
 
     pub async fn create_ledger(&self, name: String, currency: String) -> Result<String> {
-        let currency = Currency::from_code(&currency)
-            .ok_or_else(|| UnbillError::Other(anyhow::anyhow!("unknown currency code: {currency}")))?;
+        let currency = Currency::from_code(&currency).ok_or_else(|| {
+            UnbillError::Other(anyhow::anyhow!("unknown currency code: {currency}"))
+        })?;
         let ledger_id = Ulid::new();
         let now = Timestamp::now();
 
@@ -178,10 +190,7 @@ impl UnbillService {
     // Settlement
     // -----------------------------------------------------------------------
 
-    pub async fn compute_settlement(
-        &self,
-        ledger_id: &str,
-    ) -> Result<settlement::Settlement> {
+    pub async fn compute_settlement(&self, ledger_id: &str) -> Result<settlement::Settlement> {
         let doc_mutex = self.get_doc(ledger_id)?;
         let doc = doc_mutex.lock().await;
         let members = doc.list_members()?;
@@ -215,7 +224,10 @@ impl UnbillService {
     /// Update `updated_at` in the stored metadata for a ledger.
     async fn touch_meta(&self, ledger_id: &str) -> Result<()> {
         let mut metas = self.store.list_ledgers().await?;
-        if let Some(meta) = metas.iter_mut().find(|m| m.ledger_id.to_string() == ledger_id) {
+        if let Some(meta) = metas
+            .iter_mut()
+            .find(|m| m.ledger_id.to_string() == ledger_id)
+        {
             meta.updated_at = Timestamp::now();
             self.store.save_ledger_meta(meta).await?;
         }
@@ -244,8 +256,7 @@ async fn load_or_create_device_key(store: &dyn LedgerStore) -> Result<NodeId> {
 }
 
 fn parse_ulid(s: &str) -> Result<Ulid> {
-    Ulid::from_string(s)
-        .map_err(|e| UnbillError::Other(anyhow::anyhow!("invalid ULID {s:?}: {e}")))
+    Ulid::from_string(s).map_err(|e| UnbillError::Other(anyhow::anyhow!("invalid ULID {s:?}: {e}")))
 }
 
 // ---------------------------------------------------------------------------
@@ -266,7 +277,9 @@ mod tests {
         UnbillService::open(mem_store()).await.unwrap()
     }
 
-    fn usd() -> &'static str { "USD" }
+    fn usd() -> &'static str {
+        "USD"
+    }
 
     fn two_way_bill(payer: &str, amount_cents: i64, ledger_id: &str) -> (String, NewBill) {
         // Returns (ledger_id clone, NewBill). Payer user_id and participant determined by caller.
@@ -277,8 +290,14 @@ mod tests {
             amount_cents,
             description: payer.to_owned(),
             shares: vec![
-                Share { user_id: Ulid::from_u128(1), shares: 1 },
-                Share { user_id: Ulid::from_u128(2), shares: 1 },
+                Share {
+                    user_id: Ulid::from_u128(1),
+                    shares: 1,
+                },
+                Share {
+                    user_id: Ulid::from_u128(2),
+                    shares: 1,
+                },
             ],
         };
         (ledger_id.to_owned(), bill)
@@ -289,7 +308,10 @@ mod tests {
     #[tokio::test]
     async fn test_create_ledger_appears_in_list() {
         let svc = open().await;
-        let id = svc.create_ledger("Household".into(), usd().into()).await.unwrap();
+        let id = svc
+            .create_ledger("Household".into(), usd().into())
+            .await
+            .unwrap();
         let ledgers = svc.list_ledgers().await.unwrap();
         assert_eq!(ledgers.len(), 1);
         assert_eq!(ledgers[0].ledger_id.to_string(), id);
@@ -300,7 +322,10 @@ mod tests {
     #[tokio::test]
     async fn test_delete_ledger_removes_it() {
         let svc = open().await;
-        let id = svc.create_ledger("Trip".into(), usd().into()).await.unwrap();
+        let id = svc
+            .create_ledger("Trip".into(), usd().into())
+            .await
+            .unwrap();
         svc.delete_ledger(&id).await.unwrap();
         assert!(svc.list_ledgers().await.unwrap().is_empty());
     }
@@ -324,7 +349,10 @@ mod tests {
     #[tokio::test]
     async fn test_add_bill_and_list() {
         let svc = open().await;
-        let lid = svc.create_ledger("Test".into(), usd().into()).await.unwrap();
+        let lid = svc
+            .create_ledger("Test".into(), usd().into())
+            .await
+            .unwrap();
         let (_, bill) = two_way_bill("Dinner", 6000, &lid);
         let bill_id = svc.add_bill(&lid, bill).await.unwrap();
 
@@ -337,7 +365,10 @@ mod tests {
     #[tokio::test]
     async fn test_amend_bill_updates_amount() {
         let svc = open().await;
-        let lid = svc.create_ledger("Test".into(), usd().into()).await.unwrap();
+        let lid = svc
+            .create_ledger("Test".into(), usd().into())
+            .await
+            .unwrap();
         let (_, bill) = two_way_bill("Lunch", 3000, &lid);
         let bill_id = svc.add_bill(&lid, bill).await.unwrap();
 
@@ -363,7 +394,10 @@ mod tests {
     #[tokio::test]
     async fn test_delete_and_restore_bill() {
         let svc = open().await;
-        let lid = svc.create_ledger("Test".into(), usd().into()).await.unwrap();
+        let lid = svc
+            .create_ledger("Test".into(), usd().into())
+            .await
+            .unwrap();
         let (_, bill) = two_way_bill("Coffee", 500, &lid);
         let bill_id = svc.add_bill(&lid, bill).await.unwrap();
 
@@ -379,7 +413,10 @@ mod tests {
     #[tokio::test]
     async fn test_compute_settlement_no_bills_is_empty() {
         let svc = open().await;
-        let lid = svc.create_ledger("Empty".into(), usd().into()).await.unwrap();
+        let lid = svc
+            .create_ledger("Empty".into(), usd().into())
+            .await
+            .unwrap();
         let s = svc.compute_settlement(&lid).await.unwrap();
         assert!(s.transactions.is_empty());
     }
@@ -391,7 +428,10 @@ mod tests {
         let store = mem_store();
         let lid = {
             let svc = UnbillService::open(Arc::clone(&store)).await.unwrap();
-            let lid = svc.create_ledger("Persistent".into(), usd().into()).await.unwrap();
+            let lid = svc
+                .create_ledger("Persistent".into(), usd().into())
+                .await
+                .unwrap();
             let (_, bill) = two_way_bill("Rent", 120000, &lid);
             svc.add_bill(&lid, bill).await.unwrap();
             lid
