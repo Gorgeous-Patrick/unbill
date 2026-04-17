@@ -12,6 +12,9 @@ pub struct LoadedBytes {
 
 #[async_trait]
 pub trait LedgerStore: Send + Sync {
+    /// Create or update the per-ledger metadata cache.
+    /// Must be called before the first `append_incremental` for a new ledger.
+    async fn save_ledger_meta(&self, meta: &LedgerMeta) -> Result<()>;
     async fn list_ledgers(&self) -> Result<Vec<LedgerMeta>>;
     async fn load_ledger_bytes(&self, ledger_id: &str) -> Result<LoadedBytes>;
     async fn append_incremental(&self, ledger_id: &str, bytes: &[u8]) -> Result<()>;
