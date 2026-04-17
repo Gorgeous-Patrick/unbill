@@ -217,8 +217,14 @@ mod tests {
             description: String::new(),
             participants: vec!["alice".into(), "bob".into()],
             split_method: SplitMethod::Shares(vec![
-                Share { user_id: "alice".into(), shares: 2 },
-                Share { user_id: "bob".into(), shares: 1 },
+                Share {
+                    user_id: "alice".into(),
+                    shares: 2,
+                },
+                Share {
+                    user_id: "bob".into(),
+                    shares: 1,
+                },
             ]),
             was_amended: false,
             is_deleted: false,
@@ -243,8 +249,14 @@ mod tests {
             description: String::new(),
             participants: vec!["alice".into(), "bob".into()],
             split_method: SplitMethod::Exact(vec![
-                ExactAmount { user_id: "alice".into(), amount_cents: 300 },
-                ExactAmount { user_id: "bob".into(), amount_cents: 400 },
+                ExactAmount {
+                    user_id: "alice".into(),
+                    amount_cents: 300,
+                },
+                ExactAmount {
+                    user_id: "bob".into(),
+                    amount_cents: 400,
+                },
             ]),
             was_amended: false,
             is_deleted: false,
@@ -258,7 +270,10 @@ mod tests {
 
     // --- compute (settlement) ---
 
-    fn net_balances(members: &[Member], bills: &[EffectiveBill]) -> std::collections::HashMap<String, i64> {
+    fn net_balances(
+        members: &[Member],
+        bills: &[EffectiveBill],
+    ) -> std::collections::HashMap<String, i64> {
         let s = compute(members, bills);
         let mut bal: std::collections::HashMap<String, i64> =
             members.iter().map(|m| (m.user_id.clone(), 0)).collect();
@@ -342,7 +357,10 @@ mod tests {
         let mut bill = simple_bill("b1", "alice", 10000, &["alice", "bob"]);
         bill.is_deleted = true;
         let s = compute(&members, &[bill]);
-        assert!(s.transactions.is_empty(), "deleted bills must not affect settlement");
+        assert!(
+            s.transactions.is_empty(),
+            "deleted bills must not affect settlement"
+        );
     }
 
     #[test]
@@ -354,7 +372,9 @@ mod tests {
         let s = compute(&members, &bills);
         // eve should appear in no transaction
         assert!(
-            s.transactions.iter().all(|t| t.from_user_id != "eve" && t.to_user_id != "eve"),
+            s.transactions
+                .iter()
+                .all(|t| t.from_user_id != "eve" && t.to_user_id != "eve"),
             "removed members must not appear in settlement"
         );
     }

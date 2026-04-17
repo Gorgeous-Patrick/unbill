@@ -16,10 +16,22 @@ pub struct UnbillService {
 
 #[derive(Clone, Debug)]
 pub enum ServiceEvent {
-    LedgerUpdated { ledger_id: String },
-    PeerConnected { ledger_id: String, peer: String },
-    PeerDisconnected { ledger_id: String, peer: String },
-    SyncError { ledger_id: String, peer: String, error: String },
+    LedgerUpdated {
+        ledger_id: String,
+    },
+    PeerConnected {
+        ledger_id: String,
+        peer: String,
+    },
+    PeerDisconnected {
+        ledger_id: String,
+        peer: String,
+    },
+    SyncError {
+        ledger_id: String,
+        peer: String,
+        error: String,
+    },
 }
 
 impl UnbillService {
@@ -85,7 +97,10 @@ impl UnbillService {
 
     // Settlement
 
-    pub async fn compute_settlement(&self, _ledger_id: &str) -> Result<crate::settlement::Settlement> {
+    pub async fn compute_settlement(
+        &self,
+        _ledger_id: &str,
+    ) -> Result<crate::settlement::Settlement> {
         todo!("M2")
     }
 

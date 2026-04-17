@@ -220,7 +220,10 @@ mod tests {
         });
         // "aaa" < "zzz" lexically, so "aaa" is applied first, then "zzz" overwrites.
         let eff = EffectiveBill::from(&bill);
-        assert_eq!(eff.amount_cents, 100, "lexically later id should win on tie");
+        assert_eq!(
+            eff.amount_cents, 100,
+            "lexically later id should win on tie"
+        );
     }
 
     #[test]

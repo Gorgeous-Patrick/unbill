@@ -27,7 +27,10 @@ impl LedgerDoc {
     pub fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
         let doc = automerge::AutoCommit::load(bytes)?;
         let (tx, _) = broadcast::channel(64);
-        Ok(Self { _doc: doc, changes: tx })
+        Ok(Self {
+            _doc: doc,
+            changes: tx,
+        })
     }
 
     pub fn save(&mut self) -> Vec<u8> {

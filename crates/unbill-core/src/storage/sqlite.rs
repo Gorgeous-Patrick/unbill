@@ -24,7 +24,12 @@ impl LedgerStore for SqliteStore {
         todo!("M2")
     }
 
-    async fn compact(&self, _ledger_id: &str, _new_snapshot: &[u8], _heads: &[ChangeHash]) -> Result<()> {
+    async fn compact(
+        &self,
+        _ledger_id: &str,
+        _new_snapshot: &[u8],
+        _heads: &[ChangeHash],
+    ) -> Result<()> {
         todo!("M2")
     }
 
