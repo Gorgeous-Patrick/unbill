@@ -34,9 +34,9 @@ Neither step may be skipped. A function without a test is not considered impleme
 - **No production code without a prior failing test.** The only exceptions are: type definitions, `todo!()` stubs, and `mod` declarations.
 - **Tests live alongside the code they test** — in `#[cfg(test)]` modules at the bottom of the same file, or in a sibling `tests/` directory for integration tests.
 - **Test names describe behavior, not implementation.** Prefer `test_settlement_balances_to_zero` over `test_compute_settlement`.
+- **DESIGN.md always reflects the current intended design** — not history, not "we used to do X." When a decision changes, update the document to describe the new design and remove the old. Rationale for the *current* choice belongs inline; rationale for rejected paths does not.
 - **When the design changes, update the doc in the same commit as the code change.** Drift between design and implementation is worse than no doc at all.
-- **When a decision is overturned, keep the old reasoning** in a "Rejected alternatives" or "History" section. Future you will want to know why something was tried and abandoned.
-- **When a section says "Open question," the PR that resolves it should move the answer into the main body** and note the resolution.
+- **When a section says "Open question," the PR that resolves it should remove the question and fold the answer into the relevant section.**
 
 ### Structure of a crate-level `DESIGN.md`
 
@@ -184,13 +184,7 @@ unbill/
 | `unbill-cli` | A thin command-line frontend. Creates ledgers, adds bills, runs the sync daemon, exports/imports. Useful for dogfooding, automated testing, and users who prefer the terminal. | `unbill-core`. |
 | `unbill-tauri` | Thin Tauri backend. Exposes `unbill-core` as Tauri commands and events so the React UI can drive it. Contains no business logic. | `unbill-core`, `tauri`. |
 
-**Intentionally a single core crate (for now).** An earlier draft split the core into `unbill-doc`, `unbill-storage`, `unbill-net`, and `unbill-service` crates. That was premature. We will revisit splitting after these conditions are met:
-
-- The internal module boundaries inside `unbill-core` have stabilized over multiple releases.
-- There is a concrete reason to split, e.g. one layer needs different feature flags, a different MSRV, or to be published separately to crates.io.
-- Compilation times become a meaningful developer pain point.
-
-Until then, `unbill-core` is one crate with clean internal modules. Module boundaries are enforced by code review and the crate-level `DESIGN.md`, not by the crate boundary.
+**`unbill-core` is a single crate with clean internal modules.** Module boundaries are enforced by code review and the crate-level `DESIGN.md`, not by the crate boundary. Splitting into sub-crates is an option if there is a concrete reason (different feature flags, MSRV, crates.io publishing) or if compilation times become a meaningful developer pain point.
 
 ### 3.4 Internal modules of `unbill-core`
 
@@ -918,28 +912,13 @@ The `unbill/sync/v1` ALPN and the `Hello.protocol_version` field manage wire com
 
 ## 14. Open questions
 
-Living list. Each should be resolved in the appropriate module's `DESIGN.md` before that module is implemented.
+Living list of genuinely unresolved decisions. Each should be answered in the relevant module's `DESIGN.md` before that module is implemented, then removed from this list.
 
 1. **Lazy vs eager ledger loading at startup.** Load all on boot (simple, memory-hungry for many ledgers) or lazily (complex, necessary if users have hundreds of ledgers)?
-2. ~~**Invitation token storage.**~~ **Resolved:** Invitations are held in memory inside `UnbillService` (`HashMap<token, Invitation>`). They do not survive a restart — that is acceptable because the join requires Alice's device to be online anyway, and a restarted app simply generates a new token. No file needed. The CRDT records only the outcome (a new `Member`). See §6.3.
-4. **Multi-device onboarding.** How does Alice add her second device? Copy key file? QR code between her own devices? Design needs UX thinking.
-5. **Notification strategy on mobile.** iOS backgrounding kills long-lived connections. Do we need silent push, and if so, whose infrastructure?
-6. **Backup and restore.** The "user owns their data" promise implies losing a phone = losing ledgers (unless synced to another device). Should we offer explicit device backup to e.g. iCloud Drive?
-7. **Name.** "unbill" is a placeholder. Good candidates: `合账` / `Hezhang`, generated words like `Ledgo`, others. Decide before M5 packaging.
-
----
-
-## 15. History and rejected alternatives
-
-This section accrues entries as design evolves. Each entry records what was considered, what was chosen, and why.
-
-### 2026-04 — Initial design
-- **Core as a single crate vs many.** Chose single `unbill-core`. Splitting premature until module boundaries prove stable and there is concrete reason to split.
-- **CRDT library.** Chose Automerge over Yjs. Rationale: native Rust (Yjs is JS-first with bindings), JSON-like document model fits a ledger naturally, autosurgeon provides excellent ergonomics for Rust structs.
-- **Transport.** Chose Iroh over libp2p. Rationale: simpler API, built-in NAT traversal with relay fallback, free public relays, NodeId-as-identity.
-- **Persistence.** Initially chose SQLite; switched to a flat-file layout. Rationale: the data is mostly opaque blobs (Automerge binary), so SQL's structured query advantage is minimal. Flat files are pure Rust (`tokio::fs`), require no C compiler, are trivially inspectable and backupable, and crash safety is achieved via atomic rename rather than transactions. See §5.
-- **Sync state.** Initially planned to persist per-peer `automerge::sync::State` in a `sync/` subdirectory per ledger. Dropped: ledgers are small, peers are humans reconnecting infrequently, and the extra round-trip to negotiate missing changes is imperceptible. Removing sync state files eliminates a class of stale-state bugs and simplifies the storage layer.
-- **No central services.** Confirmed: no auth server, no backup server, no analytics. This is a hard constraint, not a budget constraint.
+2. **Multi-device onboarding.** How does Alice add her second device? Copy key file? QR code between her own devices? Design needs UX thinking.
+3. **Notification strategy on mobile.** iOS backgrounding kills long-lived connections. Do we need silent push, and if so, whose infrastructure?
+4. **Backup and restore.** The "user owns their data" promise implies losing a phone = losing ledgers (unless synced to another device). Should we offer explicit device backup to e.g. iCloud Drive?
+5. **Name.** "unbill" is a placeholder. Good candidates: `合账` / `Hezhang`, generated words like `Ledgo`, others. Decide before M5 packaging.
 
 ---
 
