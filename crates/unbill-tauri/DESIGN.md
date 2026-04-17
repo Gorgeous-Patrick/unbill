@@ -1,49 +1,29 @@
-# unbill-tauri — Design Document
+# unbill-tauri
 
-> Status: Stub (fill before M5)
+Thin Tauri 2 backend that exposes `UnbillService` as Tauri commands and forwards service events to the React frontend. Contains no business logic.
 
-## 1. Purpose
+## Command surface
 
-Thin Tauri 2 backend that exposes `UnbillService` as Tauri commands and forwards `ServiceEvent`s to the React frontend. Contains **no business logic**.
+One Tauri command per `UnbillService` public method. Rust methods are `snake_case`; Tauri's automatic transformation makes them `camelCase` in JavaScript.
 
-## 2. Public API sketch
+IDs (`ledger_id`, `bill_id`, `user_id`, `peer`) cross the Tauri boundary as ULID strings. The Rust side parses them back to typed values before calling into `UnbillService`.
 
-One `#[tauri::command]` per `UnbillService` public method. Naming convention: `snake_case` on the Rust side, `camelCase` in JS via Tauri's automatic transformation.
+## Events
 
-IDs (`ledger_id`, `bill_id`, `user_id`, `peer`) are passed as ULID strings across the Tauri boundary. The Rust side parses them back to `Ulid` / `NodeId` before passing to `UnbillService`.
+The backend emits named events to the frontend whenever service state changes:
 
-Events emitted to the frontend:
+- `unbill:ledger-updated { ledger_id }` — any change to a ledger's content.
+- `unbill:peer-connected { ledger_id, peer }` — a new sync peer appeared.
+- `unbill:peer-disconnected { ledger_id, peer }` — a sync peer dropped.
+- `unbill:sync-error { ledger_id, peer, error }` — a sync failure occurred.
 
-```
-unbill:ledger-updated   { ledger_id: string }   // ULID string
-unbill:peer-connected   { ledger_id: string, peer: string }  // peer = NodeId string
-unbill:peer-disconnected { ledger_id: string, peer: string }
-unbill:sync-error       { ledger_id: string, peer: string, error: string }
-```
+## Invariants
 
-## 3. Invariants
+- Commands never block the main thread. All `UnbillService` calls are async.
+- `UnbillService` is initialized once in Tauri's `setup` hook and shared via `tauri::State`.
+- Commands return a result where errors are human-readable strings. The JavaScript side handles them via try/catch on `invoke`.
 
-- Commands never block the main thread. All `UnbillService` calls are `async`.
-- The `UnbillService` is initialized once in `setup` and shared via `tauri::State`.
+## Open questions
 
-## 4. Failure modes
-
-- Tauri commands return `Result<T, String>` where the `String` is a human-readable error. The JS side handles these via try/catch on `invoke`.
-
-## 5. Dependencies
-
-| Crate | Why |
-|-------|-----|
-| `unbill-core` | all logic |
-| `tauri` | desktop app shell |
-| `tauri-plugin-shell` | shell integration for debug builds |
-
-## 6. Testing strategy
-
-- Manual testing of the full stack in M5.
-- Unit tests of individual command handlers are low value; focus testing in `unbill-core`.
-
-## 7. Open questions
-
-- Mobile (iOS, Android): Tauri 2 supports it; defer to post-M5.
-- Auto-updater: Tauri has a built-in updater. Opt-in only, per telemetry policy (DESIGN.md §10.3).
+- Mobile (iOS, Android): Tauri 2 supports it; deferred to post-M5.
+- Auto-updater: Tauri has a built-in updater; opt-in only, per the telemetry policy in the root DESIGN.md.

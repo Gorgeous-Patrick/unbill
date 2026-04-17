@@ -1,59 +1,31 @@
-# unbill-desktop — Design Document
+# unbill-desktop
 
-> Status: Stub (fill before M5)
+The React frontend served inside the Tauri webview. Responsible for all user-visible UI. Communicates with the Rust backend exclusively via Tauri's `invoke` and event listeners.
 
-## 1. Purpose
+## Views
 
-The React frontend served inside the Tauri webview. Responsible for all user-visible UI. Communicates with the Rust backend exclusively via `@tauri-apps/api` `invoke` calls and event listeners.
+- **Ledger list** — shows all ledgers; the app's entry point.
+- **Ledger view** — bills, members, and settlement summary for a selected ledger.
+- **Add bill form** — payer, amount, description, and share-weight picker (equal or custom weights).
+- **Settlement view** — who owes whom and the minimum set of transactions.
 
-## 2. Public API sketch
+## Data flow
 
-No external API. Internal structure:
+All data fetching goes through a single typed API module wrapping `invoke`. Events from the backend (ledger updated, peer connected) invalidate TanStack Query caches, triggering re-fetches. The frontend never holds stale data for long.
 
-```
-src/
-├── main.tsx            # React root, QueryClientProvider
-├── App.tsx             # top-level route / layout
-├── hooks/
-│   └── useUnbillEvent.ts   # subscribe to unbill:* Tauri events, invalidate TanStack Query caches
-├── api/
-│   └── unbill.ts       # typed wrappers around invoke("command_name")
-├── components/
-│   ├── LedgerList/
-│   ├── LedgerView/
-│   ├── AddBillForm/    # includes share-weight picker (equal / custom weights)
-│   └── SettlementView/
-└── lib/
-    └── format.ts       # currency formatting, date helpers
-```
+## Invariants
 
-## 3. Invariants
+- The frontend never computes business logic — no settlement math, no amendment projection. It displays what the backend returns.
+- All backend calls go through the typed API module. No raw `invoke` calls elsewhere.
+- IDs are treated as opaque strings on the JavaScript side. The frontend does not parse or generate ULIDs.
 
-- The frontend never computes business logic (settlement, amendment projection). It displays what the backend returns.
-- All backend calls go through `src/api/unbill.ts`; no raw `invoke` elsewhere.
-- IDs are treated as opaque strings on the JS side (ULID format, but the frontend does not parse them).
-
-## 4. Failure modes
+## Failure modes
 
 - Failed `invoke` calls surface as toast notifications.
-- Stale data is handled by TanStack Query's cache invalidation on `ServiceEvent`s.
+- Stale data is handled by TanStack Query cache invalidation on service events.
 
-## 5. Dependencies
-
-| Package | Why |
-|---------|-----|
-| `@tauri-apps/api` | bridge to Rust backend |
-| `@tanstack/react-query` | server-state cache and data fetching |
-| `tailwindcss` | utility-first styling |
-| shadcn/ui | component primitives (added as needed at M5) |
-
-## 6. Testing strategy
-
-- Manual testing in M5.
-- Component tests with Vitest + Testing Library for complex UI logic (e.g., `AddBillForm` share-weight picker).
-
-## 7. Open questions
+## Open questions
 
 - Routing: single-page with React state, or React Router? Decide at M5 based on actual screen count.
-- Theming: system dark/light mode support via Tailwind's `dark:` variants.
-- i18n: deferred post-M5.
+- Dark/light mode via Tailwind's `dark:` variants.
+- i18n: deferred to post-M5.
