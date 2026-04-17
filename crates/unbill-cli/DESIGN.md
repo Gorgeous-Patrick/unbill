@@ -1,6 +1,6 @@
 # unbill-cli — Design Document
 
-> Status: Stub (fill before M2)
+> Status: M0 complete (CLI skeleton + clap subcommands defined). Implementation begins at M2.
 
 ## 1. Purpose
 
@@ -12,14 +12,27 @@ No library API. Binary only: `unbill <subcommand>`.
 
 ```
 unbill init
-unbill ledger create|list|show|export|import|delete
-unbill bill add|list|amend|delete|restore
-unbill member list|invite|join
-unbill sync daemon|once|status
-unbill settlement show
+unbill ledger create <name> <currency>
+unbill ledger list
+unbill ledger show <ledger_id>
+unbill ledger export <ledger_id> <output>
+unbill ledger import <file>
+unbill ledger delete <ledger_id>
+unbill bill add
+unbill bill list <ledger_id>
+unbill bill amend <ledger_id> <bill_id>
+unbill bill delete <ledger_id> <bill_id>
+unbill bill restore <ledger_id> <bill_id>
+unbill member list <ledger_id>
+unbill member invite <ledger_id>
+unbill member join <url>
+unbill sync daemon
+unbill sync once <ledger_id>
+unbill sync status
+unbill settlement <ledger_id>
 ```
 
-Most commands accept `--json` for machine-readable output (used in e2e tests).
+`<ledger_id>` and `<bill_id>` are ULID strings on the command line. Most commands accept `--json` for machine-readable output (used in e2e tests).
 
 ## 3. Invariants
 

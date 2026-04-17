@@ -21,7 +21,7 @@ src/
 ├── components/
 │   ├── LedgerList/
 │   ├── LedgerView/
-│   ├── AddBillForm/
+│   ├── AddBillForm/    # includes share-weight picker (equal / custom weights)
 │   └── SettlementView/
 └── lib/
     └── format.ts       # currency formatting, date helpers
@@ -29,8 +29,9 @@ src/
 
 ## 3. Invariants
 
-- The frontend never computes business logic (settlement, amendment application). It displays what the backend returns.
+- The frontend never computes business logic (settlement, amendment projection). It displays what the backend returns.
 - All backend calls go through `src/api/unbill.ts`; no raw `invoke` elsewhere.
+- IDs are treated as opaque strings on the JS side (ULID format, but the frontend does not parse them).
 
 ## 4. Failure modes
 
@@ -49,7 +50,7 @@ src/
 ## 6. Testing strategy
 
 - Manual testing in M5.
-- Component tests with Vitest + Testing Library for complex UI logic (e.g., AddBillForm split-method picker).
+- Component tests with Vitest + Testing Library for complex UI logic (e.g., `AddBillForm` share-weight picker).
 
 ## 7. Open questions
 

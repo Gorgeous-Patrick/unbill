@@ -10,12 +10,14 @@ Thin Tauri 2 backend that exposes `UnbillService` as Tauri commands and forwards
 
 One `#[tauri::command]` per `UnbillService` public method. Naming convention: `snake_case` on the Rust side, `camelCase` in JS via Tauri's automatic transformation.
 
+IDs (`ledger_id`, `bill_id`, `user_id`, `peer`) are passed as ULID strings across the Tauri boundary. The Rust side parses them back to `Ulid` / `NodeId` before passing to `UnbillService`.
+
 Events emitted to the frontend:
 
 ```
-unbill:ledger-updated   { ledger_id: string }
-unbill:peer-connected   { ledger_id: string, peer: string }
-unbill:peer-disconnected
+unbill:ledger-updated   { ledger_id: string }   // ULID string
+unbill:peer-connected   { ledger_id: string, peer: string }  // peer = NodeId string
+unbill:peer-disconnected { ledger_id: string, peer: string }
 unbill:sync-error       { ledger_id: string, peer: string, error: string }
 ```
 

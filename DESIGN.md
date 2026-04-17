@@ -241,7 +241,7 @@ Why 1 ledger = 1 doc (not one giant doc for all ledgers):
 - **Access control granularity.** Different ledgers have different members. Sync protocol only ships ops to members of that ledger.
 - **Blast radius.** A bug or corruption in one ledger doesn't affect others.
 - **Performance.** Large history doesn't slow down unrelated ledgers.
-- **Deletion.** Dropping a ledger is `DELETE FROM ledgers WHERE id = ?`. Clean.
+- **Deletion.** Dropping a ledger is removing a single directory. Clean.
 
 ### 4.2 Ledger schema
 
@@ -250,73 +250,84 @@ Using `autosurgeon` for ergonomic CRDT ↔ Rust struct mapping. Schema is intent
 ```rust
 #[derive(Clone, Reconcile, Hydrate)]
 pub struct Ledger {
-    pub ledger_id: String,      // ULID, generated at creation, never changes
+    pub ledger_id: Ulid,        // generated at creation, never changes
+    pub schema_version: u32,
     pub name: String,           // human-readable, editable
-    pub currency: String,       // ISO 4217 code, e.g. "USD", "CNY"
-    pub created_at: i64,        // unix millis
+    pub currency: Currency,     // ISO 4217 code, e.g. Currency::from_code("USD")
+    pub created_at: Timestamp,  // unix millis newtype
     pub members: Vec<Member>,
     pub bills: Vec<Bill>,
-    // Invitations are NOT stored here — they live in device-local storage. See §6.3.
+    // Invitations are NOT part of the CRDT. They live in UnbillService memory. See §6.3.
 }
 
 #[derive(Clone, Reconcile, Hydrate)]
 pub struct Member {
-    pub user_id: String,        // ULID; stable across devices
+    pub user_id: Ulid,          // stable across devices
     pub display_name: String,
     pub devices: Vec<Device>,   // all NodeIds belonging to this user
-    pub added_at: i64,
-    pub added_by: String,       // user_id of inviter
+    pub added_at: Timestamp,
+    pub added_by: Ulid,         // user_id of inviter
     pub removed: bool,          // tombstone (never true -> false in v1)
 }
 
 #[derive(Clone, Reconcile, Hydrate)]
 pub struct Device {
-    pub node_id: String,        // Iroh NodeId as hex
+    pub node_id: NodeId,        // iroh Ed25519 public key
     pub label: String,          // e.g. "Alice's iPhone"
-    pub added_at: i64,
+    pub added_at: Timestamp,
 }
 
 #[derive(Clone, Reconcile, Hydrate)]
 pub struct Bill {
-    pub id: String,             // ULID
-    pub payer_user_id: String,
+    pub id: Ulid,
+    pub payer_user_id: Ulid,
     pub amount_cents: i64,      // always an integer; currency implicit from ledger
     pub description: String,
     /// Who pays how much, as relative share weights.
     /// Equal split = everyone gets 1 share. Participants are always derivable from this field.
     pub shares: Vec<Share>,
-    pub created_at: i64,
-    pub created_by_device: String,  // NodeId; for audit/debug
+    pub created_at: Timestamp,
+    pub created_by_device: NodeId,  // for audit/debug
     pub deleted: bool,          // tombstone
     pub amendments: Vec<Amendment>,
 }
 
 #[derive(Clone, Reconcile, Hydrate)]
 pub struct Share {
-    pub user_id: String,
+    pub user_id: Ulid,
     pub shares: u32,            // relative weight; equal split = 1 for everyone
 }
 
 #[derive(Clone, Reconcile, Hydrate)]
 pub struct Amendment {
-    pub id: String,             // ULID
+    pub id: Ulid,
     pub new_amount_cents: Option<i64>,
     pub new_description: Option<String>,
     pub new_shares: Option<Vec<Share>>,  // replaces entire shares list
-    pub author_user_id: String,
-    pub created_at: i64,
+    pub author_user_id: Ulid,
+    pub created_at: Timestamp,
     pub reason: Option<String>,
 }
 
 // Invitation is NOT persisted. It lives in UnbillService memory only. See §6.3.
 pub struct Invitation {
-    pub token: String,          // random 32 bytes, hex-encoded
-    pub ledger_id: String,
-    pub created_by_user_id: String,
-    pub created_at: i64,
-    pub expires_at: i64,
+    pub token: InviteToken,     // 32 OS-random bytes, hex-encoded; generated via OsRng
+    pub ledger_id: Ulid,
+    pub created_by_user_id: Ulid,
+    pub created_at: Timestamp,
+    pub expires_at: Timestamp,
 }
 ```
+
+**Dedicated domain types** (all in `unbill_core::model`):
+
+| Type | Wraps | Stored as | Purpose |
+|------|-------|-----------|---------|
+| `Ulid` | `ulid::Ulid` | 26-char string | Entity identifiers |
+| `Timestamp` | `i64` | i64 (unix millis) | All datetime fields |
+| `Currency` | `iso_currency::Currency` | 3-char ISO 4217 string | Ledger currency |
+| `NodeId` | `iroh::NodeId` | iroh base32-hex string | Device identity |
+| `InviteToken` | `String` | — (in-memory only) | Join invitation secret |
 
 ### 4.3 Invariants
 
@@ -335,19 +346,19 @@ The UI never shows raw `Bill`s directly; it shows **`EffectiveBill`**, computed 
 
 ```rust
 pub struct EffectiveBill {
-    pub id: String,
-    pub payer_user_id: String,
+    pub id: Ulid,
+    pub payer_user_id: Ulid,
     pub amount_cents: i64,
     pub description: String,
     pub shares: Vec<Share>,
     pub was_amended: bool,
     pub is_deleted: bool,
-    pub last_modified_at: i64,
+    pub last_modified_at: Timestamp,
     pub history: Vec<AmendmentSummary>,  // for "show history" UI
 }
 ```
 
-`EffectiveBill::from(bill)` applies amendments in `created_at` order; later amendments overwrite earlier ones at the field level. Ties in `created_at` are broken by `amendment.id` (lexical). Participants are always derivable as `shares.iter().map(|s| &s.user_id)`.
+`EffectiveBill::from(bill)` applies amendments sorted by `created_at` ascending; ties broken by `amendment.id` ascending (`Ulid` `Ord` is numerically consistent with creation time). Later amendments overwrite earlier ones at the field level. Participants are always derivable via `effective_bill.participants()` → `Vec<Ulid>`.
 
 ### 4.5 Why there is only one split mode (Shares)
 
