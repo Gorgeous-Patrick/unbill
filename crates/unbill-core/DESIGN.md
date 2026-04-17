@@ -93,6 +93,7 @@ Callers (CLI, Tauri) are expected to map these to user-facing messages.
 - Sync protocol tests over in-process channels (no real Iroh endpoints).
 - Settlement property tests: total owed = total paid, ≤ n-1 transactions.
 - Storage round-trip tests: save → reload → assert identical doc bytes; compact → reload → assert identical.
+- Sync tests use in-process head exchange (no persisted sync state); each reconnect re-negotiates from current heads.
 
 ## 7. Open questions
 

@@ -37,14 +37,6 @@ impl LedgerStore for FsStore {
         todo!("M2")
     }
 
-    async fn load_sync_state(&self, _ledger_id: &str, _peer: &str) -> Result<Option<Vec<u8>>> {
-        todo!("M2")
-    }
-
-    async fn save_sync_state(&self, _ledger_id: &str, _peer: &str, _bytes: &[u8]) -> Result<()> {
-        todo!("M2")
-    }
-
     async fn load_device_meta(&self, _key: &str) -> Result<Option<Vec<u8>>> {
         todo!("M2")
     }

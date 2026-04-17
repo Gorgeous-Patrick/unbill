@@ -19,7 +19,6 @@ pub struct InMemoryStore {
 #[derive(Default)]
 struct Inner {
     ledgers: HashMap<String, StoredLedger>,
-    sync_states: HashMap<(String, String), Vec<u8>>,
     device_meta: HashMap<String, Vec<u8>>,
 }
 
@@ -75,22 +74,6 @@ impl LedgerStore for InMemoryStore {
     async fn delete_ledger(&self, ledger_id: &str) -> Result<()> {
         let mut inner = self._inner.lock().unwrap();
         inner.ledgers.remove(ledger_id);
-        Ok(())
-    }
-
-    async fn load_sync_state(&self, ledger_id: &str, peer: &str) -> Result<Option<Vec<u8>>> {
-        let inner = self._inner.lock().unwrap();
-        Ok(inner
-            .sync_states
-            .get(&(ledger_id.to_string(), peer.to_string()))
-            .cloned())
-    }
-
-    async fn save_sync_state(&self, ledger_id: &str, peer: &str, bytes: &[u8]) -> Result<()> {
-        let mut inner = self._inner.lock().unwrap();
-        inner
-            .sync_states
-            .insert((ledger_id.to_string(), peer.to_string()), bytes.to_vec());
         Ok(())
     }
 

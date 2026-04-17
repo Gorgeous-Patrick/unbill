@@ -23,9 +23,6 @@ pub trait LedgerStore: Send + Sync {
     ) -> Result<()>;
     async fn delete_ledger(&self, ledger_id: &str) -> Result<()>;
 
-    async fn load_sync_state(&self, ledger_id: &str, peer: &str) -> Result<Option<Vec<u8>>>;
-    async fn save_sync_state(&self, ledger_id: &str, peer: &str, bytes: &[u8]) -> Result<()>;
-
     async fn load_device_meta(&self, key: &str) -> Result<Option<Vec<u8>>>;
     async fn save_device_meta(&self, key: &str, value: &[u8]) -> Result<()>;
 }

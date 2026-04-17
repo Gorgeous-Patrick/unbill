@@ -420,13 +420,12 @@ One directory per data directory. No C dependencies, no schema migrations — ju
       snapshot_heads.json # JSON array of ChangeHash strings at snapshot time
       changes.bin         # append-only incremental changes since last snapshot
       meta.json           # denormalised: name, currency, created_at, updated_at
-      sync/
-        <peer_node_id>.bin  # automerge::sync::State::encode() per peer
 ```
 
 - **`snapshot.bin`** and **`changes.bin`** together constitute the full ledger state.
 - **`meta.json`** is a cache derived from the CRDT doc, written on every save. It lets `list_ledgers()` answer without loading any Automerge bytes.
-- **`sync/`** holds per-peer sync state used by the Automerge sync protocol.
+
+No per-peer sync state is persisted. On reconnect, each side exchanges its current change heads and sends only what the other is missing — one extra round-trip, imperceptible at human scale, and far simpler than managing per-peer state files.
 
 ### 5.3 Snapshot + incremental strategy
 
@@ -457,9 +456,6 @@ pub trait LedgerStore: Send + Sync {
     async fn append_incremental(&self, ledger_id: &str, bytes: &[u8]) -> Result<()>;
     async fn compact(&self, ledger_id: &str, new_snapshot: &[u8], heads: &[ChangeHash]) -> Result<()>;
     async fn delete_ledger(&self, ledger_id: &str) -> Result<()>;
-
-    async fn load_sync_state(&self, ledger_id: &str, peer: &str) -> Result<Option<Vec<u8>>>;
-    async fn save_sync_state(&self, ledger_id: &str, peer: &str, bytes: &[u8]) -> Result<()>;
 
     async fn load_device_meta(&self, key: &str) -> Result<Option<Vec<u8>>>;
     async fn save_device_meta(&self, key: &str, value: &[u8]) -> Result<()>;
@@ -942,6 +938,7 @@ This section accrues entries as design evolves. Each entry records what was cons
 - **CRDT library.** Chose Automerge over Yjs. Rationale: native Rust (Yjs is JS-first with bindings), JSON-like document model fits a ledger naturally, autosurgeon provides excellent ergonomics for Rust structs.
 - **Transport.** Chose Iroh over libp2p. Rationale: simpler API, built-in NAT traversal with relay fallback, free public relays, NodeId-as-identity.
 - **Persistence.** Initially chose SQLite; switched to a flat-file layout. Rationale: the data is mostly opaque blobs (Automerge binary), so SQL's structured query advantage is minimal. Flat files are pure Rust (`tokio::fs`), require no C compiler, are trivially inspectable and backupable, and crash safety is achieved via atomic rename rather than transactions. See §5.
+- **Sync state.** Initially planned to persist per-peer `automerge::sync::State` in a `sync/` subdirectory per ledger. Dropped: ledgers are small, peers are humans reconnecting infrequently, and the extra round-trip to negotiate missing changes is imperceptible. Removing sync state files eliminates a class of stale-state bugs and simplifies the storage layer.
 - **No central services.** Confirmed: no auth server, no backup server, no analytics. This is a hard constraint, not a budget constraint.
 
 ---
