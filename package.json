@@ -1,0 +1,15 @@
+{
+  "name": "unbill",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "pnpm --filter unbill-desktop dev",
+    "build": "pnpm --filter unbill-desktop build",
+    "lint": "pnpm --filter unbill-desktop lint",
+    "typecheck": "pnpm --filter unbill-desktop typecheck"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  }
+}

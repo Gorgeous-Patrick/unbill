@@ -1,0 +1,27 @@
+# Rust
+/target/
+Cargo.lock
+
+# Node / pnpm
+node_modules/
+apps/*/node_modules/
+apps/*/dist/
+
+# Tauri
+crates/unbill-tauri/target/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local unbill data (never commit device keys or databases)
+*.db
+*.db-shm
+*.db-wal
+device_key.bin

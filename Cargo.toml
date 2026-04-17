@@ -1,0 +1,51 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/unbill-core",
+    "crates/unbill-cli",
+    "crates/unbill-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/patrickli/unbill"
+
+[workspace.dependencies]
+# CRDT
+automerge = "0.8"
+autosurgeon = "0.11"
+
+# Networking
+iroh = "0.90"
+
+# Async
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+
+# Storage
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ciborium = "0.2"
+
+# IDs
+ulid = "1"
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Utilities
+dashmap = "6"
+dirs = "5"
+
+# Testing
+proptest = "1"

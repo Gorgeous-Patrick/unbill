@@ -4,9 +4,16 @@
 > Last updated: 2026-04-17
 > Project codename: **unbill** (tentative; subject to renaming)
 
-## 0. Preamble: Design-First Philosophy
+## 0. Preamble: Design-First, Test-First Philosophy
 
-**This project is design-first.** Every non-trivial module — starting with each crate in the Cargo workspace, and later including each significant submodule within `unbill-core` — **must begin with a `DESIGN.md`** in its own directory before any production code is written.
+**This project is design-first and test-first.** The full order of work for any non-trivial piece of functionality is:
+
+1. **Write or update `DESIGN.md`** — before any production code.
+2. **Write failing tests** — before any production implementation.
+3. **Write the implementation** — until the tests pass.
+4. **Refactor** — with the tests as a safety net.
+
+Neither step may be skipped. A function without a test is not considered implemented. A test without a prior design is a symptom of design drift.
 
 ### Why design-first
 
@@ -14,6 +21,22 @@
 2. **Makes trade-offs explicit.** Every design decision here has alternatives. Writing them down prevents "we did it this way because the code already did it this way" drift.
 3. **Aligns with the project's academic/research potential.** This software is plausibly a basis for systems research on P2P collaboration. The design docs double as research notes.
 4. **Helps a single developer stay sane.** The author is a PhD student with many competing priorities. A written design lets you pick the project back up after weeks away without rebuilding context from scratch.
+
+### Why test-first
+
+1. **Tests are the executable specification.** Writing the test before the implementation forces you to articulate what "correct" means before you are anchored to any particular approach.
+2. **Prevents `todo!()` rot.** Without a failing test demanding completion, stub functions silently stay stubs forever.
+3. **Makes refactoring safe.** CRDT and sync code will be refactored often as understanding deepens. Tests make this safe.
+4. **Catches invariant violations immediately.** Financial invariants (amount_cents ≥ 0, settlement balances to zero, amendment ordering is deterministic) should fail loudly at the unit test level, not in production.
+
+### Rules
+
+- **No production code without a prior failing test.** The only exceptions are: type definitions, `todo!()` stubs, and `mod` declarations.
+- **Tests live alongside the code they test** — in `#[cfg(test)]` modules at the bottom of the same file, or in a sibling `tests/` directory for integration tests.
+- **Test names describe behavior, not implementation.** Prefer `test_settlement_balances_to_zero` over `test_compute_settlement`.
+- **When the design changes, update the doc in the same commit as the code change.** Drift between design and implementation is worse than no doc at all.
+- **When a decision is overturned, keep the old reasoning** in a "Rejected alternatives" or "History" section. Future you will want to know why something was tried and abandoned.
+- **When a section says "Open question," the PR that resolves it should move the answer into the main body** and note the resolution.
 
 ### Structure of a crate-level `DESIGN.md`
 
@@ -27,13 +50,7 @@ Each crate's `DESIGN.md` **must** contain the following sections:
 6. **Testing strategy**: how correctness will be verified, especially for concurrent / distributed behavior.
 7. **Open questions**: known unknowns, deferred decisions, things to revisit.
 
-A `DESIGN.md` does not need to be long. Two pages is often enough. But it must exist before `src/lib.rs` gets non-trivial code.
-
-### Rules for editing `DESIGN.md`
-
-- When the design changes, update the doc in the **same commit** as the code change. Drift between design and implementation is worse than no doc at all.
-- When a decision is overturned, **keep the old reasoning** in a "Rejected alternatives" or "History" section. Future you will want to know why something was tried and abandoned.
-- When a section says "Open question," the PR that resolves it should move the answer into the main body and note the resolution.
+A `DESIGN.md` does not need to be long. Two pages is often enough. But it must exist before `src/lib.rs` gets non-trivial code, and it must be accompanied by at least a skeleton of tests before the implementation begins.
 
 ---
 
@@ -707,16 +724,30 @@ For split methods with awkward divisions (e.g., $10 split 3 ways), we assign the
 
 ## 9. Testing strategy
 
+**Tests are written before implementation.** See §0 for the rationale and rules.
+
 ### 9.1 Unit tests
 
-Every module in `unbill-core` has unit tests. Target: no reasonable function ships untested.
+Every module in `unbill-core` has unit tests written *before* or *alongside* the implementation — never after. Target: no reasonable function ships untested.
 
 Key fixtures:
 
 - `InMemoryStore` for storage-dependent tests.
 - A mock Iroh endpoint (or direct in-process channel) for sync protocol tests — we do not want tests that depend on real networking.
 
-### 9.2 CRDT behavior tests
+Tests live in `#[cfg(test)]` modules at the bottom of the file they test. This co-location keeps tests visible and ensures they are updated when the implementation changes.
+
+### 9.2 What gets tested first (priority order)
+
+Pure functions with no I/O are implemented and tested first, because they have no dependencies and their correctness is easy to specify:
+
+1. **Settlement algorithm** (`settlement/mod.rs`) — total balances to zero; ≤ n-1 transactions; correct creditor/debtor matching.
+2. **Effective bill projection** (`model/amendment.rs`) — amendments applied in deterministic order; field precedence rules; deleted bills remain visible as tombstones.
+3. **`LedgerDoc` operations** (`doc/`) — add bill, amend bill, merge two diverged docs and assert convergence.
+4. **Storage round-trips** (`storage/`) — save + load yields identical doc bytes; compaction is transparent.
+5. **Sync protocol** (`net/`) — in-process channel simulations; no real Iroh endpoints.
+
+### 9.3 CRDT behavior tests
 
 The most important correctness property: **for all possible orderings of operations, all devices converge to the same state.** We test this by:
 
@@ -727,7 +758,7 @@ The most important correctness property: **for all possible orderings of operati
 
 Use `proptest` to fuzz the operation sequences.
 
-### 9.3 Sync protocol tests
+### 9.4 Sync protocol tests
 
 With two `LedgerDoc`s and in-process channels simulating the network:
 
@@ -735,7 +766,7 @@ With two `LedgerDoc`s and in-process channels simulating the network:
 - Partition + heal (send arbitrary subset of messages, then all; assert convergence).
 - State loss resilience (discard one side's `SyncState`; assert convergence still happens, just with more traffic).
 
-### 9.4 CLI end-to-end tests
+### 9.5 CLI end-to-end tests
 
 Shell scripts under `tests/e2e/` that:
 
@@ -745,7 +776,7 @@ Shell scripts under `tests/e2e/` that:
 
 These are the closest thing we have to "did this all actually work end to end" tests, and they run in CI.
 
-### 9.5 Property-based tests
+### 9.6 Property-based tests
 
 Heavy use of `proptest` for:
 
@@ -753,7 +784,7 @@ Heavy use of `proptest` for:
 - Amendment application (idempotence, associativity, commutativity where expected).
 - Serialization round-trips (`save` + `load` yields equivalent doc).
 
-### 9.6 What we do not test (yet)
+### 9.7 What we do not test (yet)
 
 - Real network flakiness. Iroh is assumed to work; we don't exercise its failure modes in our tests.
 - GUI behavior. Manual testing only until something proves tricky.

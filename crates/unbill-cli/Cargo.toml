@@ -1,0 +1,18 @@
+[package]
+name = "unbill-cli"
+description = "Command-line frontend for unbill."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "unbill"
+path = "src/main.rs"
+
+[dependencies]
+unbill-core = { path = "../unbill-core" }
+tokio.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap = { version = "4", features = ["derive"] }
