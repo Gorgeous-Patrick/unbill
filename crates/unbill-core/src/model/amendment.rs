@@ -7,7 +7,9 @@ pub struct Amendment {
     pub id: String,
     pub new_amount_cents: Option<i64>,
     pub new_description: Option<String>,
-    pub new_participants: Option<Vec<String>>,
+    /// To change participants, supply a new `new_split_method` — participants
+    /// are always embedded in the `SplitMethod` variant. There is no separate
+    /// `new_participants` field to avoid ambiguity between the two.
     pub new_split_method: Option<SplitMethod>,
     pub author_user_id: String,
     pub created_at: i64,
@@ -19,7 +21,6 @@ pub struct Amendment {
 pub struct BillAmendment {
     pub new_amount_cents: Option<i64>,
     pub new_description: Option<String>,
-    pub new_participants: Option<Vec<String>>,
     pub new_split_method: Option<SplitMethod>,
     pub author_user_id: String,
     pub reason: Option<String>,
@@ -54,12 +55,21 @@ pub struct AmendmentSummary {
     pub reason: Option<String>,
 }
 
+/// Derive the participant list from a `SplitMethod`.
+/// All variants are self-contained — no external participant list needed.
+pub fn participants_from_split(method: &SplitMethod) -> Vec<String> {
+    match method {
+        SplitMethod::Equal(users) => users.clone(),
+        SplitMethod::Shares(shares) => shares.iter().map(|s| s.user_id.clone()).collect(),
+        SplitMethod::Exact(exacts) => exacts.iter().map(|e| e.user_id.clone()).collect(),
+    }
+}
+
 impl EffectiveBill {
     /// Project a `Bill` (with its amendment log) into the effective view.
     pub fn from(bill: &Bill) -> Self {
         let mut amount_cents = bill.amount_cents;
         let mut description = bill.description.clone();
-        let mut participants = bill.participant_user_ids.clone();
         let mut split_method = bill.split_method.clone();
         let mut is_deleted = bill.deleted;
         let mut last_modified_at = bill.created_at;
@@ -83,9 +93,6 @@ impl EffectiveBill {
             if let Some(ref v) = amend.new_description {
                 description = v.clone();
             }
-            if let Some(ref v) = amend.new_participants {
-                participants = v.clone();
-            }
             if let Some(ref v) = amend.new_split_method {
                 split_method = v.clone();
             }
@@ -103,6 +110,10 @@ impl EffectiveBill {
                 reason: amend.reason.clone(),
             });
         }
+
+        // Derive participants from the (possibly amended) split method — it is the
+        // single source of truth. EffectiveBill.participants is a convenience view.
+        let participants = participants_from_split(&split_method);
 
         EffectiveBill {
             id: bill.id.clone(),
@@ -131,7 +142,7 @@ mod tests {
             amount_cents: 3000,
             description: "Dinner".into(),
             participant_user_ids: vec!["alice".into(), "bob".into()],
-            split_method: SplitMethod::Equal,
+            split_method: SplitMethod::Equal(vec!["alice".into(), "bob".into()]),
             created_at: 1000,
             created_by_device: "device-a".into(),
             deleted: false,
@@ -144,7 +155,6 @@ mod tests {
             id: id.into(),
             new_amount_cents: None,
             new_description: None,
-            new_participants: None,
             new_split_method: None,
             author_user_id: "alice".into(),
             created_at: ts,
@@ -225,7 +235,7 @@ mod tests {
         assert_eq!(eff.amount_cents, 3000);
         // description updated
         assert_eq!(eff.description, "Updated description");
-        // participants unchanged
+        // participants unchanged (derived from the unchanged Equal split method)
         assert_eq!(eff.participants, vec!["alice", "bob"]);
     }
 

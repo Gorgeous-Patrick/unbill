@@ -292,7 +292,7 @@ pub struct Bill {
 
 #[derive(Clone, Reconcile, Hydrate)]
 pub enum SplitMethod {
-    Equal,
+    Equal(Vec<String>),         // user_ids who split equally; explicit so new members are never charged implicitly
     Shares(Vec<Share>),         // proportional: [{user_id, shares: u32}, ...]
     Exact(Vec<ExactAmount>),    // exact cents per user
 }
@@ -351,7 +351,27 @@ pub struct EffectiveBill {
 
 `EffectiveBill::from(bill)` applies amendments in `created_at` order; later amendments overwrite earlier ones at the field level. Ties in `created_at` are broken by `amendment.id` (lexical).
 
-### 4.5 Why amendments (and why append-only)
+### 4.5 Why `SplitMethod::Equal` carries an explicit user list
+
+All three `SplitMethod` variants are self-contained: they embed the exact set of users they apply to. `Equal(Vec<String>)` is therefore explicit rather than implicit.
+
+If `Equal` were a unit variant with no payload, it would have to inherit its participant list from `Bill.participant_user_ids`. This creates a hidden coupling: adding a new person to the group after the bill was created, or applying an amendment that changes participants without touching the split method, could silently change who `Equal` charges. With `Equal(Vec<String>)`, the list is frozen at the time the method is set — new members are never charged without an explicit amendment.
+
+As a consequence, `participant_user_ids` is always derivable from the `SplitMethod`:
+
+```rust
+fn participants(method: &SplitMethod) -> Vec<&str> {
+    match method {
+        SplitMethod::Equal(users)   => users.iter().map(|s| s.as_str()).collect(),
+        SplitMethod::Shares(shares) => shares.iter().map(|s| s.user_id.as_str()).collect(),
+        SplitMethod::Exact(exacts)  => exacts.iter().map(|e| e.user_id.as_str()).collect(),
+    }
+}
+```
+
+`Bill.participant_user_ids` is kept in the schema for quick access and backwards compatibility, but it must always equal the list derivable from `split_method`. This invariant is enforced at the service layer.
+
+### 4.6 Why amendments (and why append-only)
 
 This is the most subtle design decision in the project. It deserves a full explanation so future-us doesn't "simplify" it without understanding.
 
@@ -369,7 +389,7 @@ The amendment model solves three problems simultaneously:
 
 **Why not fully immutable bills (edit = delete + recreate)?** Because external references (settlements, screenshots, conversation history: "hey, about bill X...") would break. And a "modified" bill loses its identity with the original, which is exactly what users want preserved.
 
-### 4.6 Rejected alternatives
+### 4.7 Rejected alternatives
 
 - **Single global document containing all ledgers.** Rejected: access control becomes impossible; sync fanout is wrong (Bob in the roommate group doesn't need to hear about my family ledger's changes); deletion of a ledger means retaining garbage forever.
 - **One Automerge doc per bill.** Rejected: settlement requires aggregating bills; no cross-document queries; sync state per document explodes; atomicity of "add bill" and "amend bill" is lost.

@@ -18,8 +18,13 @@ pub struct Bill {
 
 #[derive(Clone, Debug, Reconcile, Hydrate)]
 pub enum SplitMethod {
-    Equal,
+    /// Split equally among an explicit list of user IDs.
+    /// The list is frozen at creation / amendment time — new members are never
+    /// charged implicitly. See DESIGN.md §4.5.
+    Equal(Vec<String>),
+    /// Proportional split by share weights.
     Shares(Vec<Share>),
+    /// Exact cent amounts per user.
     Exact(Vec<ExactAmount>),
 }
 

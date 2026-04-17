@@ -95,16 +95,15 @@ pub fn compute(members: &[Member], bills: &[EffectiveBill]) -> Settlement {
 /// Compute the per-participant share amounts for a bill, in cents.
 /// Rounding remainder is assigned to the earliest participants.
 pub fn split_amounts(bill: &EffectiveBill) -> Vec<(String, i64)> {
-    let participants = &bill.participants;
-    if participants.is_empty() {
-        return vec![];
-    }
     match &bill.split_method {
-        SplitMethod::Equal => {
-            let n = participants.len() as i64;
+        SplitMethod::Equal(users) => {
+            if users.is_empty() {
+                return vec![];
+            }
+            let n = users.len() as i64;
             let base = bill.amount_cents / n;
             let remainder = bill.amount_cents % n;
-            participants
+            users
                 .iter()
                 .enumerate()
                 .map(|(i, uid)| {
@@ -116,7 +115,7 @@ pub fn split_amounts(bill: &EffectiveBill) -> Vec<(String, i64)> {
         SplitMethod::Shares(shares) => {
             let total_shares: u32 = shares.iter().map(|s| s.shares).sum();
             if total_shares == 0 {
-                return participants.iter().map(|id| (id.clone(), 0)).collect();
+                return shares.iter().map(|s| (s.user_id.clone(), 0)).collect();
             }
             let mut amounts: Vec<(String, i64)> = shares
                 .iter()
@@ -166,13 +165,14 @@ mod tests {
         amount_cents: i64,
         participants: &[&str],
     ) -> EffectiveBill {
+        let users: Vec<String> = participants.iter().map(|s| s.to_string()).collect();
         EffectiveBill {
             id: id.to_string(),
             payer_user_id: payer.to_string(),
             amount_cents,
             description: String::new(),
-            participants: participants.iter().map(|s| s.to_string()).collect(),
-            split_method: SplitMethod::Equal,
+            participants: users.clone(),
+            split_method: SplitMethod::Equal(users),
             was_amended: false,
             is_deleted: false,
             last_modified_at: 0,
