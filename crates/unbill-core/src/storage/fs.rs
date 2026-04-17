@@ -1,5 +1,5 @@
-// SQLite-backed LedgerStore. Implementation begins at M2.
-// See storage/DESIGN.md for the schema and snapshot/incremental strategy.
+// Flat-file LedgerStore. Implementation begins at M2.
+// See DESIGN.md §5 for the directory layout and snapshot/incremental strategy.
 
 use async_trait::async_trait;
 use automerge::ChangeHash;
@@ -8,10 +8,10 @@ use crate::model::LedgerMeta;
 
 use super::traits::{LedgerStore, LoadedBytes, Result};
 
-pub struct SqliteStore;
+pub struct FsStore;
 
 #[async_trait]
-impl LedgerStore for SqliteStore {
+impl LedgerStore for FsStore {
     async fn list_ledgers(&self) -> Result<Vec<LedgerMeta>> {
         todo!("M2")
     }

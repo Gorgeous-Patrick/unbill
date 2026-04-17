@@ -1,9 +1,9 @@
 // Persistence layer. See storage/DESIGN.md before implementing.
 
+mod fs;
 mod memory;
-mod sqlite;
 mod traits;
 
+pub use fs::FsStore;
 pub use memory::InMemoryStore;
-pub use sqlite::SqliteStore;
 pub use traits::{LedgerStore, LoadedBytes};

@@ -122,7 +122,7 @@ These principles guide every design decision in the project. When in doubt, reac
  └────────────────────┘           └────────────────────┘
          │                                 │
          ▼                                 ▼
-   SQLite on disk                   SQLite on disk
+   files on disk                    files on disk
 ```
 
 Optional relay nodes (provided by the Iroh project, or self-hosted) participate only when two peers cannot establish a direct connection due to NAT. They forward encrypted bytes and cannot see ledger contents.
@@ -211,7 +211,7 @@ crates/unbill-core/src/
 ├── storage/            # persistence
 │   ├── mod.rs
 │   ├── traits.rs       # LedgerStore trait
-│   ├── sqlite.rs       # SQLite implementation
+│   ├── fs.rs           # flat-file implementation
 │   └── memory.rs       # in-memory implementation (testing)
 ├── net/                # P2P networking
 │   ├── mod.rs
@@ -397,61 +397,44 @@ The amendment model solves three problems simultaneously:
 
 ### 5.2 Storage layout
 
-One SQLite database per data directory. Schema:
+One directory per data directory. No C dependencies, no schema migrations — just files.
 
-```sql
--- Ledger base state
-CREATE TABLE ledgers (
-    ledger_id       TEXT PRIMARY KEY,
-    name            TEXT NOT NULL,          -- denormalized for list views
-    snapshot        BLOB NOT NULL,          -- Automerge.save() output
-    snapshot_heads  TEXT NOT NULL,          -- JSON array of heads at snapshot time
-    created_at      INTEGER NOT NULL,
-    updated_at      INTEGER NOT NULL
-);
-
--- Append-only incremental changes since last snapshot
-CREATE TABLE ledger_incremental (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    ledger_id   TEXT NOT NULL,
-    bytes       BLOB NOT NULL,              -- output of save_incremental()
-    added_at    INTEGER NOT NULL,
-    FOREIGN KEY (ledger_id) REFERENCES ledgers(ledger_id) ON DELETE CASCADE
-);
-CREATE INDEX idx_incremental_ledger ON ledger_incremental(ledger_id, id);
-
--- Per-peer sync protocol state
-CREATE TABLE sync_states (
-    ledger_id       TEXT NOT NULL,
-    peer_node_id    TEXT NOT NULL,
-    state_bytes     BLOB NOT NULL,          -- automerge::sync::State::encode()
-    updated_at      INTEGER NOT NULL,
-    PRIMARY KEY (ledger_id, peer_node_id)
-);
-
--- Device-wide singletons: device_key, device_profile, etc.
-CREATE TABLE device_meta (
-    key     TEXT PRIMARY KEY,
-    value   BLOB NOT NULL
-);
 ```
+<data_dir>/
+  device_key.bin          # iroh SecretKey (32 raw bytes)
+  device_meta.json        # display_name, preferred locale, etc.
+  ledgers/
+    <ledger_id>/
+      snapshot.bin        # Automerge.save() output (latest full snapshot)
+      snapshot_heads.json # JSON array of ChangeHash strings at snapshot time
+      changes.bin         # append-only incremental changes since last snapshot
+      meta.json           # denormalised: name, currency, created_at, updated_at
+      sync/
+        <peer_node_id>.bin  # automerge::sync::State::encode() per peer
+```
+
+- **`snapshot.bin`** and **`changes.bin`** together constitute the full ledger state.
+- **`meta.json`** is a cache derived from the CRDT doc, written on every save. It lets `list_ledgers()` answer without loading any Automerge bytes.
+- **`sync/`** holds per-peer sync state used by the Automerge sync protocol.
 
 ### 5.3 Snapshot + incremental strategy
 
-Every write to a `LedgerDoc` appends the result of `save_incremental()` to `ledger_incremental`. Loading a ledger reads the snapshot, then applies all incrementals in insertion order.
+Every write to a `LedgerDoc` appends the result of `save_incremental()` to `changes.bin`. Loading a ledger reads `snapshot.bin` then applies `changes.bin` in full.
 
 Compaction is triggered when:
 
-- `ledger_incremental` for a ledger grows past **N rows** (default: 256), or
-- Total incremental bytes exceed **M kilobytes** (default: 512), or
-- Manual compaction command is issued.
+- `changes.bin` exceeds **512 KB**, or
+- A manual compaction command is issued.
 
-Compaction is transactional:
-1. Load full `LedgerDoc` from snapshot + all incrementals.
+Compaction is crash-safe via atomic rename:
+
+1. Load full `LedgerDoc` from `snapshot.bin` + `changes.bin`.
 2. Compute new snapshot with `doc.save()`.
-3. In a single SQLite transaction: update `ledgers.snapshot` and `snapshot_heads`, delete all rows in `ledger_incremental` for this ledger.
+3. Write new snapshot to `snapshot.tmp`.
+4. Atomically rename `snapshot.tmp` → `snapshot.bin`.
+5. Truncate `changes.bin` to zero bytes.
 
-If compaction is interrupted, state is unchanged (the transaction either commits entirely or not at all).
+If step 4 completes but step 5 does not, the next load applies already-snapshotted changes again — safe because Automerge `apply_changes` is idempotent for seen operations.
 
 ### 5.4 Abstraction: the `LedgerStore` trait
 
@@ -479,7 +462,7 @@ pub struct LoadedBytes {
 
 Two implementations:
 
-- **`SqliteStore`**: the real thing. Uses `rusqlite` (synchronous) wrapped in `tokio::task::spawn_blocking`, or `sqlx` for native async. Decision deferred to the storage sub-module's `DESIGN.md`.
+- **`FsStore`**: the real thing. Pure Rust `tokio::fs` async file I/O, no C dependencies.
 - **`InMemoryStore`**: a `HashMap`-backed implementation for unit tests. Same trait, zero I/O.
 
 ### 5.5 Data directory
@@ -489,8 +472,6 @@ Platform-appropriate, via the `dirs` crate:
 - Linux: `~/.local/share/unbill/`
 - macOS: `~/Library/Application Support/unbill/`
 - Windows: `%APPDATA%\unbill\`
-
-Single SQLite file: `unbill.db`. Device key: `device_key.bin`.
 
 ---
 
@@ -645,7 +626,7 @@ pub struct UnbillService {
 ```rust
 impl UnbillService {
     pub async fn start(data_dir: &Path) -> Result<Arc<Self>> {
-        // 1. Open SqliteStore.
+        // 1. Open FsStore (data_dir).
         // 2. Load or generate device key; derive NodeId.
         // 3. Start Iroh endpoint with discovery enabled.
         // 4. Enumerate all ledgers from storage; load LedgerDoc for each (or lazily on first use; TBD).
@@ -897,7 +878,7 @@ The `unbill/sync/v1` ALPN and the `Hello.protocol_version` field manage wire com
 - No storage, no networking. Tests run in memory.
 
 ### Milestone M2: Persistence
-- `LedgerStore` trait, `SqliteStore`, `InMemoryStore`.
+- `LedgerStore` trait, `FsStore`, `InMemoryStore`.
 - `UnbillService::start` loads existing ledgers on boot.
 - CLI commands: `init`, `ledger create`, `ledger list`, `bill add`, `bill list`.
 - Data survives restart.
@@ -932,9 +913,8 @@ The `unbill/sync/v1` ALPN and the `Hello.protocol_version` field manage wire com
 
 Living list. Each should be resolved in the appropriate module's `DESIGN.md` before that module is implemented.
 
-1. **sqlx vs rusqlite.** sqlx is native async but adds build complexity. rusqlite is simpler but needs `spawn_blocking`. Decision deferred to `storage/DESIGN.md`.
-2. **Lazy vs eager ledger loading at startup.** Load all on boot (simple, memory-hungry for many ledgers) or lazily (complex, necessary if users have hundreds of ledgers)?
-3. ~~**Invitation token storage.**~~ **Resolved:** Invitations are held in memory inside `UnbillService` (`HashMap<token, Invitation>`). They do not survive a restart — that is acceptable because the join requires Alice's device to be online anyway, and a restarted app simply generates a new token. No SQLite table needed. The CRDT records only the outcome (a new `Member`). See §6.3.
+1. **Lazy vs eager ledger loading at startup.** Load all on boot (simple, memory-hungry for many ledgers) or lazily (complex, necessary if users have hundreds of ledgers)?
+2. ~~**Invitation token storage.**~~ **Resolved:** Invitations are held in memory inside `UnbillService` (`HashMap<token, Invitation>`). They do not survive a restart — that is acceptable because the join requires Alice's device to be online anyway, and a restarted app simply generates a new token. No file needed. The CRDT records only the outcome (a new `Member`). See §6.3.
 4. **Multi-device onboarding.** How does Alice add her second device? Copy key file? QR code between her own devices? Design needs UX thinking.
 5. **Notification strategy on mobile.** iOS backgrounding kills long-lived connections. Do we need silent push, and if so, whose infrastructure?
 6. **Backup and restore.** The "user owns their data" promise implies losing a phone = losing ledgers (unless synced to another device). Should we offer explicit device backup to e.g. iCloud Drive?
@@ -950,7 +930,7 @@ This section accrues entries as design evolves. Each entry records what was cons
 - **Core as a single crate vs many.** Chose single `unbill-core`. Splitting premature until module boundaries prove stable and there is concrete reason to split.
 - **CRDT library.** Chose Automerge over Yjs. Rationale: native Rust (Yjs is JS-first with bindings), JSON-like document model fits a ledger naturally, autosurgeon provides excellent ergonomics for Rust structs.
 - **Transport.** Chose Iroh over libp2p. Rationale: simpler API, built-in NAT traversal with relay fallback, free public relays, NodeId-as-identity.
-- **Persistence.** Chose SQLite over flat files or an embedded KV. Rationale: transactions matter for compaction, ubiquitous on all target platforms, well-understood tooling.
+- **Persistence.** Initially chose SQLite; switched to a flat-file layout. Rationale: the data is mostly opaque blobs (Automerge binary), so SQL's structured query advantage is minimal. Flat files are pure Rust (`tokio::fs`), require no C compiler, are trivially inspectable and backupable, and crash safety is achieved via atomic rename rather than transactions. See §5.
 - **No central services.** Confirmed: no auth server, no backup server, no analytics. This is a hard constraint, not a budget constraint.
 
 ---
@@ -971,7 +951,7 @@ This section accrues entries as design evolves. Each entry records what was cons
 - `autosurgeon` — struct ↔ Automerge mapping.
 - `iroh` — P2P networking.
 - `tokio` — async runtime.
-- `rusqlite` or `sqlx` — SQLite access.
+- `tokio::fs` — async file I/O for the flat-file storage backend (part of `tokio`).
 - `serde`, `serde_json`, `ciborium` — serialization.
 - `ulid` — ID generation.
 - `anyhow`, `thiserror` — error handling.

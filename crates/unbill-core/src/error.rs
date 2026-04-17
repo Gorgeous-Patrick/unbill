@@ -26,8 +26,8 @@ pub enum UnbillError {
 
 #[derive(Debug, Error)]
 pub enum StorageError {
-    #[error("sqlite error: {0}")]
-    Sqlite(#[from] rusqlite::Error),
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
 
     #[error("serialization error: {0}")]
     Serialization(String),
