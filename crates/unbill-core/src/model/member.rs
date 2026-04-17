@@ -2,6 +2,7 @@ use autosurgeon::{Hydrate, Reconcile};
 
 use super::currency::Currency;
 use super::id::Ulid;
+use super::invite_token::InviteToken;
 use super::node_id::NodeId;
 use super::timestamp::Timestamp;
 
@@ -39,7 +40,7 @@ pub struct Device {
 /// persisted or synced. Consumed (removed from the map) on first use or expiry.
 #[derive(Clone, Debug)]
 pub struct Invitation {
-    pub token: String, // random 32 bytes, hex-encoded — NOT a ULID
+    pub token: InviteToken,
     pub ledger_id: Ulid,
     pub created_by_user_id: Ulid,
     pub created_at: Timestamp,

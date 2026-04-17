@@ -37,6 +37,7 @@ ulid = "1"
 
 # Domain types
 iso_currency = "0.5"
+rand = "0.8"
 
 # Error handling
 anyhow = "1"
