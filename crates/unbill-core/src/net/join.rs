@@ -9,9 +9,8 @@
 
 use std::sync::Arc;
 
-use dashmap::DashMap;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::sync::{broadcast, Mutex as TokioMutex};
+use tokio::sync::broadcast;
 
 use crate::doc::LedgerDoc;
 use crate::model::{LedgerMeta, NewDevice, NodeId, Timestamp};
@@ -31,7 +30,6 @@ use super::protocol::{read_msg, write_msg, JoinError, JoinReply, JoinRequest, Jo
 /// TLS-verified Iroh connection — it is NOT read from the message body.
 pub async fn run_join_host<R, W>(
     peer_node_id: NodeId,
-    ledgers: &DashMap<String, Arc<TokioMutex<LedgerDoc>>>,
     store: &Arc<dyn LedgerStore>,
     events: &broadcast::Sender<ServiceEvent>,
     mut reader: R,
@@ -87,31 +85,28 @@ where
         return Ok(());
     }
 
-    let doc_lock = match ledgers.get(&req.ledger_id) {
-        Some(l) => Arc::clone(&*l),
-        None => {
-            write_msg(
-                &mut writer,
-                &JoinReply::Err(JoinError {
-                    reason: "ledger not found on host".to_string(),
-                }),
-            )
-            .await?;
-            return Ok(());
-        }
-    };
+    let bytes = store.load_ledger_bytes(&req.ledger_id).await?;
+    if bytes.is_empty() {
+        write_msg(
+            &mut writer,
+            &JoinReply::Err(JoinError {
+                reason: "ledger not found on host".to_string(),
+            }),
+        )
+        .await?;
+        return Ok(());
+    }
 
-    let ledger_bytes = {
-        let mut doc = doc_lock.lock().await;
-        doc.add_device(
-            NewDevice {
-                node_id: peer_node_id,
-                label: req.label,
-            },
-            Timestamp::now(),
-        )?;
-        doc.save()
-    };
+    let mut doc = LedgerDoc::from_bytes(&bytes)
+        .map_err(|e| anyhow::anyhow!("failed to load ledger: {e}"))?;
+    doc.add_device(
+        NewDevice {
+            node_id: peer_node_id,
+            label: req.label,
+        },
+        Timestamp::now(),
+    )?;
+    let ledger_bytes = doc.save();
 
     store
         .save_ledger_bytes(&req.ledger_id, &ledger_bytes)
@@ -128,10 +123,9 @@ where
 // Requester side
 // ---------------------------------------------------------------------------
 
-/// Send a `JoinRequest`, and on success load and persist the received ledger.
+/// Send a `JoinRequest`, and on success persist the received ledger to the store.
 pub async fn run_join_requester<R, W>(
     request: JoinRequest,
-    ledgers: &DashMap<String, Arc<TokioMutex<LedgerDoc>>>,
     store: &Arc<dyn LedgerStore>,
     events: &broadcast::Sender<ServiceEvent>,
     mut reader: R,
@@ -160,7 +154,6 @@ where
             store
                 .save_ledger_bytes(&ledger_id, &response.ledger_bytes)
                 .await?;
-            ledgers.insert(ledger_id.clone(), Arc::new(TokioMutex::new(doc)));
             let _ = events.send(ServiceEvent::LedgerUpdated { ledger_id });
             Ok(())
         }
@@ -179,8 +172,7 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    use dashmap::DashMap;
-    use tokio::sync::{broadcast, Mutex as TokioMutex};
+    use tokio::sync::broadcast;
 
     use crate::doc::LedgerDoc;
     use crate::model::{
@@ -211,7 +203,6 @@ mod tests {
             ledger_id,
             created_by_device: host_node,
             created_at: now,
-            // expires far in the future
             expires_at: Timestamp::from_millis(now.as_millis() + 86_400_000),
         }
     }
@@ -221,25 +212,15 @@ mod tests {
         let host_node = NodeId::from_seed(1);
         let joiner_node = NodeId::from_seed(2);
 
-        // Host has a ledger authorized only for itself.
         let mut doc =
             LedgerDoc::new(Ulid::new(), "Trip".to_string(), usd(), Timestamp::now()).unwrap();
-        doc.add_device(
-            NewDevice {
-                node_id: host_node,
-                label: "host".to_string(),
-            },
-            Timestamp::now(),
-        )
-        .unwrap();
+        doc.add_device(NewDevice { node_id: host_node, label: "host".to_string() }, Timestamp::now()).unwrap();
         let ledger_id = doc.get_ledger().unwrap().ledger_id;
         let ledger_id_str = ledger_id.to_string();
 
-        let host_ledgers: DashMap<String, Arc<TokioMutex<LedgerDoc>>> = DashMap::new();
-        host_ledgers.insert(ledger_id_str.clone(), Arc::new(TokioMutex::new(doc)));
         let host_store: Arc<dyn crate::storage::LedgerStore> = make_store();
 
-        // Save meta so the host can look it up.
+        // Save ledger doc and meta to the store.
         let meta = LedgerMeta {
             ledger_id,
             name: "Trip".to_string(),
@@ -248,14 +229,13 @@ mod tests {
             updated_at: Timestamp::now(),
         };
         host_store.save_ledger_meta(&meta).await.unwrap();
+        host_store.save_ledger_bytes(&ledger_id_str, &doc.save()).await.unwrap();
 
-        // Save the invitation to the store (lazy load — no in-memory map).
+        // Save the invitation to the store.
         let token = InviteToken::generate();
         let invitation = make_invitation(ledger_id, host_node, &token);
-        let map = HashMap::from([(token.to_string(), invitation)]);
-        save_pending_invitations(&*host_store, &map).await.unwrap();
+        save_pending_invitations(&*host_store, &HashMap::from([(token.to_string(), invitation)])).await.unwrap();
 
-        let joiner_ledgers: DashMap<String, Arc<TokioMutex<LedgerDoc>>> = DashMap::new();
         let joiner_store: Arc<dyn crate::storage::LedgerStore> = make_store();
 
         let (stream_host, stream_joiner) = tokio::io::duplex(64 * 1024);
@@ -266,10 +246,6 @@ mod tests {
         let joiner_store2 = Arc::clone(&joiner_store);
         let events_host = make_events();
         let events_joiner = make_events();
-        let host_ledgers = Arc::new(host_ledgers);
-        let joiner_ledgers = Arc::new(joiner_ledgers);
-        let hl2 = Arc::clone(&host_ledgers);
-        let jl2 = Arc::clone(&joiner_ledgers);
 
         let request = JoinRequest {
             token: token.to_string(),
@@ -278,52 +254,33 @@ mod tests {
         };
 
         let task_host = tokio::spawn(async move {
-            run_join_host(
-                joiner_node,
-                &hl2,
-                &host_store2,
-                &events_host,
-                host_read,
-                host_write,
-            )
-            .await
-            .unwrap();
+            run_join_host(joiner_node, &host_store2, &events_host, host_read, host_write)
+                .await
+                .unwrap();
         });
         let task_joiner = tokio::spawn(async move {
-            run_join_requester(
-                request,
-                &jl2,
-                &joiner_store2,
-                &events_joiner,
-                joiner_read,
-                joiner_write,
-            )
-            .await
-            .unwrap();
+            run_join_requester(request, &joiner_store2, &events_joiner, joiner_read, joiner_write)
+                .await
+                .unwrap();
         });
 
         task_host.await.unwrap();
         task_joiner.await.unwrap();
 
-        // Joiner now has the ledger in their map.
-        assert!(
-            joiner_ledgers.contains_key(&ledger_id_str),
-            "joiner should have the ledger"
-        );
+        // Joiner has the ledger in its store.
+        let joiner_bytes = joiner_store.load_ledger_bytes(&ledger_id_str).await.unwrap();
+        assert!(!joiner_bytes.is_empty(), "joiner should have the ledger");
 
-        // The ledger on both sides should now have joiner's device authorized.
-        let joiner_doc = joiner_ledgers.get(&ledger_id_str).unwrap();
-        let joiner_doc = joiner_doc.lock().await;
+        // The ledger on the joiner's side should have joiner's device authorized.
+        let joiner_doc = LedgerDoc::from_bytes(&joiner_bytes).unwrap();
         let devices = joiner_doc.list_devices().unwrap();
         assert!(
             devices.iter().any(|d| d.node_id == joiner_node),
             "joiner's device should be in the ledger"
         );
 
-        // Token was consumed (store should have an empty map now).
-        let remaining = crate::service::load_pending_invitations(&*host_store)
-            .await
-            .unwrap();
+        // Token was consumed.
+        let remaining = crate::service::load_pending_invitations(&*host_store).await.unwrap();
         assert!(remaining.is_empty(), "token should have been consumed");
     }
 
@@ -331,15 +288,13 @@ mod tests {
     async fn test_join_rejects_invalid_token() {
         let joiner_node = NodeId::from_seed(2);
 
-        let doc = LedgerDoc::new(Ulid::new(), "Trip".to_string(), usd(), Timestamp::now()).unwrap();
+        let mut doc = LedgerDoc::new(Ulid::new(), "Trip".to_string(), usd(), Timestamp::now()).unwrap();
         let ledger_id_str = doc.get_ledger().unwrap().ledger_id.to_string();
 
-        let host_ledgers: DashMap<String, Arc<TokioMutex<LedgerDoc>>> = DashMap::new();
-        host_ledgers.insert(ledger_id_str.clone(), Arc::new(TokioMutex::new(doc)));
         // No invitations saved to store.
         let host_store: Arc<dyn crate::storage::LedgerStore> = make_store();
+        host_store.save_ledger_bytes(&ledger_id_str, &doc.save()).await.unwrap();
 
-        let joiner_ledgers: DashMap<String, Arc<TokioMutex<LedgerDoc>>> = DashMap::new();
         let joiner_store: Arc<dyn crate::storage::LedgerStore> = make_store();
 
         let (stream_host, stream_joiner) = tokio::io::duplex(64 * 1024);
@@ -350,40 +305,21 @@ mod tests {
         let joiner_store2 = Arc::clone(&joiner_store);
         let events_host = make_events();
         let events_joiner = make_events();
-        let hl = Arc::new(host_ledgers);
-        let jl = Arc::new(joiner_ledgers);
-        let hl2 = Arc::clone(&hl);
-        let jl2 = Arc::clone(&jl);
 
         let fake_token = InviteToken::generate();
         let request = JoinRequest {
             token: fake_token.to_string(),
-            ledger_id: ledger_id_str,
+            ledger_id: ledger_id_str.clone(),
             label: "joiner".to_string(),
         };
 
         let task_host = tokio::spawn(async move {
-            run_join_host(
-                joiner_node,
-                &hl2,
-                &host_store2,
-                &events_host,
-                host_read,
-                host_write,
-            )
-            .await
-            .unwrap();
+            run_join_host(joiner_node, &host_store2, &events_host, host_read, host_write)
+                .await
+                .unwrap();
         });
         let task_joiner = tokio::spawn(async move {
-            let result = run_join_requester(
-                request,
-                &jl2,
-                &joiner_store2,
-                &events_joiner,
-                joiner_read,
-                joiner_write,
-            )
-            .await;
+            let result = run_join_requester(request, &joiner_store2, &events_joiner, joiner_read, joiner_write).await;
             assert!(result.is_err(), "should fail with invalid token");
         });
 
@@ -391,6 +327,7 @@ mod tests {
         task_joiner.await.unwrap();
 
         // Joiner got nothing.
-        assert!(jl.is_empty(), "joiner should have no ledgers");
+        let joiner_bytes = joiner_store.load_ledger_bytes(&ledger_id_str).await.unwrap();
+        assert!(joiner_bytes.is_empty(), "joiner should have no ledgers");
     }
 }

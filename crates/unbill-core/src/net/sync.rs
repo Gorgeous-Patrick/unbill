@@ -7,9 +7,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use dashmap::DashMap;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::broadcast;
 
 use crate::doc::LedgerDoc;
 use crate::model::NodeId;
@@ -31,14 +30,16 @@ struct LedgerSyncState {
 /// * `is_initiator` — the side that sends `Hello` first.
 /// * `peer_node_id` — TLS-verified identity of the remote device (passed in
 ///   by the caller from the Iroh connection context).
-/// * `ledgers` — the in-memory ledger map shared with `UnbillService`.
-/// * `store` — used to persist updated bytes after merging remote changes.
+/// * `store` — used to list ledgers, load docs for the session, and persist
+///   updated bytes after merging remote changes.
 /// * `events` — `LedgerUpdated` is emitted for every ledger that received new
 ///   changes.
+///
+/// Ledger documents are loaded from the store at the start of the session and
+/// held in memory only for its duration. Nothing is cached between sessions.
 pub async fn run_sync_session<R, W>(
     is_initiator: bool,
     peer_node_id: NodeId,
-    ledgers: &DashMap<String, Arc<Mutex<LedgerDoc>>>,
     store: &Arc<dyn LedgerStore>,
     events: &broadcast::Sender<ServiceEvent>,
     mut reader: R,
@@ -53,7 +54,8 @@ where
     // -----------------------------------------------------------------------
 
     let accepted: Vec<String> = if is_initiator {
-        let my_ids: Vec<String> = ledgers.iter().map(|e| e.key().clone()).collect();
+        let metas = store.list_ledgers().await?;
+        let my_ids: Vec<String> = metas.iter().map(|m| m.ledger_id.to_string()).collect();
         write_msg(&mut writer, &SyncFrame::Hello(Hello { ledger_ids: my_ids })).await?;
         let frame: SyncFrame = read_msg(&mut reader).await?;
         match frame {
@@ -69,15 +71,20 @@ where
         let mut accepted = Vec::new();
         let mut rejected = Vec::new();
         for id in &hello.ledger_ids {
-            if let Some(doc_lock) = ledgers.get(id) {
-                let doc = doc_lock.lock().await;
-                if doc.is_device_authorized(&peer_node_id)? {
-                    accepted.push(id.clone());
-                } else {
-                    rejected.push(id.clone());
-                }
-            } else {
+            let bytes = store.load_ledger_bytes(id).await.unwrap_or_default();
+            if bytes.is_empty() {
                 rejected.push(id.clone());
+                continue;
+            }
+            match LedgerDoc::from_bytes(&bytes) {
+                Ok(doc) => {
+                    if doc.is_device_authorized(&peer_node_id).unwrap_or(false) {
+                        accepted.push(id.clone());
+                    } else {
+                        rejected.push(id.clone());
+                    }
+                }
+                Err(_) => rejected.push(id.clone()),
             }
         }
         write_msg(
@@ -96,7 +103,19 @@ where
     }
 
     // -----------------------------------------------------------------------
-    // Step 2: Automerge sync loop
+    // Step 2: Load accepted ledgers into session-local memory
+    // -----------------------------------------------------------------------
+
+    let mut docs: HashMap<String, LedgerDoc> = HashMap::new();
+    for id in &accepted {
+        let bytes = store.load_ledger_bytes(id).await?;
+        let doc = LedgerDoc::from_bytes(&bytes)
+            .map_err(|e| anyhow::anyhow!("failed to load ledger {id}: {e}"))?;
+        docs.insert(id.clone(), doc);
+    }
+
+    // -----------------------------------------------------------------------
+    // Step 3: Automerge sync loop
     // -----------------------------------------------------------------------
 
     let mut states: HashMap<String, LedgerSyncState> = accepted
@@ -113,20 +132,17 @@ where
         })
         .collect();
 
-    // Track which ledgers actually received remote changes so we can persist
-    // and emit events only for those.
     let mut ledgers_with_remote_changes: Vec<String> = Vec::new();
 
     loop {
-        // --- Send phase: generate outgoing messages for all pending ledgers ---
+        // --- Send phase ---
         for (id, state) in states.iter_mut() {
             if state.we_done {
                 continue;
             }
-            let doc_lock = ledgers
-                .get(id)
+            let doc = docs
+                .get_mut(id)
                 .ok_or_else(|| anyhow::anyhow!("ledger disappeared mid-sync: {id}"))?;
-            let mut doc = doc_lock.lock().await;
             match doc.generate_sync_message(&mut state.sync_state) {
                 Some(msg) => {
                     write_msg(
@@ -155,9 +171,6 @@ where
         if states.values().all(|s| s.we_done && s.peer_done) {
             break;
         }
-
-        // If all peers are done but we still have ledgers to drain, keep reading.
-        // If we still have work to do, also keep going.
         if states.values().all(|s| s.peer_done) {
             break;
         }
@@ -171,10 +184,9 @@ where
                 })?;
                 let msg = automerge::sync::Message::decode(&m.payload)
                     .map_err(|e| anyhow::anyhow!("bad sync message bytes: {e}"))?;
-                let doc_lock = ledgers
-                    .get(&m.ledger_id)
+                let doc = docs
+                    .get_mut(&m.ledger_id)
                     .ok_or_else(|| anyhow::anyhow!("ledger disappeared: {}", m.ledger_id))?;
-                let mut doc = doc_lock.lock().await;
                 doc.receive_sync_message(&mut state.sync_state, msg)?;
                 if !ledgers_with_remote_changes.contains(&m.ledger_id) {
                     ledgers_with_remote_changes.push(m.ledger_id);
@@ -193,12 +205,11 @@ where
     }
 
     // -----------------------------------------------------------------------
-    // Step 3: Persist and emit events for ledgers that changed
+    // Step 4: Persist and emit events for ledgers that received remote changes
     // -----------------------------------------------------------------------
 
     for id in &ledgers_with_remote_changes {
-        if let Some(doc_lock) = ledgers.get(id) {
-            let mut doc = doc_lock.lock().await;
+        if let Some(doc) = docs.get_mut(id) {
             let bytes = doc.save();
             store.save_ledger_bytes(id, &bytes).await?;
             let _ = events.send(ServiceEvent::LedgerUpdated {
@@ -218,13 +229,12 @@ where
 mod tests {
     use std::sync::Arc;
 
-    use dashmap::DashMap;
-    use tokio::sync::{broadcast, Mutex};
+    use tokio::sync::broadcast;
 
     use crate::doc::LedgerDoc;
     use crate::model::{Currency, NewBill, NewDevice, NodeId, Share, Timestamp, Ulid};
     use crate::service::ServiceEvent;
-    use crate::storage::InMemoryStore;
+    use crate::storage::{InMemoryStore, LedgerStore};
 
     use super::run_sync_session;
 
@@ -240,33 +250,28 @@ mod tests {
         Currency::from_code("USD").unwrap()
     }
 
-    /// Create a simple ledger doc with one device authorized.
-    fn ledger_with_device(device: NodeId) -> LedgerDoc {
-        let mut doc =
-            LedgerDoc::new(Ulid::new(), "Test".to_string(), usd(), Timestamp::now()).unwrap();
-        doc.add_device(
-            crate::model::NewDevice {
-                node_id: device,
-                label: "test device".to_string(),
-            },
-            Timestamp::now(),
-        )
-        .unwrap();
-        doc
+    /// Save a doc and its meta to a store.
+    async fn save_doc(store: &dyn LedgerStore, doc: &mut LedgerDoc) {
+        let ledger = doc.get_ledger().unwrap();
+        let id = ledger.ledger_id.to_string();
+        let meta = crate::model::LedgerMeta {
+            ledger_id: ledger.ledger_id,
+            name: ledger.name.clone(),
+            currency: ledger.currency,
+            created_at: ledger.created_at,
+            updated_at: Timestamp::now(),
+        };
+        store.save_ledger_meta(&meta).await.unwrap();
+        store.save_ledger_bytes(&id, &doc.save()).await.unwrap();
     }
 
-    type LedgerMap = Arc<DashMap<String, Arc<Mutex<LedgerDoc>>>>;
-
-    /// Run sync between two ledger maps over an in-process duplex channel.
-    /// Returns the Arc-wrapped maps so callers can inspect final state.
+    /// Run sync between two stores over an in-process duplex channel.
     async fn sync_pair(
-        ledgers_a: DashMap<String, Arc<Mutex<LedgerDoc>>>,
-        ledgers_b: DashMap<String, Arc<Mutex<LedgerDoc>>>,
-        peer_a: NodeId, // A's node id as seen by B
-        peer_b: NodeId, // B's node id as seen by A
-    ) -> (LedgerMap, LedgerMap) {
-        let store_a: Arc<dyn crate::storage::LedgerStore> = make_store();
-        let store_b: Arc<dyn crate::storage::LedgerStore> = make_store();
+        store_a: Arc<dyn LedgerStore>,
+        store_b: Arc<dyn LedgerStore>,
+        peer_a: NodeId,
+        peer_b: NodeId,
+    ) {
         let events_a = make_events();
         let events_b = make_events();
 
@@ -274,41 +279,38 @@ mod tests {
         let (a_read, a_write) = tokio::io::split(stream_a);
         let (b_read, b_write) = tokio::io::split(stream_b);
 
-        let la: LedgerMap = Arc::new(ledgers_a);
-        let lb: LedgerMap = Arc::new(ledgers_b);
-        let la2 = Arc::clone(&la);
-        let lb2 = Arc::clone(&lb);
+        let sa = Arc::clone(&store_a);
+        let sb = Arc::clone(&store_b);
 
         let task_a = tokio::spawn(async move {
-            run_sync_session(true, peer_b, &la2, &store_a, &events_a, a_read, a_write)
+            run_sync_session(true, peer_b, &sa, &events_a, a_read, a_write)
                 .await
                 .unwrap();
         });
         let task_b = tokio::spawn(async move {
-            run_sync_session(false, peer_a, &lb2, &store_b, &events_b, b_read, b_write)
+            run_sync_session(false, peer_a, &sb, &events_b, b_read, b_write)
                 .await
                 .unwrap();
         });
 
         task_a.await.unwrap();
         task_b.await.unwrap();
-
-        (la, lb)
     }
 
     #[tokio::test]
     async fn test_sync_empty_hello_ack_no_shared_ledgers() {
-        // A has a ledger; B has no ledgers. B rejects everything.
         let node_a = NodeId::from_seed(1);
         let node_b = NodeId::from_seed(2);
 
-        let doc_a = ledger_with_device(node_b); // A authorizes B
-        let id = doc_a.get_ledger().unwrap().ledger_id.to_string();
-        let ledgers_a: DashMap<String, Arc<Mutex<LedgerDoc>>> = DashMap::new();
-        ledgers_a.insert(id, Arc::new(Mutex::new(doc_a)));
-        let ledgers_b: DashMap<String, Arc<Mutex<LedgerDoc>>> = DashMap::new();
+        // A has a ledger that authorizes B; B has no ledgers.
+        let store_a: Arc<dyn LedgerStore> = make_store();
+        let store_b: Arc<dyn LedgerStore> = make_store();
 
-        let _ = sync_pair(ledgers_a, ledgers_b, node_a, node_b).await;
+        let mut doc_a = LedgerDoc::new(Ulid::new(), "Test".to_string(), usd(), Timestamp::now()).unwrap();
+        doc_a.add_device(NewDevice { node_id: node_b, label: "B".to_string() }, Timestamp::now()).unwrap();
+        save_doc(&*store_a, &mut doc_a).await;
+
+        sync_pair(store_a, store_b, node_a, node_b).await;
         // No panic = both sides closed cleanly with empty accepted list.
     }
 
@@ -320,90 +322,61 @@ mod tests {
         // Build a base ledger that both A and B start with.
         let mut base =
             LedgerDoc::new(Ulid::new(), "Trip".to_string(), usd(), Timestamp::now()).unwrap();
-        base.add_device(
-            NewDevice {
-                node_id: node_a,
-                label: "A".to_string(),
-            },
-            Timestamp::now(),
-        )
-        .unwrap();
-        base.add_device(
-            NewDevice {
-                node_id: node_b,
-                label: "B".to_string(),
-            },
-            Timestamp::now(),
-        )
-        .unwrap();
-        let ledger_id = base.get_ledger().unwrap().ledger_id.to_string();
+        base.add_device(NewDevice { node_id: node_a, label: "A".to_string() }, Timestamp::now()).unwrap();
+        base.add_device(NewDevice { node_id: node_b, label: "B".to_string() }, Timestamp::now()).unwrap();
         let payer = Ulid::from_u128(99);
         base.add_member(
-            crate::model::NewMember {
-                user_id: payer,
-                display_name: "Payer".to_string(),
-                added_by: payer,
-            },
+            crate::model::NewMember { user_id: payer, display_name: "Payer".to_string(), added_by: payer },
             Timestamp::now(),
-        )
-        .unwrap();
+        ).unwrap();
         let base_bytes = base.save();
+        let ledger_id = base.get_ledger().unwrap().ledger_id.to_string();
 
         // Fork into two independent docs.
         let mut doc_a = LedgerDoc::from_bytes(&base_bytes).unwrap();
         let mut doc_b = LedgerDoc::from_bytes(&base_bytes).unwrap();
 
-        // A records a bill.
-        doc_a
-            .add_bill(
-                NewBill {
-                    payer_user_id: payer,
-                    amount_cents: 1000,
-                    description: "from A".to_string(),
-                    shares: vec![Share {
-                        user_id: payer,
-                        shares: 1,
-                    }],
-                },
-                node_a,
-                Timestamp::now(),
-            )
-            .unwrap();
+        doc_a.add_bill(
+            NewBill {
+                payer_user_id: payer,
+                amount_cents: 1000,
+                description: "from A".to_string(),
+                shares: vec![Share { user_id: payer, shares: 1 }],
+            },
+            node_a,
+            Timestamp::now(),
+        ).unwrap();
 
-        // B records a different bill independently.
-        doc_b
-            .add_bill(
-                NewBill {
-                    payer_user_id: payer,
-                    amount_cents: 2000,
-                    description: "from B".to_string(),
-                    shares: vec![Share {
-                        user_id: payer,
-                        shares: 1,
-                    }],
-                },
-                node_b,
-                Timestamp::now(),
-            )
-            .unwrap();
+        doc_b.add_bill(
+            NewBill {
+                payer_user_id: payer,
+                amount_cents: 2000,
+                description: "from B".to_string(),
+                shares: vec![Share { user_id: payer, shares: 1 }],
+            },
+            node_b,
+            Timestamp::now(),
+        ).unwrap();
 
-        let ledgers_a: DashMap<String, Arc<Mutex<LedgerDoc>>> = DashMap::new();
-        ledgers_a.insert(ledger_id.clone(), Arc::new(Mutex::new(doc_a)));
-        let ledgers_b: DashMap<String, Arc<Mutex<LedgerDoc>>> = DashMap::new();
-        ledgers_b.insert(ledger_id.clone(), Arc::new(Mutex::new(doc_b)));
+        let store_a: Arc<dyn LedgerStore> = make_store();
+        let store_b: Arc<dyn LedgerStore> = make_store();
+        save_doc(&*store_a, &mut doc_a).await;
+        save_doc(&*store_b, &mut doc_b).await;
 
-        let (la, lb) = sync_pair(ledgers_a, ledgers_b, node_a, node_b).await;
+        sync_pair(Arc::clone(&store_a), Arc::clone(&store_b), node_a, node_b).await;
 
-        let doc_a_final = la.get(&ledger_id).unwrap();
-        let doc_b_final = lb.get(&ledger_id).unwrap();
+        // Load final state from stores.
+        let bytes_a = store_a.load_ledger_bytes(&ledger_id).await.unwrap();
+        let bytes_b = store_b.load_ledger_bytes(&ledger_id).await.unwrap();
+        let doc_a_final = LedgerDoc::from_bytes(&bytes_a).unwrap();
+        let doc_b_final = LedgerDoc::from_bytes(&bytes_b).unwrap();
 
-        let bills_a = doc_a_final.lock().await.list_bills().unwrap();
-        let bills_b = doc_b_final.lock().await.list_bills().unwrap();
+        let bills_a = doc_a_final.list_bills().unwrap();
+        let bills_b = doc_b_final.list_bills().unwrap();
 
         assert_eq!(bills_a.len(), 2, "A should have both bills after sync");
         assert_eq!(bills_b.len(), 2, "B should have both bills after sync");
 
-        // Both sides converge to identical state.
         let mut descs_a: Vec<_> = bills_a.iter().map(|b| b.description.clone()).collect();
         let mut descs_b: Vec<_> = bills_b.iter().map(|b| b.description.clone()).collect();
         descs_a.sort();
@@ -417,20 +390,21 @@ mod tests {
         let node_b = NodeId::from_seed(2);
 
         // A's ledger does NOT authorize B.
-        let doc_a =
+        let store_a: Arc<dyn LedgerStore> = make_store();
+        let store_b: Arc<dyn LedgerStore> = make_store();
+
+        let mut doc_a =
             LedgerDoc::new(Ulid::new(), "Private".to_string(), usd(), Timestamp::now()).unwrap();
         let id = doc_a.get_ledger().unwrap().ledger_id.to_string();
+        save_doc(&*store_a, &mut doc_a).await;
 
-        let ledgers_a: DashMap<String, Arc<Mutex<LedgerDoc>>> = DashMap::new();
-        ledgers_a.insert(id.clone(), Arc::new(Mutex::new(doc_a)));
-
-        // B has the same ledger ID (maybe imported some other way).
-        let doc_b =
+        // B has the same ledger ID.
+        let mut doc_b =
             LedgerDoc::new(Ulid::new(), "Same id?".to_string(), usd(), Timestamp::now()).unwrap();
-        let ledgers_b: DashMap<String, Arc<Mutex<LedgerDoc>>> = DashMap::new();
-        ledgers_b.insert(id.clone(), Arc::new(Mutex::new(doc_b)));
+        // Manually set the same ID by saving with A's id key.
+        store_b.save_ledger_bytes(&id, &doc_b.save()).await.unwrap();
 
-        // Sync should complete without error — A just rejects the ledger.
-        let _ = sync_pair(ledgers_a, ledgers_b, node_a, node_b).await;
+        sync_pair(store_a, store_b, node_a, node_b).await;
+        // No panic — A just rejects the ledger.
     }
 }

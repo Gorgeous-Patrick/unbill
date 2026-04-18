@@ -3,9 +3,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use dashmap::DashMap;
 use rand::RngCore as _;
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::broadcast;
 
 use crate::doc::LedgerDoc;
 use crate::error::{Result, UnbillError};
@@ -20,8 +19,6 @@ pub struct UnbillService {
     pub(crate) store: Arc<dyn LedgerStore>,
     pub(crate) device_id: NodeId,
     pub(crate) secret_key: iroh::SecretKey,
-    /// Eagerly loaded in-memory ledger documents, keyed by ledger ID string.
-    pub(crate) ledgers: DashMap<String, Arc<Mutex<LedgerDoc>>>,
     pub(crate) events: broadcast::Sender<ServiceEvent>,
 }
 
@@ -46,31 +43,17 @@ pub enum ServiceEvent {
 }
 
 impl UnbillService {
-    /// Open the service: load or create the device key, then eagerly load all
-    /// stored ledgers into memory.
+    /// Open the service: load or create the device key.
     ///
-    /// Ledgers are kept as live in-memory `LedgerDoc` instances because they are
-    /// actively mutated (bills, devices, sync messages) and require coordination
-    /// across concurrent callers. All other store-backed data (pending invitations,
-    /// pending identity tokens, identities) is loaded on demand and never cached.
+    /// All store-backed data (ledgers, pending invitations, pending identity
+    /// tokens, identities) is loaded on demand and never cached in memory.
     pub async fn open(store: Arc<dyn LedgerStore>) -> Result<Arc<Self>> {
         let (device_id, secret_key) = load_or_create_device_key(&*store).await?;
-
-        let metas = store.list_ledgers().await?;
-        let ledgers: DashMap<String, Arc<Mutex<LedgerDoc>>> = DashMap::new();
-        for meta in metas {
-            let id = meta.ledger_id.to_string();
-            let bytes = store.load_ledger_bytes(&id).await?;
-            let doc = LedgerDoc::from_bytes(&bytes).map_err(UnbillError::Other)?;
-            ledgers.insert(id, Arc::new(Mutex::new(doc)));
-        }
-
         let (events, _) = broadcast::channel(256);
         Ok(Arc::new(Self {
             store,
             device_id,
             secret_key,
-            ledgers,
             events,
         }))
     }
@@ -99,7 +82,6 @@ impl UnbillService {
         let id = ledger_id.to_string();
         self.store.save_ledger_meta(&meta).await?;
         self.store.save_ledger_bytes(&id, &bytes).await?;
-        self.ledgers.insert(id.clone(), Arc::new(Mutex::new(doc)));
 
         Ok(id)
     }
@@ -109,7 +91,6 @@ impl UnbillService {
     }
 
     pub async fn delete_ledger(&self, ledger_id: &str) -> Result<()> {
-        self.ledgers.remove(ledger_id);
         self.store.delete_ledger(ledger_id).await?;
         Ok(())
     }
@@ -119,12 +100,9 @@ impl UnbillService {
     // -----------------------------------------------------------------------
 
     pub async fn add_bill(&self, ledger_id: &str, input: NewBill) -> Result<String> {
-        let doc_mutex = self.get_doc(ledger_id)?;
-        let mut doc = doc_mutex.lock().await;
+        let mut doc = self.load_doc(ledger_id).await?;
         let bill_id = doc.add_bill(input, self.device_id, Timestamp::now())?;
         let bytes = doc.save();
-        drop(doc);
-
         self.store.save_ledger_bytes(ledger_id, &bytes).await?;
         self.touch_meta(ledger_id).await?;
         Ok(bill_id.to_string())
@@ -132,21 +110,16 @@ impl UnbillService {
 
     pub async fn amend_bill(&self, ledger_id: &str, bill_id: &str, input: NewBill) -> Result<()> {
         let bill_ulid = parse_ulid(bill_id)?;
-        let doc_mutex = self.get_doc(ledger_id)?;
-        let mut doc = doc_mutex.lock().await;
+        let mut doc = self.load_doc(ledger_id).await?;
         doc.amend_bill(&bill_ulid, input, self.device_id, Timestamp::now())?;
         let bytes = doc.save();
-        drop(doc);
-
         self.store.save_ledger_bytes(ledger_id, &bytes).await?;
         self.touch_meta(ledger_id).await?;
         Ok(())
     }
 
     pub async fn list_bills(&self, ledger_id: &str) -> Result<Vec<EffectiveBill>> {
-        let doc_mutex = self.get_doc(ledger_id)?;
-        let doc = doc_mutex.lock().await;
-        doc.list_bills()
+        self.load_doc(ledger_id).await?.list_bills()
     }
 
     // -----------------------------------------------------------------------
@@ -154,21 +127,16 @@ impl UnbillService {
     // -----------------------------------------------------------------------
 
     pub async fn add_member(&self, ledger_id: &str, input: NewMember) -> Result<()> {
-        let doc_mutex = self.get_doc(ledger_id)?;
-        let mut doc = doc_mutex.lock().await;
+        let mut doc = self.load_doc(ledger_id).await?;
         doc.add_member(input, Timestamp::now())?;
         let bytes = doc.save();
-        drop(doc);
-
         self.store.save_ledger_bytes(ledger_id, &bytes).await?;
         self.touch_meta(ledger_id).await?;
         Ok(())
     }
 
     pub async fn list_members(&self, ledger_id: &str) -> Result<Vec<Member>> {
-        let doc_mutex = self.get_doc(ledger_id)?;
-        let doc = doc_mutex.lock().await;
-        doc.list_members()
+        self.load_doc(ledger_id).await?.list_members()
     }
 
     // -----------------------------------------------------------------------
@@ -176,21 +144,16 @@ impl UnbillService {
     // -----------------------------------------------------------------------
 
     pub async fn add_device(&self, ledger_id: &str, input: NewDevice) -> Result<()> {
-        let doc_mutex = self.get_doc(ledger_id)?;
-        let mut doc = doc_mutex.lock().await;
+        let mut doc = self.load_doc(ledger_id).await?;
         doc.add_device(input, Timestamp::now())?;
         let bytes = doc.save();
-        drop(doc);
-
         self.store.save_ledger_bytes(ledger_id, &bytes).await?;
         self.touch_meta(ledger_id).await?;
         Ok(())
     }
 
     pub async fn list_devices(&self, ledger_id: &str) -> Result<Vec<Device>> {
-        let doc_mutex = self.get_doc(ledger_id)?;
-        let doc = doc_mutex.lock().await;
-        doc.list_devices()
+        self.load_doc(ledger_id).await?.list_devices()
     }
 
     // -----------------------------------------------------------------------
@@ -210,8 +173,9 @@ impl UnbillService {
         let mut balances: std::collections::HashMap<crate::model::Ulid, i64> =
             std::collections::HashMap::new();
 
-        for entry in self.ledgers.iter() {
-            let doc = entry.value().lock().await;
+        for meta in self.store.list_ledgers().await? {
+            let id = meta.ledger_id.to_string();
+            let doc = self.load_doc(&id).await?;
             let members = doc.list_members()?;
             // Only aggregate ledgers where this user is an active member.
             if members.iter().any(|m| m.user_id == user_ulid) {
@@ -240,7 +204,7 @@ impl UnbillService {
     pub async fn create_invitation(&self, ledger_id: &str) -> Result<String> {
         let ledger_ulid = parse_ulid(ledger_id)?;
         // Check the ledger exists locally.
-        let _ = self.get_doc(ledger_id)?;
+        let _ = self.load_doc(ledger_id).await?;
         let token = InviteToken::generate();
         let now = Timestamp::now();
         let invitation = Invitation {
@@ -411,11 +375,12 @@ impl UnbillService {
     // Internals
     // -----------------------------------------------------------------------
 
-    fn get_doc(&self, ledger_id: &str) -> Result<Arc<Mutex<LedgerDoc>>> {
-        self.ledgers
-            .get(ledger_id)
-            .map(|r| Arc::clone(&*r))
-            .ok_or_else(|| UnbillError::LedgerNotFound(ledger_id.to_string()))
+    async fn load_doc(&self, ledger_id: &str) -> Result<LedgerDoc> {
+        let bytes = self.store.load_ledger_bytes(ledger_id).await?;
+        if bytes.is_empty() {
+            return Err(UnbillError::LedgerNotFound(ledger_id.to_string()));
+        }
+        LedgerDoc::from_bytes(&bytes).map_err(UnbillError::Other)
     }
 
     /// Update `updated_at` in the stored metadata for a ledger.

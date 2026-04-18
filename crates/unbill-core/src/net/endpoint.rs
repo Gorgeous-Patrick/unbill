@@ -68,16 +68,7 @@ impl UnbillEndpoint {
         let conn = self.inner.connect(addr, ALPN_SYNC).await?;
         let peer_node_id = NodeId::from_node_id(conn.remote_id());
         let (send, recv) = conn.open_bi().await?;
-        run_sync_session(
-            true,
-            peer_node_id,
-            &svc.ledgers,
-            &svc.store,
-            &svc.events,
-            recv,
-            send,
-        )
-        .await?;
+        run_sync_session(true, peer_node_id, &svc.store, &svc.events, recv, send).await?;
         conn.close(0u32.into(), b"done");
         Ok(())
     }
@@ -95,7 +86,7 @@ impl UnbillEndpoint {
         let addr = iroh::EndpointAddr::new(host.as_node_id());
         let conn = self.inner.connect(addr, ALPN_JOIN).await?;
         let (send, recv) = conn.open_bi().await?;
-        run_join_requester(request, &svc.ledgers, &svc.store, &svc.events, recv, send).await?;
+        run_join_requester(request, &svc.store, &svc.events, recv, send).await?;
         conn.close(0u32.into(), b"done");
         Ok(())
     }
@@ -184,20 +175,11 @@ async fn dispatch(
     match alpn {
         ALPN_SYNC => {
             let (send, recv) = conn.accept_bi().await?;
-            run_sync_session(
-                false,
-                peer,
-                &svc.ledgers,
-                &svc.store,
-                &svc.events,
-                recv,
-                send,
-            )
-            .await?;
+            run_sync_session(false, peer, &svc.store, &svc.events, recv, send).await?;
         }
         ALPN_JOIN => {
             let (send, recv) = conn.accept_bi().await?;
-            run_join_host(peer, &svc.ledgers, &svc.store, &svc.events, recv, send).await?;
+            run_join_host(peer, &svc.store, &svc.events, recv, send).await?;
         }
         ALPN_IDENTITY => {
             let (send, recv) = conn.accept_bi().await?;
