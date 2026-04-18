@@ -348,7 +348,7 @@ fn test_amend_bill_updates_amount_and_marks_amended() {
 #[test]
 fn test_settlement_empty_when_no_bills() {
     let env = Env::new();
-    let lid = create_ledger_with_members(&env);
+    create_ledger_with_members(&env);
     // Alice is a member but there are no bills — no transactions.
     let v = env.json(&["settlement", ALICE]);
     assert!(v["transactions"].as_array().unwrap().is_empty());
