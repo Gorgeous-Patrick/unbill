@@ -152,7 +152,7 @@ where
             let meta = LedgerMeta {
                 ledger_id: ledger.ledger_id,
                 name: ledger.name.clone(),
-                currency: ledger.currency.clone(),
+                currency: ledger.currency,
                 created_at: ledger.created_at,
                 updated_at: Timestamp::now(),
             };

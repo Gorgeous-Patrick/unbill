@@ -61,7 +61,7 @@ impl UnbillService {
         for meta in metas {
             let id = meta.ledger_id.to_string();
             let bytes = store.load_ledger_bytes(&id).await?;
-            let doc = LedgerDoc::from_bytes(&bytes).map_err(|e| UnbillError::Other(e))?;
+            let doc = LedgerDoc::from_bytes(&bytes).map_err(UnbillError::Other)?;
             ledgers.insert(id, Arc::new(Mutex::new(doc)));
         }
 
@@ -86,7 +86,7 @@ impl UnbillService {
         let ledger_id = Ulid::new();
         let now = Timestamp::now();
 
-        let mut doc = LedgerDoc::new(ledger_id, name.clone(), currency.clone(), now)?;
+        let mut doc = LedgerDoc::new(ledger_id, name.clone(), currency, now)?;
         let bytes = doc.save();
 
         let meta = LedgerMeta {

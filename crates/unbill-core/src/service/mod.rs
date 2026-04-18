@@ -1,10 +1,10 @@
 // Top-level service facade. Implementation begins at M2.
 // See DESIGN.md §7 for the full public API.
 
-mod service;
+mod inner;
 
-pub use service::{Identity, ServiceEvent, UnbillService};
-pub(crate) use service::{
+pub use inner::{Identity, ServiceEvent, UnbillService};
+pub(crate) use inner::{
     load_pending_identity_tokens, load_pending_invitations, save_pending_identity_tokens,
     save_pending_invitations,
 };

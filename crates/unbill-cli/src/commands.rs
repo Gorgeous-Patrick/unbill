@@ -227,8 +227,8 @@ pub async fn bill_list(svc: &UnbillService, ledger_id: &str, json: bool) -> anyh
             return Ok(());
         }
         println!(
-            "{:<26}  {:>10}  {:<32}  {}",
-            "ID", "AMOUNT", "DESCRIPTION", "FLAGS"
+            "{:<26}  {:>10}  {:<32}  FLAGS",
+            "ID", "AMOUNT", "DESCRIPTION"
         );
         for b in &bills {
             let flags = if b.was_amended { "amended" } else { "" };
@@ -244,6 +244,7 @@ pub async fn bill_list(svc: &UnbillService, ledger_id: &str, json: bool) -> anyh
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn bill_amend(
     svc: &UnbillService,
     ledger_id: &str,
