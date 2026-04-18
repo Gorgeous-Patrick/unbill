@@ -48,6 +48,11 @@ pub enum ServiceEvent {
 impl UnbillService {
     /// Open the service: load or create the device key, then eagerly load all
     /// stored ledgers into memory.
+    ///
+    /// Ledgers are kept as live in-memory `LedgerDoc` instances because they are
+    /// actively mutated (bills, devices, sync messages) and require coordination
+    /// across concurrent callers. All other store-backed data (pending invitations,
+    /// pending identity tokens, identities) is loaded on demand and never cached.
     pub async fn open(store: Arc<dyn LedgerStore>) -> Result<Arc<Self>> {
         let (device_id, secret_key) = load_or_create_device_key(&*store).await?;
 

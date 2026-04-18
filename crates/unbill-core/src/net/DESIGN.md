@@ -99,7 +99,7 @@ The join flow is about **device authorization only**. It adds a new `NodeId` to 
 
 ### Invite URL
 
-The inviting device generates a 32-byte cryptographically random `InviteToken`, stores it in `pending_invitations` (keyed by token hex), and constructs an invite URL:
+The inviting device generates a 32-byte cryptographically random `InviteToken`, saves it to `LedgerStore` (keyed by token hex in `pending_invitations.json`), and constructs an invite URL:
 
 ```
 unbill://join/<ledger_id>/<inviter_node_id_hex>/<token_hex>
@@ -147,13 +147,13 @@ JoinError { reason: String }
 
 ### Host-side join processing
 
-1. Look up the token in `pending_invitations`. Reject with `JoinError` if not found, already used, or expired.
-2. Verify the `ledger_id` in the request matches the invitation's `ledger_id`.
-3. Read the requester's `NodeId` from the TLS-authenticated Iroh connection.
-4. Add that `NodeId` (with the provided `label`) to `ledger.devices` in the Automerge document.
-5. Save the updated document to `LedgerStore`.
-6. Emit `LedgerUpdated` on the service event channel.
-7. Remove the token from `pending_invitations` (consume it).
+1. Load `pending_invitations.json` from `LedgerStore` and remove the token (consume it). Save the updated map back. Reject with `JoinError` if the token was not found or already consumed.
+2. Verify the token has not expired.
+3. Verify the `ledger_id` in the request matches the invitation's `ledger_id`.
+4. Read the requester's `NodeId` from the TLS-authenticated Iroh connection.
+5. Add that `NodeId` (with the provided `label`) to `ledger.devices` in the Automerge document.
+6. Save the updated document to `LedgerStore`.
+7. Emit `LedgerUpdated` on the service event channel.
 8. Send `JoinResponse` with the full document bytes.
 
 ### Requester-side join processing
@@ -173,7 +173,7 @@ When setting up a new device, a user can import one of their existing identities
 
 ### Identity invite URL
 
-The existing device generates a 32-byte cryptographically random token associated with a specific `user_id`, stores it in memory, and constructs an invite URL:
+The existing device generates a 32-byte cryptographically random token associated with a specific `user_id`, saves it to `LedgerStore` (in `pending_identity_tokens.json`), and constructs an invite URL:
 
 ```
 unbill://identity/<existing_node_id_hex>/<token_hex>
@@ -216,7 +216,7 @@ IdentityError { reason: String }
 
 ### Processing
 
-Existing device: look up the token, reject if not found or expired, consume it, send `IdentityResponse`.
+Existing device: load `pending_identity_tokens.json` from `LedgerStore`, remove the token (consume it), save the updated map back. Reject if the token was not found. Send `IdentityResponse`.
 
 New device: receive `IdentityResponse`, persist `user_id` and `display_name` to device-local storage. The device is now ready to join ledgers.
 
