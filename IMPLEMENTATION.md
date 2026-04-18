@@ -17,7 +17,7 @@ Each component has its own DESIGN.md and IMPLEMENTATION.md.
 
 | Module | Responsibility |
 |--------|---------------|
-| `model/` | Domain types: Bill, Member, Ledger, Amendment, Share, and all newtypes |
+| `model/` | Domain types: Bill, Member, Ledger, EffectiveBill, Share, and all newtypes |
 | `doc/` | LedgerDoc — Automerge-backed in-memory ledger; read/write operations |
 | `storage/` | LedgerStore trait, FsStore (flat-file), InMemoryStore (tests) |
 | `net/` | Iroh endpoint, sync protocol, per-peer connection management |

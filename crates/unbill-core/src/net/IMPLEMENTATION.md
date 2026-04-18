@@ -39,7 +39,7 @@ Every message on every protocol is framed identically:
 - `stream: (impl AsyncRead, impl AsyncWrite)`
 
 Steps:
-1. Initiator sends `Hello { ledger_ids }`. Responder reads it, computes `accepted` (ledgers where peer is in `devices` and `removed = false`), sends `HelloAck`.
+1. Initiator sends `Hello { ledger_ids }`. Responder reads it, computes `accepted` (ledgers where peer's `NodeId` appears in `devices`), sends `HelloAck`.
 2. For each accepted ledger, both sides create a fresh `automerge::sync::State`.
 3. Both sides loop: call `generate_sync_message`, send `SyncMsg` if `Some`, read incoming messages and call `receive_sync_message`, send `SyncDone` when `generate_sync_message` returns `None`.
 4. When all ledgers have exchanged `SyncDone`, the function returns.
