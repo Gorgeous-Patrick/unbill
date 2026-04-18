@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use anyhow::{anyhow, bail};
-use unbill_core::model::{BillAmendment, NewBill, NewMember, NodeId, Share, Ulid};
+use unbill_core::model::{NewBill, NewMember, NodeId, Share, Ulid};
 use unbill_core::service::UnbillService;
 
 use crate::output::{
@@ -236,12 +236,7 @@ pub async fn bill_list(svc: &UnbillService, ledger_id: &str, json: bool) -> anyh
             "ID", "AMOUNT", "DESCRIPTION", "FLAGS"
         );
         for b in &bills {
-            let flags = match (b.was_amended, b.is_deleted) {
-                (true, true) => "amended,deleted",
-                (true, false) => "amended",
-                (false, true) => "deleted",
-                _ => "",
-            };
+            let flags = if b.was_amended { "amended" } else { "" };
             println!(
                 "{:<26}  {:>10}  {:<32}  {}",
                 b.id,
@@ -258,64 +253,33 @@ pub async fn bill_amend(
     svc: &UnbillService,
     ledger_id: &str,
     bill_id: &str,
-    author: &str,
-    amount: Option<&str>,
-    description: Option<String>,
+    payer: &str,
+    amount: &str,
+    description: String,
     participants: Vec<String>,
-    reason: Option<String>,
     _json: bool,
 ) -> anyhow::Result<()> {
-    let new_amount_cents = amount.map(parse_amount).transpose()?;
-    let new_shares = if participants.is_empty() {
-        None
-    } else {
-        Some(
-            participants
-                .iter()
-                .map(|p| {
-                    parse_ulid(p).map(|u| Share {
-                        user_id: u,
-                        shares: 1,
-                    })
-                })
-                .collect::<anyhow::Result<Vec<_>>>()?,
-        )
-    };
-
-    if new_amount_cents.is_none() && description.is_none() && new_shares.is_none() {
-        bail!("at least one of --amount, --description, --participant must be provided");
-    }
-
+    let amount_cents = parse_amount(amount)?;
+    let shares = participants
+        .iter()
+        .map(|p| {
+            parse_ulid(p).map(|u| Share {
+                user_id: u,
+                shares: 1,
+            })
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
     svc.amend_bill(
         ledger_id,
         bill_id,
-        BillAmendment {
-            new_amount_cents,
-            new_description: description,
-            new_shares,
-            author_user_id: parse_ulid(author)?,
-            reason,
+        NewBill {
+            payer_user_id: parse_ulid(payer)?,
+            amount_cents,
+            description,
+            shares,
         },
     )
     .await?;
-    Ok(())
-}
-
-pub async fn bill_delete(
-    svc: &UnbillService,
-    ledger_id: &str,
-    bill_id: &str,
-) -> anyhow::Result<()> {
-    svc.delete_bill(ledger_id, bill_id).await?;
-    Ok(())
-}
-
-pub async fn bill_restore(
-    svc: &UnbillService,
-    ledger_id: &str,
-    bill_id: &str,
-) -> anyhow::Result<()> {
-    svc.restore_bill(ledger_id, bill_id).await?;
     Ok(())
 }
 

@@ -12,7 +12,7 @@ A thin clap-driven command-line frontend for `UnbillService`. Useful for dogfood
 - `device show` — print this device's node ID and data directory.
 - `device remove --ledger <ledger_id> --node-id <node_id>` — remove an authorized device from a ledger (any trusted device may remove any other).
 - `ledger create | list | show | delete | invite | join` — ledger lifecycle. `ledger create` registers the creator's own device in `ledger.devices`. `ledger invite` generates an `unbill://join/...` URL authorizing a new device to access the ledger; `ledger join <url>` accepts one.
-- `bill add | list | amend | delete | restore` — bill management. `--added-by` defaults to the local user ID at the CLI level if the device holds exactly one identity; required otherwise.
+- `bill add | list | amend` — bill management. `bill amend` records a new version of an existing bill (same bill ID, all fields required); the latest version becomes the effective bill.
 - `member list | add | remove` — managing named participants in a ledger.
 - `sync daemon | once | status` — P2P sync control. `sync once <peer_node_id>` dials a specific peer and syncs; `sync daemon` opens the endpoint and waits for incoming connections.
 - `settlement <user_id>` — display who owes whom for a user, aggregated across all their ledgers.

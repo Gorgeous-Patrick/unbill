@@ -10,8 +10,8 @@ use tokio::sync::{broadcast, Mutex};
 use crate::doc::LedgerDoc;
 use crate::error::{Result, UnbillError};
 use crate::model::{
-    BillAmendment, Currency, Device, EffectiveBill, Invitation, InviteToken, LedgerMeta, Member,
-    NewBill, NewDevice, NewMember, NodeId, Timestamp, Ulid,
+    Currency, Device, EffectiveBill, Invitation, InviteToken, LedgerMeta, Member, NewBill,
+    NewDevice, NewMember, NodeId, Timestamp, Ulid,
 };
 use crate::net::{PendingIdentityTokens, PendingInvitations};
 use crate::settlement;
@@ -136,38 +136,12 @@ impl UnbillService {
         &self,
         ledger_id: &str,
         bill_id: &str,
-        input: BillAmendment,
+        input: NewBill,
     ) -> Result<()> {
         let bill_ulid = parse_ulid(bill_id)?;
         let doc_mutex = self.get_doc(ledger_id)?;
         let mut doc = doc_mutex.lock().await;
-        doc.amend_bill(&bill_ulid, input, Timestamp::now())?;
-        let bytes = doc.save();
-        drop(doc);
-
-        self.store.save_ledger_bytes(ledger_id, &bytes).await?;
-        self.touch_meta(ledger_id).await?;
-        Ok(())
-    }
-
-    pub async fn delete_bill(&self, ledger_id: &str, bill_id: &str) -> Result<()> {
-        let bill_ulid = parse_ulid(bill_id)?;
-        let doc_mutex = self.get_doc(ledger_id)?;
-        let mut doc = doc_mutex.lock().await;
-        doc.delete_bill(&bill_ulid)?;
-        let bytes = doc.save();
-        drop(doc);
-
-        self.store.save_ledger_bytes(ledger_id, &bytes).await?;
-        self.touch_meta(ledger_id).await?;
-        Ok(())
-    }
-
-    pub async fn restore_bill(&self, ledger_id: &str, bill_id: &str) -> Result<()> {
-        let bill_ulid = parse_ulid(bill_id)?;
-        let doc_mutex = self.get_doc(ledger_id)?;
-        let mut doc = doc_mutex.lock().await;
-        doc.restore_bill(&bill_ulid)?;
+        doc.amend_bill(&bill_ulid, input, self.device_id, Timestamp::now())?;
         let bytes = doc.save();
         drop(doc);
 
@@ -623,12 +597,14 @@ mod tests {
         svc.amend_bill(
             &lid,
             &bill_id,
-            BillAmendment {
-                new_amount_cents: Some(4000),
-                new_description: None,
-                new_shares: None,
-                author_user_id: Ulid::from_u128(1),
-                reason: None,
+            NewBill {
+                payer_user_id: Ulid::from_u128(1),
+                amount_cents: 4000,
+                description: "Lunch".into(),
+                shares: vec![
+                    Share { user_id: Ulid::from_u128(1), shares: 1 },
+                    Share { user_id: Ulid::from_u128(2), shares: 1 },
+                ],
             },
         )
         .await
@@ -637,24 +613,6 @@ mod tests {
         let bills = svc.list_bills(&lid).await.unwrap();
         assert_eq!(bills[0].amount_cents, 4000);
         assert!(bills[0].was_amended);
-    }
-
-    #[tokio::test]
-    async fn test_delete_and_restore_bill() {
-        let svc = open().await;
-        let lid = svc
-            .create_ledger("Test".into(), usd().into())
-            .await
-            .unwrap();
-        seed_members(&svc, &lid).await;
-        let (_, bill) = two_way_bill("Coffee", 500, &lid);
-        let bill_id = svc.add_bill(&lid, bill).await.unwrap();
-
-        svc.delete_bill(&lid, &bill_id).await.unwrap();
-        assert!(svc.list_bills(&lid).await.unwrap()[0].is_deleted);
-
-        svc.restore_bill(&lid, &bill_id).await.unwrap();
-        assert!(!svc.list_bills(&lid).await.unwrap()[0].is_deleted);
     }
 
     // --- settlement ---

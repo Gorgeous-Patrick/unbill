@@ -1,6 +1,5 @@
 use autosurgeon::{Hydrate, Reconcile};
 
-use super::amendment::Amendment;
 use super::id::Ulid;
 use super::node_id::NodeId;
 use super::timestamp::Timestamp;
@@ -17,10 +16,8 @@ pub struct Bill {
     /// `participant_user_ids` list.
     pub shares: Vec<Share>,
     pub created_at: Timestamp,
-    /// The iroh NodeId of the device that created this bill.
+    /// The iroh NodeId of the device that created this bill entry.
     pub created_by_device: NodeId,
-    pub deleted: bool,
-    pub amendments: Vec<Amendment>,
 }
 
 #[derive(Clone, Debug, Reconcile, Hydrate)]

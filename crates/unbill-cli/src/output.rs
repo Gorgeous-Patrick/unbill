@@ -27,7 +27,6 @@ pub struct BillOut {
     pub amount_cents: i64,
     pub payer_user_id: String,
     pub was_amended: bool,
-    pub is_deleted: bool,
     pub last_modified_at_ms: i64,
     pub shares: Vec<ShareOut>,
 }
@@ -78,7 +77,6 @@ pub fn bill_out(b: &EffectiveBill) -> BillOut {
         amount_cents: b.amount_cents,
         payer_user_id: b.payer_user_id.to_string(),
         was_amended: b.was_amended,
-        is_deleted: b.is_deleted,
         last_modified_at_ms: b.last_modified_at.as_millis(),
         shares: b
             .shares

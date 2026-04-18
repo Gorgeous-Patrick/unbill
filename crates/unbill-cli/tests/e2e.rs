@@ -256,7 +256,6 @@ fn test_add_bill_returns_id_and_appears_in_list() {
     assert_eq!(arr[0]["id"].as_str().unwrap(), bid);
     assert_eq!(arr[0]["amount_cents"].as_i64().unwrap(), 4550);
     assert_eq!(arr[0]["description"].as_str().unwrap(), "Groceries");
-    assert!(!arr[0]["is_deleted"].as_bool().unwrap());
     assert!(!arr[0]["was_amended"].as_bool().unwrap());
 }
 
@@ -273,70 +272,25 @@ fn test_amend_bill_updates_amount_and_marks_amended() {
         &lid,
         "--bill-id",
         &bid,
-        "--author",
+        "--payer",
         ALICE,
         "--amount",
         "12.50",
         "--description",
         "Lunch + coffee",
+        "--participant",
+        ALICE,
+        "--participant",
+        BOB,
     ]);
 
     let bills = env.json(&["bill", "list", "--ledger-id", &lid]);
-    let b = &bills.as_array().unwrap()[0];
+    let arr = bills.as_array().unwrap();
+    assert_eq!(arr.len(), 1, "amendment must not add a new logical bill");
+    let b = &arr[0];
     assert_eq!(b["amount_cents"].as_i64().unwrap(), 1250);
     assert_eq!(b["description"].as_str().unwrap(), "Lunch + coffee");
     assert!(b["was_amended"].as_bool().unwrap());
-}
-
-#[test]
-fn test_delete_bill_sets_deleted_flag() {
-    let env = Env::new();
-    let lid = create_ledger_with_members(&env);
-    let bid = add_bill(&env, &lid, ALICE, "20", "Coffee", &[ALICE]);
-
-    env.ok(&["bill", "delete", "--ledger-id", &lid, "--bill-id", &bid]);
-
-    let bills = env.json(&["bill", "list", "--ledger-id", &lid]);
-    assert!(bills.as_array().unwrap()[0]["is_deleted"]
-        .as_bool()
-        .unwrap());
-}
-
-#[test]
-fn test_restore_bill_clears_deleted_flag() {
-    let env = Env::new();
-    let lid = create_ledger_with_members(&env);
-    let bid = add_bill(&env, &lid, ALICE, "20", "Coffee", &[ALICE]);
-
-    env.ok(&["bill", "delete", "--ledger-id", &lid, "--bill-id", &bid]);
-    env.ok(&["bill", "restore", "--ledger-id", &lid, "--bill-id", &bid]);
-
-    let bills = env.json(&["bill", "list", "--ledger-id", &lid]);
-    assert!(!bills.as_array().unwrap()[0]["is_deleted"]
-        .as_bool()
-        .unwrap());
-}
-
-#[test]
-fn test_amend_with_no_fields_is_rejected() {
-    let env = Env::new();
-    let lid = create_ledger_with_members(&env);
-    let bid = add_bill(&env, &lid, ALICE, "10", "X", &[ALICE]);
-
-    let stderr = env.fail(&[
-        "bill",
-        "amend",
-        "--ledger-id",
-        &lid,
-        "--bill-id",
-        &bid,
-        "--author",
-        ALICE,
-    ]);
-    assert!(
-        stderr.contains("at least one"),
-        "expected validation error, got: {stderr}"
-    );
 }
 
 // ---------------------------------------------------------------------------
@@ -365,17 +319,6 @@ fn test_settlement_correct_after_one_bill() {
     assert_eq!(txns[0]["from_user_id"].as_str().unwrap(), BOB);
     assert_eq!(txns[0]["to_user_id"].as_str().unwrap(), ALICE);
     assert_eq!(txns[0]["amount_cents"].as_i64().unwrap(), 4500);
-}
-
-#[test]
-fn test_settlement_deleted_bills_are_excluded() {
-    let env = Env::new();
-    let lid = create_ledger_with_members(&env);
-    let bid = add_bill(&env, &lid, ALICE, "90", "Dinner", &[ALICE, BOB]);
-    env.ok(&["bill", "delete", "--ledger-id", &lid, "--bill-id", &bid]);
-
-    let v = env.json(&["settlement", ALICE]);
-    assert!(v["transactions"].as_array().unwrap().is_empty());
 }
 
 #[test]
@@ -443,10 +386,16 @@ fn test_amendments_persist_across_process_restarts() {
         &lid,
         "--bill-id",
         &bid,
-        "--author",
+        "--payer",
         ALICE,
         "--amount",
         "15",
+        "--description",
+        "Coffee",
+        "--participant",
+        ALICE,
+        "--participant",
+        BOB,
     ]);
 
     // New process reads the amended value.

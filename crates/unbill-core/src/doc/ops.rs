@@ -8,8 +8,8 @@ use autosurgeon::{hydrate, reconcile};
 
 use crate::error::UnbillError;
 use crate::model::{
-    Amendment, Bill, BillAmendment, Currency, Device, EffectiveBill, Ledger, Member, NewBill,
-    NewDevice, NewMember, NodeId, Timestamp, Ulid,
+    Bill, Currency, Device, EffectiveBill, Ledger, Member, NewBill, NewDevice, NewMember, NodeId,
+    Timestamp, Ulid,
 };
 
 type Result<T> = std::result::Result<T, UnbillError>;
@@ -89,66 +89,73 @@ pub(super) fn add_bill(
         shares: input.shares,
         created_at: now,
         created_by_device,
-        deleted: false,
-        amendments: vec![],
     });
     reconcile(doc, &ledger).map_err(|e| UnbillError::Other(e.into()))?;
     Ok(bill_id)
 }
 
-/// Append an `Amendment` to an existing bill.
+/// Append a new `Bill` entry with the same `bill_id`, replacing all fields.
+/// The latest entry (by `created_at`) becomes the effective bill.
 pub(super) fn amend_bill(
     doc: &mut AutoCommit,
     bill_id: &Ulid,
-    input: BillAmendment,
+    input: NewBill,
+    created_by_device: NodeId,
     now: Timestamp,
 ) -> Result<()> {
     let mut ledger = get_ledger(doc)?;
-    let bill = ledger
-        .bills
-        .iter_mut()
-        .find(|b| &b.id == bill_id)
-        .ok_or_else(|| UnbillError::BillNotFound(bill_id.to_string()))?;
-    bill.amendments.push(Amendment {
-        id: Ulid::new(),
-        new_amount_cents: input.new_amount_cents,
-        new_description: input.new_description,
-        new_shares: input.new_shares,
-        author_user_id: input.author_user_id,
+
+    if !ledger.bills.iter().any(|b| &b.id == bill_id) {
+        return Err(UnbillError::BillNotFound(bill_id.to_string()));
+    }
+
+    let member_ids: std::collections::HashSet<Ulid> = ledger
+        .members
+        .iter()
+        .filter(|m| !m.removed)
+        .map(|m| m.user_id)
+        .collect();
+
+    let all_users =
+        std::iter::once(&input.payer_user_id).chain(input.shares.iter().map(|s| &s.user_id));
+    for user_id in all_users {
+        if !member_ids.contains(user_id) {
+            return Err(UnbillError::UserNotMember(user_id.to_string()));
+        }
+    }
+
+    ledger.bills.push(Bill {
+        id: *bill_id,
+        payer_user_id: input.payer_user_id,
+        amount_cents: input.amount_cents,
+        description: input.description,
+        shares: input.shares,
         created_at: now,
-        reason: input.reason,
+        created_by_device,
     });
     reconcile(doc, &ledger).map_err(|e| UnbillError::Other(e.into()))
 }
 
-/// Tombstone-delete a bill (`deleted = true`).
-pub(super) fn delete_bill(doc: &mut AutoCommit, bill_id: &Ulid) -> Result<()> {
-    let mut ledger = get_ledger(doc)?;
-    let bill = ledger
-        .bills
-        .iter_mut()
-        .find(|b| &b.id == bill_id)
-        .ok_or_else(|| UnbillError::BillNotFound(bill_id.to_string()))?;
-    bill.deleted = true;
-    reconcile(doc, &ledger).map_err(|e| UnbillError::Other(e.into()))
-}
-
-/// Restore a tombstoned bill (`deleted = false`).
-pub(super) fn restore_bill(doc: &mut AutoCommit, bill_id: &Ulid) -> Result<()> {
-    let mut ledger = get_ledger(doc)?;
-    let bill = ledger
-        .bills
-        .iter_mut()
-        .find(|b| &b.id == bill_id)
-        .ok_or_else(|| UnbillError::BillNotFound(bill_id.to_string()))?;
-    bill.deleted = false;
-    reconcile(doc, &ledger).map_err(|e| UnbillError::Other(e.into()))
-}
-
-/// Project all bills to their effective (post-amendment) view.
+/// Project all bills to their effective view.
+///
+/// Bills are grouped by their logical `id`; within each group the entry with
+/// the latest `created_at` (ties broken by device string) wins.  Groups appear
+/// in the order their first entry was inserted.
 pub(super) fn list_bills(doc: &AutoCommit) -> Result<Vec<EffectiveBill>> {
     let ledger = get_ledger(doc)?;
-    Ok(ledger.bills.iter().map(EffectiveBill::from).collect())
+    let mut order: Vec<Ulid> = Vec::new();
+    let mut groups: std::collections::HashMap<Ulid, Vec<Bill>> =
+        std::collections::HashMap::new();
+    for bill in ledger.bills {
+        if !groups.contains_key(&bill.id) {
+            order.push(bill.id);
+        }
+        groups.entry(bill.id).or_default().push(bill);
+    }
+    Ok(order
+        .into_iter()
+        .map(|id| EffectiveBill::project(groups.remove(&id).unwrap()))
+        .collect())
 }
 
 // ---------------------------------------------------------------------------
@@ -356,7 +363,6 @@ mod tests {
         assert_eq!(bills.len(), 1);
         assert_eq!(bills[0].id, bill_id);
         assert_eq!(bills[0].amount_cents, 3000);
-        assert!(!bills[0].is_deleted);
         assert!(!bills[0].was_amended);
     }
 
@@ -462,21 +468,15 @@ mod tests {
         amend_bill(
             &mut doc,
             &bill_id,
-            BillAmendment {
-                new_amount_cents: Some(2000),
-                new_description: Some("Updated".into()),
-                new_shares: None,
-                author_user_id: alice,
-                reason: None,
-            },
+            simple_bill(alice, &[alice], 2000),
+            device(),
             ts(2),
         )
         .unwrap();
         let bills = list_bills(&doc).unwrap();
+        assert_eq!(bills.len(), 1, "amendment should not add a new logical bill");
         assert_eq!(bills[0].amount_cents, 2000);
-        assert_eq!(bills[0].description, "Updated");
         assert!(bills[0].was_amended);
-        assert_eq!(bills[0].history.len(), 1);
     }
 
     #[test]
@@ -485,47 +485,10 @@ mod tests {
         let result = amend_bill(
             &mut doc,
             &uid(999),
-            BillAmendment {
-                new_amount_cents: Some(1),
-                new_description: None,
-                new_shares: None,
-                author_user_id: uid(1),
-                reason: None,
-            },
+            simple_bill(uid(1), &[uid(1)], 1000),
+            device(),
             ts(0),
         );
-        assert!(matches!(result, Err(UnbillError::BillNotFound(_))));
-    }
-
-    // --- delete / restore ---
-
-    #[test]
-    fn test_delete_bill_sets_tombstone() {
-        let alice = uid(1);
-        let mut doc = doc_with_members(&[alice]);
-        let bill_id =
-            add_bill(&mut doc, simple_bill(alice, &[alice], 500), device(), ts(1)).unwrap();
-        delete_bill(&mut doc, &bill_id).unwrap();
-        let bills = list_bills(&doc).unwrap();
-        assert!(bills[0].is_deleted);
-    }
-
-    #[test]
-    fn test_restore_bill_clears_tombstone() {
-        let alice = uid(1);
-        let mut doc = doc_with_members(&[alice]);
-        let bill_id =
-            add_bill(&mut doc, simple_bill(alice, &[alice], 500), device(), ts(1)).unwrap();
-        delete_bill(&mut doc, &bill_id).unwrap();
-        restore_bill(&mut doc, &bill_id).unwrap();
-        let bills = list_bills(&doc).unwrap();
-        assert!(!bills[0].is_deleted);
-    }
-
-    #[test]
-    fn test_delete_unknown_bill_returns_error() {
-        let mut doc = fresh_doc();
-        let result = delete_bill(&mut doc, &uid(999));
         assert!(matches!(result, Err(UnbillError::BillNotFound(_))));
     }
 

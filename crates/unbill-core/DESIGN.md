@@ -10,7 +10,7 @@ The primary entry point is `UnbillService`. Frontends create one instance at sta
 
 **Ledger lifecycle:** create a named ledger with a fixed currency; list all ledgers; delete; export to bytes; import from bytes.
 
-**Bills:** add a bill (payer, amount, description, share weights); amend an existing bill; tombstone-delete; restore; list as effective (projected) bills.
+**Bills:** add a bill (payer, amount, description, share weights); amend an existing bill (appends a new entry with the same bill ID — the latest entry wins); list as effective (projected) bills. Bills are never deleted.
 
 **Members:** add a member directly by user ID and display name; remove a member (tombstone); list current (non-removed) members. Members are named participants only — they carry no device binding. The full invite/join flow (out-of-band token, join URL) is deferred to M4.
 
@@ -24,9 +24,8 @@ Key model types: `Ulid`, `Timestamp`, `Currency`, `NodeId`, `InviteToken`, `Ledg
 
 ## Invariants
 
-- All entity IDs (`ledger_id`, `bill.id`, `user_id`, `amendment.id`) are `Ulid` — globally unique, monotonically ordered, never reused.
-- Bills are append-only. Logical deletion is tombstoning; removing a bill from the underlying vector is forbidden.
-- Amendments are append-only. Editing a bill means adding an `Amendment` record, never mutating existing fields.
+- All entity IDs (`ledger_id`, `bill.id`, `user_id`) are `Ulid` — globally unique, monotonically ordered, never reused.
+- Bills are append-only and never deleted. Amending a bill means appending a new `Bill` entry with the same logical `id`; the entry with the latest `created_at` (ties broken by `created_by_device`) is the effective bill.
 - `amount_cents` is non-negative. Refunds are modeled as separate bills with reversed payer/participant roles.
 - A ledger's currency is a valid ISO 4217 code and is fixed at creation.
 - Device node IDs and bill creator fields are valid Ed25519 public keys.
@@ -39,7 +38,7 @@ Key model types: `Ulid`, `Timestamp`, `Currency`, `NodeId`, `InviteToken`, `Ledg
 | Error | Meaning |
 |-------|---------|
 | `LedgerNotFound` | Querying a ledger ID that does not exist |
-| `BillNotFound` | Amending, deleting, or restoring a bill ID that does not exist |
+| `BillNotFound` | Amending a bill ID that does not exist |
 | `MemberNotFound` | Removing a user ID that is not an active member |
 | `DeviceNotFound` | Removing a `NodeId` that is not an active device in the ledger |
 | `UserNotMember` | Adding a bill whose payer or participant is not an active member |

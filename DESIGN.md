@@ -22,7 +22,7 @@ A person splitting expenses with a small group — roommates, a couple, a travel
 1. **Offline-first.** Every operation works without network. Sync is opportunistic.
 2. **Data lives with users.** No server required. If the author disappears, existing installs keep working forever.
 3. **CRDTs over consensus.** State is a deterministic function of observed operations. We never ask which device has "the truth."
-4. **Append-only at the data layer.** Deletion is tombstoning. Modification is amendment. The ledger is an event log; the UI renders a projection.
+4. **Append-only at the data layer.** Members and devices use tombstoning for removal. Bills are never deleted; edits are new entries with the same bill ID. The ledger is an event log; the UI renders a projection.
 5. **One layer per concern.** Persistence, networking, business logic, and UI are separate and do not leak into each other.
 6. **Abstract only where a real alternative exists.** The storage backend is a trait; the CRDT engine is not.
 7. **Conservative about CRDT content.** Device preferences, UI state, and caches stay out of the synced document.
@@ -31,7 +31,7 @@ A person splitting expenses with a small group — roommates, a couple, a travel
 ## Data model
 
 ### Ledger
-A shared expense context — "our household," "the Iceland trip." Contains members, authorized devices, bills, and amendment history. Each ledger is independent; a user may have many.
+A shared expense context — "our household," "the Iceland trip." Contains members, authorized devices, and bills. Each ledger is independent; a user may have many.
 
 ### Member
 A named participant in a ledger, identified by a stable user ID. Members have no device binding — any authorized device may record bills on behalf of any member. Members are tombstoned, never removed from the document. A user must be an active (non-tombstoned) member before they can appear as a payer or participant on any bill.
@@ -40,12 +40,7 @@ A named participant in a ledger, identified by a stable user ID. Members have no
 A physical device authorized to sync a ledger, identified by its Ed25519 `NodeId`. Devices are associated with the ledger, not with individual members. Any device in a ledger's device list may submit bills for any member — the trust model is "everyone in the group trusts everyone else's device."
 
 ### Bill
-An expense: who paid, how much, and how the cost is split. Bills are append-only. The current view is a projection of all amendments applied in deterministic order.
-
-### Amendment
-An explicit record that modifies a bill. Every edit is an amendment — never an in-place change. Amendments carry an author, timestamp, and optional reason.
-
-**Why amendments over in-place edits:** Concurrent CRDT edits resolve by last-writer-wins, silently discarding one user's change. For a financial tool, silent data loss is unacceptable. Amendments make every edit visible, auditable, and attributable. They also preserve bill identity across edits.
+An expense entry: who paid, how much, and how the cost is split. Multiple entries may share the same logical bill ID — the entry with the latest timestamp wins and defines the effective bill. Amending a bill means appending a new entry with the same ID. Bills are never deleted.
 
 ### Split model
 All bills use relative share weights. Equal split is everyone gets weight 1. Different weights express proportional or exact-amount splits. One model covers all cases — no separate split modes.
@@ -79,8 +74,8 @@ A short-lived in-memory token allowing a new member to join. Never persisted or 
 ## Glossary
 
 - **CRDT** — Conflict-free Replicated Data Type. A data structure that can be updated independently on any device and merged without conflict resolution logic.
-- **Tombstone** — A logical deletion marker. The item remains in storage to preserve references and allow concurrent edits to resolve.
-- **Amendment** — A record that modifies an existing bill. Append-only; in-place edits are forbidden.
+- **Tombstone** — A logical deletion marker used for members and devices. The item remains in storage to preserve references and allow concurrent edits to resolve.
+- **Amendment** — A new bill entry that shares the same logical bill ID as an existing entry. The latest-timestamp entry wins and becomes the effective bill.
 - **NodeId** — A device's identity: an Ed25519 public key derived from a per-device secret.
 - **Op / operation** — A single unit of change in a CRDT. Append-only; never deleted.
 - **Head** — The latest operation(s) in a CRDT document. A document's state is uniquely identified by its set of heads.

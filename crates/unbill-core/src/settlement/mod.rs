@@ -33,9 +33,6 @@ pub fn accumulate_balances(
         balances.entry(m.user_id).or_insert(0);
     }
     for bill in bills {
-        if bill.is_deleted {
-            continue;
-        }
         let share_cents = split_amounts(bill);
         *balances.entry(bill.payer_user_id).or_default() += bill.amount_cents;
         for (user_id, amount) in share_cents {
@@ -163,9 +160,7 @@ mod tests {
                 })
                 .collect(),
             was_amended: false,
-            is_deleted: false,
             last_modified_at: Timestamp::from_millis(0),
-            history: vec![],
         }
     }
 
@@ -224,9 +219,7 @@ mod tests {
                 },
             ],
             was_amended: false,
-            is_deleted: false,
             last_modified_at: Timestamp::from_millis(0),
-            history: vec![],
         };
         let amounts = split_amounts(&bill);
         let a = amounts.iter().find(|(id, _)| *id == alice()).unwrap().1;
@@ -303,18 +296,6 @@ mod tests {
         ];
         let s = compute(&members, &bills);
         assert!(s.transactions.is_empty());
-    }
-
-    #[test]
-    fn test_settlement_deleted_bills_ignored() {
-        let members = vec![member(alice()), member(bob())];
-        let mut bill = equal_bill(1, alice(), 10000, &[alice(), bob()]);
-        bill.is_deleted = true;
-        let s = compute(&members, &[bill]);
-        assert!(
-            s.transactions.is_empty(),
-            "deleted bills must not affect settlement"
-        );
     }
 
     #[test]

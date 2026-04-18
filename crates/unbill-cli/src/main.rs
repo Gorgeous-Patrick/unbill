@@ -140,36 +140,21 @@ pub enum BillCmd {
         #[arg(long)]
         ledger_id: String,
     },
-    /// Amend a bill. At least one of --amount, --description, --participant must be provided.
+    /// Amend a bill by recording a new version with the same bill ID.
     Amend {
         #[arg(long)]
         ledger_id: String,
         #[arg(long)]
         bill_id: String,
-        /// User ID of the person making this amendment.
         #[arg(long)]
-        author: String,
+        payer: String,
         #[arg(long)]
-        amount: Option<String>,
+        amount: String,
         #[arg(long)]
-        description: Option<String>,
-        /// Replace all participants (equal shares). Repeat for each.
+        description: String,
+        /// Participants (equal shares). Repeat for each.
         #[arg(long = "participant")]
         participants: Vec<String>,
-        #[arg(long)]
-        reason: Option<String>,
-    },
-    Delete {
-        #[arg(long)]
-        ledger_id: String,
-        #[arg(long)]
-        bill_id: String,
-    },
-    Restore {
-        #[arg(long)]
-        ledger_id: String,
-        #[arg(long)]
-        bill_id: String,
     },
 }
 
@@ -293,30 +278,22 @@ async fn run() -> anyhow::Result<()> {
             BillCmd::Amend {
                 ledger_id,
                 bill_id,
-                author,
+                payer,
                 amount,
                 description,
                 participants,
-                reason,
             } => {
                 commands::bill_amend(
                     &svc,
                     &ledger_id,
                     &bill_id,
-                    &author,
-                    amount.as_deref(),
+                    &payer,
+                    &amount,
                     description,
                     participants,
-                    reason,
                     json,
                 )
                 .await
-            }
-            BillCmd::Delete { ledger_id, bill_id } => {
-                commands::bill_delete(&svc, &ledger_id, &bill_id).await
-            }
-            BillCmd::Restore { ledger_id, bill_id } => {
-                commands::bill_restore(&svc, &ledger_id, &bill_id).await
             }
         },
         Command::Member { sub } => match sub {
