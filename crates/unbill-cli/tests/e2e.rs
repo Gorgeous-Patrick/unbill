@@ -3,7 +3,9 @@
 // Each test gets an isolated temporary data directory via `Env`. Commands are
 // run against the real compiled binary. Assertions use `--json` output.
 
-use std::process::{Command, Output};
+use std::io::{BufRead, BufReader};
+use std::process::{Child, Command, Output, Stdio};
+use std::time::Duration;
 use tempfile::TempDir;
 
 // ---------------------------------------------------------------------------
@@ -63,6 +65,57 @@ impl Env {
             args.join(" "),
         );
         String::from_utf8_lossy(&out.stderr).into_owned()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Daemon harness (for two-env peer tests)
+// ---------------------------------------------------------------------------
+
+/// A running `unbill sync daemon` child process.
+///
+/// `node_id` is the host's device ID, read from the first stdout line
+/// (`"listening on: <node_id>"`). That line is printed only after the Iroh
+/// endpoint is fully bound, so reading it also serves as a readiness signal.
+///
+/// The process is killed (and waited) when the guard is dropped.
+struct Daemon {
+    child: Child,
+    /// The host's NodeId string — pass to `sync once` to dial this host.
+    pub node_id: String,
+}
+
+impl Daemon {
+    fn spawn(env: &Env) -> Self {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_unbill"))
+            .env("UNBILL_DATA_DIR", env.dir.path())
+            .env("RUST_LOG", "iroh=debug")
+            .args(["sync", "daemon"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .expect("failed to spawn daemon");
+        let stdout = child.stdout.take().unwrap();
+        let mut reader = BufReader::new(stdout);
+        let mut line = String::new();
+        reader
+            .read_line(&mut line)
+            .expect("failed to read daemon stdout");
+        let node_id = line
+            .strip_prefix("listening on: ")
+            .unwrap_or_else(|| panic!("unexpected daemon output: {line:?}"))
+            .trim()
+            .to_string();
+        // Give discovery (mDNS / pkarr) time to advertise before any peer dials.
+        std::thread::sleep(Duration::from_secs(10));
+        Daemon { child, node_id }
+    }
+}
+
+impl Drop for Daemon {
+    fn drop(&mut self) {
+        self.child.kill().ok();
+        self.child.wait().ok();
     }
 }
 
@@ -475,4 +528,88 @@ fn test_m3_commands_are_not_yet_available() {
     let env = Env::new();
     let stderr = env.fail(&["sync", "status"]);
     assert!(stderr.contains("M3"), "expected M3 message, got: {stderr}");
+}
+
+// ---------------------------------------------------------------------------
+// Two-env peer tests (join, sync, identity import)
+// ---------------------------------------------------------------------------
+
+/// Host creates a ledger and generates an invite URL; joiner calls
+/// `ledger join`; after the daemon stops, the joiner's ledger list
+/// contains exactly the host's ledger.
+#[test]
+fn test_join_flow() {
+    let host = Env::new();
+    let joiner = Env::new();
+
+    let lid = create_ledger(&host);
+    add_member(&host, &lid, ALICE, "Alice");
+
+    let invite = host.json(&["ledger", "invite", "--ledger-id", &lid]);
+    let url = invite["url"].as_str().unwrap().to_owned();
+
+    let daemon = Daemon::spawn(&host);
+    joiner.ok(&["ledger", "join", &url, "--label", "joiner"]);
+    drop(daemon);
+
+    let ledgers = joiner.json(&["ledger", "list"]);
+    let arr = ledgers.as_array().unwrap();
+    assert_eq!(arr.len(), 1, "joiner should have exactly one ledger");
+    assert_eq!(arr[0]["id"].as_str().unwrap(), lid);
+}
+
+/// After joining, the host adds a bill. The joiner runs `sync once` against
+/// the host daemon and then sees the new bill.
+#[test]
+fn test_sync_once_propagates_bills() {
+    let host = Env::new();
+    let joiner = Env::new();
+
+    // Set up: joiner joins host's ledger.
+    let lid = create_ledger_with_members(&host);
+    let invite = host.json(&["ledger", "invite", "--ledger-id", &lid]);
+    let url = invite["url"].as_str().unwrap().to_owned();
+    let daemon = Daemon::spawn(&host);
+    joiner.ok(&["ledger", "join", &url, "--label", "joiner"]);
+    drop(daemon);
+
+    // Host adds a bill while the joiner is offline.
+    add_bill(&host, &lid, ALICE, "30.00", "Dinner", &[ALICE, BOB, CAROL]);
+
+    // Joiner syncs.
+    let daemon = Daemon::spawn(&host);
+    joiner.ok(&["sync", "once", &daemon.node_id]);
+    drop(daemon);
+
+    // Joiner now sees the bill.
+    let bills = joiner.json(&["bill", "list", "--ledger-id", &lid]);
+    assert_eq!(
+        bills.as_array().unwrap().len(),
+        1,
+        "joiner should see the host's bill after sync"
+    );
+}
+
+/// Host generates an identity-share URL; the joiner runs `identity import`;
+/// the imported identity then appears in the joiner's identity list.
+#[test]
+fn test_identity_import_flow() {
+    let host = Env::new();
+    let joiner = Env::new();
+
+    let identity = host.json(&["identity", "new", "Alice"]);
+    let user_id = identity["user_id"].as_str().unwrap().to_owned();
+
+    let share = host.json(&["identity", "share", "--user-id", &user_id]);
+    let url = share["url"].as_str().unwrap().to_owned();
+
+    let daemon = Daemon::spawn(&host);
+    joiner.ok(&["identity", "import", &url]);
+    drop(daemon);
+
+    let identities = joiner.json(&["identity", "list"]);
+    let arr = identities.as_array().unwrap();
+    assert_eq!(arr.len(), 1, "joiner should have one imported identity");
+    assert_eq!(arr[0]["user_id"].as_str().unwrap(), user_id);
+    assert_eq!(arr[0]["display_name"].as_str().unwrap(), "Alice");
 }

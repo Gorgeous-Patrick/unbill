@@ -32,6 +32,8 @@ impl UnbillEndpoint {
                 ALPN_JOIN.to_vec(),
                 ALPN_IDENTITY.to_vec(),
             ])
+            .discovery_n0()
+            .discovery_local_network()
             .bind()
             .await?;
         Ok(Self { inner })
@@ -40,6 +42,19 @@ impl UnbillEndpoint {
     /// This device's `NodeId` as known to the network.
     pub fn node_id(&self) -> NodeId {
         NodeId::from_node_id(self.inner.node_id())
+    }
+
+    /// Wait until the endpoint is reachable — either direct socket addresses
+    /// are known (LAN/same-machine) or a relay URL is established (internet).
+    /// Returns only after peers can actually connect to us.
+    pub async fn wait_for_ready(&self) -> anyhow::Result<()> {
+        use iroh::Watcher as _;
+        self.inner
+            .node_addr()
+            .initialized()
+            .await
+            .map_err(|e| anyhow::anyhow!("endpoint never became ready: {e}"))?;
+        Ok(())
     }
 
     /// Close the endpoint gracefully.

@@ -341,6 +341,7 @@ impl UnbillService {
         let ep = UnbillEndpoint::bind(self.secret_key.clone())
             .await
             .map_err(UnbillError::Other)?;
+        ep.wait_for_ready().await.map_err(UnbillError::Other)?;
         println!("listening on: {}", ep.node_id());
         let result = ep.accept_loop_inner(Arc::clone(self)).await;
         ep.close().await;
