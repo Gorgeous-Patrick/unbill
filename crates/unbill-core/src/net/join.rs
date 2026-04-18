@@ -7,22 +7,18 @@
 //
 // No Iroh dependency — operates on abstract streams for testability.
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use dashmap::DashMap;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{broadcast, Mutex as TokioMutex};
 
 use crate::doc::LedgerDoc;
-use crate::model::{Invitation, LedgerMeta, NewDevice, NodeId, Timestamp};
-use crate::service::ServiceEvent;
+use crate::model::{LedgerMeta, NewDevice, NodeId, Timestamp};
+use crate::service::{load_pending_invitations, save_pending_invitations, ServiceEvent};
 use crate::storage::LedgerStore;
 
 use super::protocol::{read_msg, write_msg, JoinError, JoinReply, JoinRequest, JoinResponse};
-
-/// Shared map of in-flight join invitations: token hex → `Invitation`.
-pub type PendingInvitations = Arc<Mutex<HashMap<String, Invitation>>>;
 
 // ---------------------------------------------------------------------------
 // Host side
@@ -35,7 +31,6 @@ pub type PendingInvitations = Arc<Mutex<HashMap<String, Invitation>>>;
 /// TLS-verified Iroh connection — it is NOT read from the message body.
 pub async fn run_join_host<R, W>(
     peer_node_id: NodeId,
-    invitations: &PendingInvitations,
     ledgers: &DashMap<String, Arc<TokioMutex<LedgerDoc>>>,
     store: &Arc<dyn LedgerStore>,
     events: &broadcast::Sender<ServiceEvent>,
@@ -48,10 +43,12 @@ where
 {
     let req: JoinRequest = read_msg(&mut reader).await?;
 
-    // Consume (remove) the token whether valid or not, to prevent replays.
+    // Load and consume (remove) the token whether valid or not, to prevent replays.
     let invitation = {
-        let mut map = invitations.lock().unwrap();
-        map.remove(&req.token)
+        let mut map = load_pending_invitations(&**store).await?;
+        let inv = map.remove(&req.token);
+        save_pending_invitations(&**store, &map).await?;
+        inv
     };
 
     let invitation = match invitation {
@@ -180,7 +177,7 @@ where
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     use dashmap::DashMap;
     use tokio::sync::{broadcast, Mutex as TokioMutex};
@@ -189,11 +186,11 @@ mod tests {
     use crate::model::{
         Currency, Invitation, InviteToken, LedgerMeta, NewDevice, NodeId, Timestamp, Ulid,
     };
-    use crate::service::ServiceEvent;
+    use crate::service::{save_pending_invitations, ServiceEvent};
     use crate::storage::InMemoryStore;
 
     use super::super::protocol::JoinRequest;
-    use super::{run_join_host, run_join_requester, PendingInvitations};
+    use super::{run_join_host, run_join_requester};
 
     fn make_store() -> Arc<InMemoryStore> {
         Arc::new(InMemoryStore::default())
@@ -252,11 +249,11 @@ mod tests {
         };
         host_store.save_ledger_meta(&meta).await.unwrap();
 
+        // Save the invitation to the store (lazy load — no in-memory map).
         let token = InviteToken::generate();
-        let invitations: PendingInvitations = Arc::new(Mutex::new(HashMap::from([(
-            token.to_string(),
-            make_invitation(ledger_id, host_node, &token),
-        )])));
+        let invitation = make_invitation(ledger_id, host_node, &token);
+        let map = HashMap::from([(token.to_string(), invitation)]);
+        save_pending_invitations(&*host_store, &map).await.unwrap();
 
         let joiner_ledgers: DashMap<String, Arc<TokioMutex<LedgerDoc>>> = DashMap::new();
         let joiner_store: Arc<dyn crate::storage::LedgerStore> = make_store();
@@ -273,7 +270,6 @@ mod tests {
         let joiner_ledgers = Arc::new(joiner_ledgers);
         let hl2 = Arc::clone(&host_ledgers);
         let jl2 = Arc::clone(&joiner_ledgers);
-        let invitations2 = Arc::clone(&invitations);
 
         let request = JoinRequest {
             token: token.to_string(),
@@ -284,7 +280,6 @@ mod tests {
         let task_host = tokio::spawn(async move {
             run_join_host(
                 joiner_node,
-                &invitations2,
                 &hl2,
                 &host_store2,
                 &events_host,
@@ -325,11 +320,10 @@ mod tests {
             "joiner's device should be in the ledger"
         );
 
-        // Token was consumed.
-        assert!(
-            invitations.lock().unwrap().is_empty(),
-            "token should have been consumed"
-        );
+        // Token was consumed (store should have an empty map now).
+        let remaining =
+            crate::service::load_pending_invitations(&*host_store).await.unwrap();
+        assert!(remaining.is_empty(), "token should have been consumed");
     }
 
     #[tokio::test]
@@ -342,10 +336,8 @@ mod tests {
 
         let host_ledgers: DashMap<String, Arc<TokioMutex<LedgerDoc>>> = DashMap::new();
         host_ledgers.insert(ledger_id_str.clone(), Arc::new(TokioMutex::new(doc)));
+        // No invitations saved to store.
         let host_store: Arc<dyn crate::storage::LedgerStore> = make_store();
-
-        // No invitations at all.
-        let invitations: PendingInvitations = Arc::new(Mutex::new(HashMap::new()));
 
         let joiner_ledgers: DashMap<String, Arc<TokioMutex<LedgerDoc>>> = DashMap::new();
         let joiner_store: Arc<dyn crate::storage::LedgerStore> = make_store();
@@ -373,7 +365,6 @@ mod tests {
         let task_host = tokio::spawn(async move {
             run_join_host(
                 joiner_node,
-                &invitations,
                 &hl2,
                 &host_store2,
                 &events_host,

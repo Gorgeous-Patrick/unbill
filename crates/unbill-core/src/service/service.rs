@@ -13,7 +13,6 @@ use crate::model::{
     Currency, Device, EffectiveBill, Invitation, InviteToken, LedgerMeta, Member, NewBill,
     NewDevice, NewMember, NodeId, Timestamp, Ulid,
 };
-use crate::net::{PendingIdentityTokens, PendingInvitations};
 use crate::settlement;
 use crate::storage::LedgerStore;
 
@@ -23,10 +22,6 @@ pub struct UnbillService {
     pub(crate) secret_key: iroh::SecretKey,
     /// Eagerly loaded in-memory ledger documents, keyed by ledger ID string.
     pub(crate) ledgers: DashMap<String, Arc<Mutex<LedgerDoc>>>,
-    /// Pending join invitations (token hex → Invitation). In-memory only.
-    pub(crate) pending_invitations: PendingInvitations,
-    /// Pending identity-transfer tokens (token hex → (user_id, display_name)). In-memory only.
-    pub(crate) pending_identity_tokens: PendingIdentityTokens,
     pub(crate) events: broadcast::Sender<ServiceEvent>,
 }
 
@@ -65,17 +60,12 @@ impl UnbillService {
             ledgers.insert(id, Arc::new(Mutex::new(doc)));
         }
 
-        let pending_invitations = load_pending_invitations(&*store).await?;
-        let pending_identity_tokens = load_pending_identity_tokens(&*store).await?;
-
         let (events, _) = broadcast::channel(256);
         Ok(Arc::new(Self {
             store,
             device_id,
             secret_key,
             ledgers,
-            pending_invitations: Arc::new(std::sync::Mutex::new(pending_invitations)),
-            pending_identity_tokens: Arc::new(std::sync::Mutex::new(pending_identity_tokens)),
             events,
         }))
     }
@@ -256,7 +246,7 @@ impl UnbillService {
             expires_at: Timestamp::from_millis(now.as_millis() + 24 * 3600 * 1000),
         };
         {
-            let mut map = self.pending_invitations.lock().unwrap();
+            let mut map = load_pending_invitations(&*self.store).await?;
             map.insert(token.to_string(), invitation);
             save_pending_invitations(&*self.store, &map).await?;
         }
@@ -281,7 +271,7 @@ impl UnbillService {
         rand::rngs::OsRng.fill_bytes(&mut token_bytes);
         let token_hex: String = token_bytes.iter().map(|b| format!("{b:02x}")).collect();
         {
-            let mut map = self.pending_identity_tokens.lock().unwrap();
+            let mut map = load_pending_identity_tokens(&*self.store).await?;
             map.insert(token_hex.clone(), (user_ulid, display_name));
             save_pending_identity_tokens(&*self.store, &map).await?;
         }
@@ -453,7 +443,6 @@ pub struct Identity {
 // ---------------------------------------------------------------------------
 
 const IDENTITIES_KEY: &str = "identities.json";
-const PENDING_INVITATIONS_KEY: &str = "pending_invitations.json";
 const PENDING_IDENTITY_TOKENS_KEY: &str = "pending_identity_tokens.json";
 
 async fn load_identities(store: &dyn LedgerStore) -> Result<Vec<Identity>> {
@@ -471,7 +460,9 @@ async fn save_identities(store: &dyn LedgerStore, identities: &[Identity]) -> Re
     Ok(())
 }
 
-async fn load_pending_invitations(store: &dyn LedgerStore) -> Result<HashMap<String, Invitation>> {
+pub(crate) const PENDING_INVITATIONS_KEY: &str = "pending_invitations.json";
+
+pub(crate) async fn load_pending_invitations(store: &dyn LedgerStore) -> Result<HashMap<String, Invitation>> {
     match store.load_device_meta(PENDING_INVITATIONS_KEY).await? {
         None => Ok(HashMap::new()),
         Some(bytes) => serde_json::from_slice(&bytes)
@@ -479,7 +470,7 @@ async fn load_pending_invitations(store: &dyn LedgerStore) -> Result<HashMap<Str
     }
 }
 
-async fn save_pending_invitations(
+pub(crate) async fn save_pending_invitations(
     store: &dyn LedgerStore,
     map: &HashMap<String, Invitation>,
 ) -> Result<()> {
@@ -491,7 +482,7 @@ async fn save_pending_invitations(
     Ok(())
 }
 
-async fn load_pending_identity_tokens(
+pub(crate) async fn load_pending_identity_tokens(
     store: &dyn LedgerStore,
 ) -> Result<HashMap<String, (Ulid, String)>> {
     match store.load_device_meta(PENDING_IDENTITY_TOKENS_KEY).await? {
@@ -501,7 +492,7 @@ async fn load_pending_identity_tokens(
     }
 }
 
-async fn save_pending_identity_tokens(
+pub(crate) async fn save_pending_identity_tokens(
     store: &dyn LedgerStore,
     map: &HashMap<String, (Ulid, String)>,
 ) -> Result<()> {

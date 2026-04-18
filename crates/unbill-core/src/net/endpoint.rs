@@ -199,7 +199,6 @@ async fn dispatch(
             let (send, recv) = conn.accept_bi().await?;
             run_join_host(
                 peer,
-                &svc.pending_invitations,
                 &svc.ledgers,
                 &svc.store,
                 &svc.events,
@@ -210,7 +209,7 @@ async fn dispatch(
         }
         ALPN_IDENTITY => {
             let (send, recv) = conn.accept_bi().await?;
-            run_identity_host(&svc.pending_identity_tokens, recv, send).await?;
+            run_identity_host(&svc.store, recv, send).await?;
         }
         other => {
             anyhow::bail!(

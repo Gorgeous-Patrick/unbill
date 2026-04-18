@@ -5,21 +5,17 @@
 //
 // No Iroh dependency — operates on abstract streams for testability.
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::model::Ulid;
-use crate::service::Identity;
+use crate::service::{load_pending_identity_tokens, save_pending_identity_tokens, Identity};
 use crate::storage::LedgerStore;
 
 use super::protocol::{
     read_msg, write_msg, IdentityError, IdentityReply, IdentityRequest, IdentityResponse,
 };
-
-/// Shared map of pending identity tokens: token hex → `(user_id, display_name)`.
-pub type PendingIdentityTokens = Arc<Mutex<HashMap<String, (Ulid, String)>>>;
 
 const IDENTITIES_KEY: &str = "identities.json";
 
@@ -29,7 +25,7 @@ const IDENTITIES_KEY: &str = "identities.json";
 
 /// Validate the token and send the associated identity to the new device.
 pub async fn run_identity_host<R, W>(
-    tokens: &PendingIdentityTokens,
+    store: &Arc<dyn LedgerStore>,
     mut reader: R,
     mut writer: W,
 ) -> anyhow::Result<()>
@@ -39,10 +35,12 @@ where
 {
     let req: IdentityRequest = read_msg(&mut reader).await?;
 
-    // Consume the token.
+    // Load and consume the token.
     let entry = {
-        let mut map = tokens.lock().unwrap();
-        map.remove(&req.token)
+        let mut map = load_pending_identity_tokens(&**store).await?;
+        let entry = map.remove(&req.token);
+        save_pending_identity_tokens(&**store, &map).await?;
+        entry
     };
 
     match entry {
@@ -126,13 +124,13 @@ where
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
-    use crate::model::{Timestamp, Ulid};
-    use crate::service::Identity;
+    use crate::model::{Ulid};
+    use crate::service::{save_pending_identity_tokens, Identity};
     use crate::storage::InMemoryStore;
 
-    use super::{run_identity_host, run_identity_requester, PendingIdentityTokens};
+    use super::{run_identity_host, run_identity_requester};
 
     fn make_store() -> Arc<InMemoryStore> {
         Arc::new(InMemoryStore::default())
@@ -144,10 +142,11 @@ mod tests {
         let display_name = "Alice".to_string();
 
         let token = format!("{:0>64x}", rand::random::<u128>());
-        let tokens: PendingIdentityTokens = Arc::new(Mutex::new(HashMap::from([(
-            token.clone(),
-            (user_id, display_name.clone()),
-        )])));
+        let host_store: Arc<dyn crate::storage::LedgerStore> = make_store();
+
+        // Save the token to the store (lazy load — no in-memory map).
+        let map = HashMap::from([(token.clone(), (user_id, display_name.clone()))]);
+        save_pending_identity_tokens(&*host_store, &map).await.unwrap();
 
         let requester_store: Arc<dyn crate::storage::LedgerStore> = make_store();
 
@@ -155,12 +154,12 @@ mod tests {
         let (host_read, host_write) = tokio::io::split(stream_host);
         let (req_read, req_write) = tokio::io::split(stream_requester);
 
-        let tokens2 = Arc::clone(&tokens);
+        let host_store2 = Arc::clone(&host_store);
         let requester_store2 = Arc::clone(&requester_store);
         let token2 = token.clone();
 
         let task_host = tokio::spawn(async move {
-            run_identity_host(&tokens2, host_read, host_write)
+            run_identity_host(&host_store2, host_read, host_write)
                 .await
                 .unwrap()
         });
@@ -177,8 +176,10 @@ mod tests {
         assert_eq!(received.user_id, user_id);
         assert_eq!(received.display_name, display_name);
 
-        // Token was consumed.
-        assert!(tokens.lock().unwrap().is_empty());
+        // Token was consumed (store should have an empty map now).
+        let remaining =
+            crate::service::load_pending_identity_tokens(&*host_store).await.unwrap();
+        assert!(remaining.is_empty());
 
         // Identity is persisted to the store.
         let stored_bytes = requester_store
@@ -193,7 +194,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_identity_transfer_invalid_token_returns_error() {
-        let tokens: PendingIdentityTokens = Arc::new(Mutex::new(HashMap::new()));
+        // No tokens saved to store.
+        let host_store: Arc<dyn crate::storage::LedgerStore> = make_store();
         let requester_store: Arc<dyn crate::storage::LedgerStore> = make_store();
 
         let bad_token = format!("{:0>64x}", rand::random::<u128>());
@@ -202,11 +204,11 @@ mod tests {
         let (host_read, host_write) = tokio::io::split(stream_host);
         let (req_read, req_write) = tokio::io::split(stream_requester);
 
-        let tokens2 = Arc::clone(&tokens);
+        let host_store2 = Arc::clone(&host_store);
         let requester_store2 = Arc::clone(&requester_store);
 
         let task_host = tokio::spawn(async move {
-            run_identity_host(&tokens2, host_read, host_write)
+            run_identity_host(&host_store2, host_read, host_write)
                 .await
                 .unwrap();
         });
