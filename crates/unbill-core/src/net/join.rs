@@ -329,7 +329,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_join_rejects_invalid_token() {
-        let host_node = NodeId::from_seed(1);
         let joiner_node = NodeId::from_seed(2);
 
         let doc = LedgerDoc::new(Ulid::new(), "Trip".to_string(), usd(), Timestamp::now()).unwrap();
