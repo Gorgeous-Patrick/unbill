@@ -126,7 +126,7 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    use crate::model::{Ulid};
+    use crate::model::Ulid;
     use crate::service::{save_pending_identity_tokens, Identity};
     use crate::storage::InMemoryStore;
 
@@ -146,7 +146,9 @@ mod tests {
 
         // Save the token to the store (lazy load — no in-memory map).
         let map = HashMap::from([(token.clone(), (user_id, display_name.clone()))]);
-        save_pending_identity_tokens(&*host_store, &map).await.unwrap();
+        save_pending_identity_tokens(&*host_store, &map)
+            .await
+            .unwrap();
 
         let requester_store: Arc<dyn crate::storage::LedgerStore> = make_store();
 
@@ -177,8 +179,9 @@ mod tests {
         assert_eq!(received.display_name, display_name);
 
         // Token was consumed (store should have an empty map now).
-        let remaining =
-            crate::service::load_pending_identity_tokens(&*host_store).await.unwrap();
+        let remaining = crate::service::load_pending_identity_tokens(&*host_store)
+            .await
+            .unwrap();
         assert!(remaining.is_empty());
 
         // Identity is persisted to the store.

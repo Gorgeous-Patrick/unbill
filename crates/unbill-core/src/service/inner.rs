@@ -467,7 +467,9 @@ async fn save_identities(store: &dyn LedgerStore, identities: &[Identity]) -> Re
 
 pub(crate) const PENDING_INVITATIONS_KEY: &str = "pending_invitations.json";
 
-pub(crate) async fn load_pending_invitations(store: &dyn LedgerStore) -> Result<HashMap<String, Invitation>> {
+pub(crate) async fn load_pending_invitations(
+    store: &dyn LedgerStore,
+) -> Result<HashMap<String, Invitation>> {
     match store.load_device_meta(PENDING_INVITATIONS_KEY).await? {
         None => Ok(HashMap::new()),
         Some(bytes) => serde_json::from_slice(&bytes)

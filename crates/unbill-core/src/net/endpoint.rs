@@ -197,15 +197,7 @@ async fn dispatch(
         }
         ALPN_JOIN => {
             let (send, recv) = conn.accept_bi().await?;
-            run_join_host(
-                peer,
-                &svc.ledgers,
-                &svc.store,
-                &svc.events,
-                recv,
-                send,
-            )
-            .await?;
+            run_join_host(peer, &svc.ledgers, &svc.store, &svc.events, recv, send).await?;
         }
         ALPN_IDENTITY => {
             let (send, recv) = conn.accept_bi().await?;

@@ -321,8 +321,9 @@ mod tests {
         );
 
         // Token was consumed (store should have an empty map now).
-        let remaining =
-            crate::service::load_pending_invitations(&*host_store).await.unwrap();
+        let remaining = crate::service::load_pending_invitations(&*host_store)
+            .await
+            .unwrap();
         assert!(remaining.is_empty(), "token should have been consumed");
     }
 
