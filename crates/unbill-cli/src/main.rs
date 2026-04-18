@@ -83,13 +83,6 @@ pub enum IdentityCmd {
 pub enum DeviceCmd {
     /// Print this device's ID and data directory.
     Show,
-    /// Remove an authorized device from a ledger.
-    Remove {
-        #[arg(long)]
-        ledger_id: String,
-        #[arg(long)]
-        node_id: String,
-    },
 }
 
 #[derive(clap::Subcommand)]
@@ -176,13 +169,6 @@ pub enum MemberCmd {
         #[arg(long)]
         added_by: String,
     },
-    /// Remove a member from a ledger.
-    Remove {
-        #[arg(long)]
-        ledger_id: String,
-        #[arg(long)]
-        user_id: String,
-    },
 }
 
 #[derive(clap::Subcommand)]
@@ -239,9 +225,6 @@ async fn run() -> anyhow::Result<()> {
         },
         Command::Device { sub } => match sub {
             DeviceCmd::Show => commands::device_show(&svc, &data_dir, json).await,
-            DeviceCmd::Remove { ledger_id, node_id } => {
-                commands::device_remove(&svc, &ledger_id, &node_id).await
-            }
         },
         Command::Ledger { sub } => match sub {
             LedgerCmd::Create { name, currency } => {
@@ -304,9 +287,6 @@ async fn run() -> anyhow::Result<()> {
                 name,
                 added_by,
             } => commands::member_add(&svc, &ledger_id, &user_id, name, &added_by).await,
-            MemberCmd::Remove { ledger_id, user_id } => {
-                commands::member_remove(&svc, &ledger_id, &user_id).await
-            }
         },
         Command::Sync { sub } => match sub {
             SyncCmd::Once { peer_node_id } => commands::sync_once(&svc, &peer_node_id).await,

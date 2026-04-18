@@ -94,18 +94,6 @@ pub async fn device_show(
     Ok(())
 }
 
-pub async fn device_remove(
-    svc: &UnbillService,
-    ledger_id: &str,
-    node_id: &str,
-) -> anyhow::Result<()> {
-    let node_id = node_id
-        .parse::<NodeId>()
-        .map_err(|e| anyhow!("invalid node ID {node_id:?}: {e}"))?;
-    svc.remove_device(ledger_id, &node_id).await?;
-    Ok(())
-}
-
 // ---------------------------------------------------------------------------
 // Ledger
 // ---------------------------------------------------------------------------
@@ -303,15 +291,6 @@ pub async fn member_add(
         },
     )
     .await?;
-    Ok(())
-}
-
-pub async fn member_remove(
-    svc: &UnbillService,
-    ledger_id: &str,
-    user_id: &str,
-) -> anyhow::Result<()> {
-    svc.remove_member(ledger_id, user_id).await?;
     Ok(())
 }
 

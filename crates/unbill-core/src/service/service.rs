@@ -172,19 +172,6 @@ impl UnbillService {
         Ok(())
     }
 
-    pub async fn remove_member(&self, ledger_id: &str, user_id: &str) -> Result<()> {
-        let user_ulid = parse_ulid(user_id)?;
-        let doc_mutex = self.get_doc(ledger_id)?;
-        let mut doc = doc_mutex.lock().await;
-        doc.remove_member(&user_ulid)?;
-        let bytes = doc.save();
-        drop(doc);
-
-        self.store.save_ledger_bytes(ledger_id, &bytes).await?;
-        self.touch_meta(ledger_id).await?;
-        Ok(())
-    }
-
     pub async fn list_members(&self, ledger_id: &str) -> Result<Vec<Member>> {
         let doc_mutex = self.get_doc(ledger_id)?;
         let doc = doc_mutex.lock().await;
@@ -199,18 +186,6 @@ impl UnbillService {
         let doc_mutex = self.get_doc(ledger_id)?;
         let mut doc = doc_mutex.lock().await;
         doc.add_device(input, Timestamp::now())?;
-        let bytes = doc.save();
-        drop(doc);
-
-        self.store.save_ledger_bytes(ledger_id, &bytes).await?;
-        self.touch_meta(ledger_id).await?;
-        Ok(())
-    }
-
-    pub async fn remove_device(&self, ledger_id: &str, node_id: &NodeId) -> Result<()> {
-        let doc_mutex = self.get_doc(ledger_id)?;
-        let mut doc = doc_mutex.lock().await;
-        doc.remove_device(node_id)?;
         let bytes = doc.save();
         drop(doc);
 

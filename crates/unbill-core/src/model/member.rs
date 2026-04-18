@@ -27,7 +27,6 @@ pub struct Member {
     pub display_name: String,
     pub added_at: Timestamp,
     pub added_by: Ulid,
-    pub removed: bool,
 }
 
 #[derive(Clone, Debug, Reconcile, Hydrate)]
@@ -36,9 +35,6 @@ pub struct Device {
     pub node_id: NodeId,
     pub label: String,
     pub added_at: Timestamp,
-    /// Tombstone. A removed device can no longer sync but stays in the document
-    /// so concurrent removals converge correctly.
-    pub removed: bool,
 }
 
 /// Input type for directly adding a member to a ledger.

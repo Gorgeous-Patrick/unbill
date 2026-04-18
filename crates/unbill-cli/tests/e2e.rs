@@ -431,18 +431,6 @@ fn test_member_add_appears_in_list() {
     assert_eq!(arr[0]["display_name"].as_str().unwrap(), "Alice");
 }
 
-#[test]
-fn test_member_remove_hides_member() {
-    let env = Env::new();
-    let lid = create_ledger(&env);
-    add_member(&env, &lid, ALICE, "Alice");
-    add_member(&env, &lid, BOB, "Bob");
-    env.ok(&["member", "remove", "--ledger-id", &lid, "--user-id", BOB]);
-    let members = env.json(&["member", "list", "--ledger-id", &lid]);
-    let arr = members.as_array().unwrap();
-    assert_eq!(arr.len(), 1);
-    assert_eq!(arr[0]["user_id"].as_str().unwrap(), ALICE);
-}
 
 #[test]
 fn test_add_bill_rejects_non_member() {

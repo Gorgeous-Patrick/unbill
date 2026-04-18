@@ -93,20 +93,8 @@ impl LedgerDoc {
         Ok(())
     }
 
-    pub fn remove_member(&mut self, user_id: &Ulid) -> Result<()> {
-        ops::remove_member(&mut self.doc, user_id)?;
-        let _ = self.changes.send(ChangeEvent::LocalWrite);
-        Ok(())
-    }
-
     pub fn add_device(&mut self, input: NewDevice, now: Timestamp) -> Result<()> {
         ops::add_device(&mut self.doc, input, now)?;
-        let _ = self.changes.send(ChangeEvent::LocalWrite);
-        Ok(())
-    }
-
-    pub fn remove_device(&mut self, node_id: &NodeId) -> Result<()> {
-        ops::remove_device(&mut self.doc, node_id)?;
         let _ = self.changes.send(ChangeEvent::LocalWrite);
         Ok(())
     }
@@ -139,12 +127,9 @@ impl LedgerDoc {
         Ok(())
     }
 
-    /// Returns `true` if `node_id` appears in `ledger.devices` with `removed = false`.
+    /// Returns `true` if `node_id` is in `ledger.devices`.
     pub fn is_device_authorized(&self, node_id: &NodeId) -> Result<bool> {
         let ledger = ops::get_ledger(&self.doc)?;
-        Ok(ledger
-            .devices
-            .iter()
-            .any(|d| &d.node_id == node_id && !d.removed))
+        Ok(ledger.devices.iter().any(|d| &d.node_id == node_id))
     }
 }

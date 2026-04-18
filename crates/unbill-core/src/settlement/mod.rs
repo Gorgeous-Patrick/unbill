@@ -29,7 +29,7 @@ pub fn accumulate_balances(
     bills: &[EffectiveBill],
     balances: &mut HashMap<Ulid, i64>,
 ) {
-    for m in members.iter().filter(|m| !m.removed) {
+    for m in members.iter() {
         balances.entry(m.user_id).or_insert(0);
     }
     for bill in bills {
@@ -136,7 +136,6 @@ mod tests {
             display_name: String::new(),
             added_at: Timestamp::from_millis(0),
             added_by: uid(0),
-            removed: false,
         }
     }
 
@@ -298,19 +297,4 @@ mod tests {
         assert!(s.transactions.is_empty());
     }
 
-    #[test]
-    fn test_settlement_removed_members_excluded() {
-        let eve = uid(99);
-        let mut eve_member = member(eve);
-        eve_member.removed = true;
-        let members = vec![member(alice()), member(bob()), eve_member];
-        let bills = vec![equal_bill(1, alice(), 3000, &[alice(), bob()])];
-        let s = compute(&members, &bills);
-        assert!(
-            s.transactions
-                .iter()
-                .all(|t| t.from_user_id != eve && t.to_user_id != eve),
-            "removed members must not appear in settlement"
-        );
-    }
 }

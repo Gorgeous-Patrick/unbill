@@ -323,7 +323,7 @@ mod tests {
         assert!(
             devices
                 .iter()
-                .any(|d| d.node_id == joiner_node && !d.removed),
+                .any(|d| d.node_id == joiner_node),
             "joiner's device should be in the ledger"
         );
 

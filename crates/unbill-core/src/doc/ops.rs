@@ -55,8 +55,8 @@ pub(super) fn get_ledger(doc: &AutoCommit) -> Result<Ledger> {
 
 /// Append a new `Bill` to the ledger. Returns the new bill's ID.
 ///
-/// Returns `UserNotMember` if the payer or any share participant is not an
-/// active (non-removed) member of the ledger.
+/// Returns `UserNotMember` if the payer or any share participant is not a
+/// member of the ledger.
 pub(super) fn add_bill(
     doc: &mut AutoCommit,
     input: NewBill,
@@ -68,7 +68,6 @@ pub(super) fn add_bill(
     let member_ids: std::collections::HashSet<Ulid> = ledger
         .members
         .iter()
-        .filter(|m| !m.removed)
         .map(|m| m.user_id)
         .collect();
 
@@ -112,7 +111,6 @@ pub(super) fn amend_bill(
     let member_ids: std::collections::HashSet<Ulid> = ledger
         .members
         .iter()
-        .filter(|m| !m.removed)
         .map(|m| m.user_id)
         .collect();
 
@@ -164,53 +162,25 @@ pub(super) fn list_bills(doc: &AutoCommit) -> Result<Vec<EffectiveBill>> {
 
 /// Add a new member to the ledger.
 ///
-/// Returns `UserNotMember` variant reused as "already a member" is not an
-/// error — if the user_id already exists (and is not removed), this is a no-op.
+/// If the `user_id` already exists this is a no-op.
 pub(super) fn add_member(doc: &mut AutoCommit, input: NewMember, now: Timestamp) -> Result<()> {
     let mut ledger = get_ledger(doc)?;
-    // If already an active member, no-op.
-    if ledger
-        .members
-        .iter()
-        .any(|m| m.user_id == input.user_id && !m.removed)
-    {
+    if ledger.members.iter().any(|m| m.user_id == input.user_id) {
         return Ok(());
-    }
-    // If previously removed, re-activate.
-    if let Some(m) = ledger
-        .members
-        .iter_mut()
-        .find(|m| m.user_id == input.user_id && m.removed)
-    {
-        m.removed = false;
-        return reconcile(doc, &ledger).map_err(|e| UnbillError::Other(e.into()));
     }
     ledger.members.push(Member {
         user_id: input.user_id,
         display_name: input.display_name,
         added_at: now,
         added_by: input.added_by,
-        removed: false,
     });
     reconcile(doc, &ledger).map_err(|e| UnbillError::Other(e.into()))
 }
 
-/// Remove a member (tombstone: `removed = true`).
-pub(super) fn remove_member(doc: &mut AutoCommit, user_id: &Ulid) -> Result<()> {
-    let mut ledger = get_ledger(doc)?;
-    let member = ledger
-        .members
-        .iter_mut()
-        .find(|m| &m.user_id == user_id && !m.removed)
-        .ok_or_else(|| UnbillError::MemberNotFound(user_id.to_string()))?;
-    member.removed = true;
-    reconcile(doc, &ledger).map_err(|e| UnbillError::Other(e.into()))
-}
-
-/// Return all non-removed members.
+/// Return all members.
 pub(super) fn list_members(doc: &AutoCommit) -> Result<Vec<Member>> {
     let ledger = get_ledger(doc)?;
-    Ok(ledger.members.into_iter().filter(|m| !m.removed).collect())
+    Ok(ledger.members)
 }
 
 // ---------------------------------------------------------------------------
@@ -219,51 +189,24 @@ pub(super) fn list_members(doc: &AutoCommit) -> Result<Vec<Member>> {
 
 /// Add a device to the ledger.
 ///
-/// If the NodeId is already active, this is a no-op. If previously removed,
-/// re-activates it (updating the label).
+/// If the NodeId is already present this is a no-op.
 pub(super) fn add_device(doc: &mut AutoCommit, input: NewDevice, now: Timestamp) -> Result<()> {
     let mut ledger = get_ledger(doc)?;
-    if ledger
-        .devices
-        .iter()
-        .any(|d| d.node_id == input.node_id && !d.removed)
-    {
+    if ledger.devices.iter().any(|d| d.node_id == input.node_id) {
         return Ok(());
-    }
-    if let Some(d) = ledger
-        .devices
-        .iter_mut()
-        .find(|d| d.node_id == input.node_id && d.removed)
-    {
-        d.removed = false;
-        d.label = input.label;
-        return reconcile(doc, &ledger).map_err(|e| UnbillError::Other(e.into()));
     }
     ledger.devices.push(Device {
         node_id: input.node_id,
         label: input.label,
         added_at: now,
-        removed: false,
     });
     reconcile(doc, &ledger).map_err(|e| UnbillError::Other(e.into()))
 }
 
-/// Tombstone-remove a device (`removed = true`).
-pub(super) fn remove_device(doc: &mut AutoCommit, node_id: &NodeId) -> Result<()> {
-    let mut ledger = get_ledger(doc)?;
-    let device = ledger
-        .devices
-        .iter_mut()
-        .find(|d| &d.node_id == node_id && !d.removed)
-        .ok_or_else(|| UnbillError::DeviceNotFound(node_id.to_string()))?;
-    device.removed = true;
-    reconcile(doc, &ledger).map_err(|e| UnbillError::Other(e.into()))
-}
-
-/// Return all non-removed devices.
+/// Return all devices.
 pub(super) fn list_devices(doc: &AutoCommit) -> Result<Vec<Device>> {
     let ledger = get_ledger(doc)?;
-    Ok(ledger.devices.into_iter().filter(|d| !d.removed).collect())
+    Ok(ledger.devices)
 }
 
 // ---------------------------------------------------------------------------
@@ -310,7 +253,6 @@ mod tests {
                 display_name: user_id.to_string(),
                 added_at: ts(0),
                 added_by: uid(0),
-                removed: false,
             });
         }
         reconcile(&mut doc, &ledger).unwrap();
@@ -423,34 +365,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_add_bill_rejects_removed_member() {
-        use crate::model::Member;
-        let alice = uid(1);
-        let bob = uid(2);
-        let mut doc = doc_with_members(&[alice]);
-        // Add Bob but mark him removed.
-        let mut ledger = get_ledger(&doc).unwrap();
-        ledger.members.push(Member {
-            user_id: bob,
-            display_name: "Bob".into(),
-            added_at: ts(0),
-            added_by: alice,
-            removed: true,
-        });
-        reconcile(&mut doc, &ledger).unwrap();
-
-        let result = add_bill(
-            &mut doc,
-            simple_bill(alice, &[alice, bob], 1000),
-            device(),
-            ts(1),
-        );
-        assert!(
-            matches!(result, Err(UnbillError::UserNotMember(_))),
-            "expected UserNotMember for removed member, got {result:?}"
-        );
-    }
 
     // --- amend_bill ---
 
@@ -495,29 +409,22 @@ mod tests {
     // --- list_members ---
 
     #[test]
-    fn test_list_members_excludes_removed() {
-        use crate::model::Member;
+    fn test_list_members_returns_all() {
         let mut doc = fresh_doc();
-        let mut ledger = get_ledger(&doc).unwrap();
-        ledger.members.push(Member {
-            user_id: uid(1),
-            display_name: "Alice".into(),
-            added_at: ts(0),
-            added_by: uid(1),
-            removed: false,
-        });
-        ledger.members.push(Member {
-            user_id: uid(2),
-            display_name: "Bob".into(),
-            added_at: ts(0),
-            added_by: uid(1),
-            removed: true,
-        });
-        reconcile(&mut doc, &ledger).unwrap();
-
+        add_member(
+            &mut doc,
+            NewMember { user_id: uid(1), display_name: "Alice".into(), added_by: uid(1) },
+            ts(0),
+        )
+        .unwrap();
+        add_member(
+            &mut doc,
+            NewMember { user_id: uid(2), display_name: "Bob".into(), added_by: uid(1) },
+            ts(1),
+        )
+        .unwrap();
         let members = list_members(&doc).unwrap();
-        assert_eq!(members.len(), 1);
-        assert_eq!(members[0].user_id, uid(1));
+        assert_eq!(members.len(), 2);
     }
 
     // --- save/load round-trip ---
@@ -574,37 +481,4 @@ mod tests {
         assert_eq!(list_devices(&doc).unwrap().len(), 1);
     }
 
-    #[test]
-    fn test_remove_device_sets_tombstone() {
-        let mut doc = fresh_doc();
-        add_device(&mut doc, new_device(1), ts(0)).unwrap();
-        remove_device(&mut doc, &dev(1)).unwrap();
-        assert!(list_devices(&doc).unwrap().is_empty());
-    }
-
-    #[test]
-    fn test_remove_unknown_device_returns_error() {
-        let mut doc = fresh_doc();
-        let result = remove_device(&mut doc, &dev(99));
-        assert!(matches!(result, Err(UnbillError::DeviceNotFound(_))));
-    }
-
-    #[test]
-    fn test_readd_removed_device_reactivates_it() {
-        let mut doc = fresh_doc();
-        add_device(&mut doc, new_device(1), ts(0)).unwrap();
-        remove_device(&mut doc, &dev(1)).unwrap();
-        add_device(
-            &mut doc,
-            NewDevice {
-                node_id: dev(1),
-                label: "new-label".into(),
-            },
-            ts(2),
-        )
-        .unwrap();
-        let devices = list_devices(&doc).unwrap();
-        assert_eq!(devices.len(), 1);
-        assert_eq!(devices[0].label, "new-label");
-    }
 }

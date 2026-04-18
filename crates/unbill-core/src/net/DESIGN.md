@@ -24,9 +24,7 @@ No separate discovery mechanism is needed. The `devices` list embedded in each l
 
 ## Authorization
 
-A device is authorized to sync a ledger if and only if its `NodeId` appears in `ledger.devices` with `removed = false` at the time of connection. The responder reads the ledger document, checks the list, and rejects any initiator not found there or whose entry is tombstoned. Because Iroh's TLS layer verifies `NodeId` during the handshake, a device cannot claim a `NodeId` it does not own.
-
-Any authorized device may remove any other device by setting its `removed = true` tombstone. The typical use case is removing a lost or stolen device. A removed device loses sync access on its next connection attempt and retains whatever local state it held before removal. Devices are tombstoned rather than physically deleted so concurrent removals converge correctly.
+A device is authorized to sync a ledger if and only if its `NodeId` appears in `ledger.devices` at the time of connection. The responder reads the ledger document, checks the list, and rejects any initiator not found there. Because Iroh's TLS layer verifies `NodeId` during the handshake, a device cannot claim a `NodeId` it does not own. Devices are append-only; once authorized a device cannot be revoked.
 
 ## Sync protocol (`unbill/sync/v1`)
 
