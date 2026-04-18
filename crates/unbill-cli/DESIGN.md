@@ -4,10 +4,12 @@ A thin clap-driven command-line frontend for `UnbillService`. Useful for dogfood
 
 ## Commands
 
-- `init` — initialize the device: generate a key, set display name.
-- `ledger create | list | show | delete` — ledger lifecycle. `ledger create` also registers the creator's own device in `ledger.devices` so it can sync with peers.
-- `bill add | list | amend | delete | restore` — bill management.
-- `member list | add | remove | invite | join` — group membership. `invite` generates an invite URL; `join` accepts one.
+- `init new <display_name>` — generate a device key and a fresh user identity (user ID + display name). Stored as device-local metadata.
+- `init import <url>` — generate a device key and import an existing user identity from another device via an `unbill://identity/...` URL. The other device must be online.
+- `device show | share | remove` — `device share` generates an `unbill://identity/...` URL so another device can import this device's user identity via `init import`. `device remove --ledger <ledger_id> --node-id <node_id>` removes an authorized device from a ledger (any trusted device may remove any other).
+- `ledger create | list | show | delete | invite | join` — ledger lifecycle. `ledger create` registers the creator's own device in `ledger.devices`. `ledger invite` generates an `unbill://join/...` URL authorizing a new device to access the ledger; `ledger join <url>` accepts one.
+- `bill add | list | amend | delete | restore` — bill management. `--added-by` defaults to the local user ID at the CLI level.
+- `member list | add | remove` — managing named participants in a ledger.
 - `sync daemon | once | status` — P2P sync control. `sync once <peer_node_id>` dials a specific peer and syncs; `sync daemon` opens the endpoint and waits for incoming connections.
 - `settlement <user_id>` — display who owes whom for a user, aggregated across all their ledgers.
 

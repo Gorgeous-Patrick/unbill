@@ -4,15 +4,19 @@ The net layer connects unbill devices directly, without any central server. It i
 
 All network I/O goes through Iroh, which provides QUIC transport with TLS 1.3 and Ed25519 identity. Each device is permanently identified by its `NodeId` — the public half of its Ed25519 key. Iroh handles relay fallback and hole-punching transparently.
 
-## Two protocols
+## Three protocols
 
 ### `unbill/sync/v1` — document sync
 
 Used between devices that both already hold a copy of a ledger. Identified by ALPN token `unbill/sync/v1`.
 
-### `unbill/join/v1` — invite and join
+### `unbill/join/v1` — device join
 
 Used exactly once when a new device joins a ledger for the first time. Identified by ALPN token `unbill/join/v1`.
+
+### `unbill/identity/v1` — identity transfer
+
+Used exactly once when a new device wants to import an existing user identity (user ID and display name) from another device. Identified by ALPN token `unbill/identity/v1`.
 
 ## Peer discovery
 
@@ -20,9 +24,9 @@ No separate discovery mechanism is needed. The `devices` list embedded in each l
 
 ## Authorization
 
-A device is authorized to sync a ledger if and only if its `NodeId` appears in `ledger.devices` at the time of connection. The responder reads the ledger document, checks the list, and rejects any initiator not found there. Because Iroh's TLS layer verifies `NodeId` during the handshake, a device cannot claim a `NodeId` it does not own.
+A device is authorized to sync a ledger if and only if its `NodeId` appears in `ledger.devices` with `removed = false` at the time of connection. The responder reads the ledger document, checks the list, and rejects any initiator not found there or whose entry is tombstoned. Because Iroh's TLS layer verifies `NodeId` during the handshake, a device cannot claim a `NodeId` it does not own.
 
-Devices that are removed from `ledger.devices` lose sync access on their next connection attempt. They retain whatever local state they held before removal; there is no revocation of already-held data.
+Any authorized device may remove any other device by setting its `removed = true` tombstone. The typical use case is removing a lost or stolen device. A removed device loses sync access on its next connection attempt and retains whatever local state it held before removal. Devices are tombstoned rather than physically deleted so concurrent removals converge correctly.
 
 ## Sync protocol (`unbill/sync/v1`)
 
@@ -85,7 +89,7 @@ The stream is closed once both sides have sent `SyncDone` for every accepted led
 
 ### SyncState management
 
-Automerge requires a per-(ledger, peer) `SyncState` to track what each peer has already seen. A fresh `SyncState` is created for every new connection. For the `sync daemon` mode (see below), `SyncState` is kept alive for the duration of the persistent connection and discarded when the connection drops.
+Automerge requires a per-(ledger, peer) `SyncState` to track what each peer has already seen. A fresh `SyncState` is created at the start of every connection and discarded when the connection closes. Because sync is always user-initiated and connections are short-lived, there is no persistent SyncState between sessions.
 
 ### What triggers sync
 
@@ -163,6 +167,61 @@ JoinError { reason: String }
 
 The requester is now authorized to sync. To appear as a named participant in bills, a group member must separately add them via `member add` (any authorized device can do this).
 
+## Identity protocol (`unbill/identity/v1`)
+
+A user identity — a stable `user_id` (ULID) and `display_name` — is stored as device-local metadata alongside the device key. When setting up a second device, the user can import their existing identity from their first device rather than creating a new one.
+
+This protocol transfers identity only. It does not touch any ledger document.
+
+### Identity invite URL
+
+The existing device generates a 32-byte cryptographically random token, stores it in memory, and constructs an invite URL:
+
+```
+unbill://identity/<existing_node_id_hex>/<token_hex>
+```
+
+The URL is shared out of band. The token is valid until first use or expiry (default: 24 hours).
+
+### Message sequence
+
+```
+New device                             Existing device
+  ── IdentityRequest ──────────────>
+  <─ IdentityResponse / IdentityError
+```
+
+**`IdentityRequest`** — sent by the new device.
+
+```
+IdentityRequest {
+    token: String,   // token_hex from the invite URL
+}
+```
+
+The new device's `NodeId` is read from the TLS-authenticated Iroh connection by the existing device, but is not used — this protocol does not authorize ledger access.
+
+**`IdentityResponse`** — sent on success.
+
+```
+IdentityResponse {
+    user_id: String,        // the stable ULID for this user
+    display_name: String,   // the user's display name
+}
+```
+
+**`IdentityError`** — sent on failure.
+
+```
+IdentityError { reason: String }
+```
+
+### Processing
+
+Existing device: look up the token, reject if not found or expired, consume it, send `IdentityResponse`.
+
+New device: receive `IdentityResponse`, persist `user_id` and `display_name` to device-local storage. The device is now ready to join ledgers.
+
 ## Sync modes
 
 Sync is always user-initiated. There is no background polling or automatic triggering.
@@ -188,6 +247,7 @@ The daemon exposes `sync status` by returning whether the endpoint is open and t
 | Token expired or unknown | Host sends `JoinError`. Requester surfaces the message to the user. |
 | Token already consumed | Same as expired. |
 | Host offline at join time | Connection fails. Known limitation: the inviting device must be online when the invitee joins. |
+| Source device offline at identity import | Same: the device holding the identity must be online during `init import`. |
 | Malformed message | Connection closed immediately. |
 | Iroh relay unreachable | Iroh retries internally. If all transports fail, treated as peer unreachable. |
 

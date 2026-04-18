@@ -14,7 +14,7 @@ The primary entry point is `UnbillService`. Frontends create one instance at sta
 
 **Members:** add a member directly by user ID and display name; remove a member (tombstone); list current (non-removed) members. Members are named participants only — they carry no device binding. The full invite/join flow (out-of-band token, join URL) is deferred to M4.
 
-**Devices:** devices are associated with the ledger, not with individual members. Any device in a ledger's device list may record bills on behalf of any member. Device management (add/remove) is exposed in M4 alongside the invite/join flow.
+**Devices:** devices are associated with the ledger, not with individual members. Any device in a ledger's device list may record bills on behalf of any member. A device is added to a ledger via the join flow. Any authorized device may remove any other device (tombstone); the typical use case is removing a lost or stolen device.
 
 **Settlement:** given a user ID, compute the minimum set of transactions that clears all of that user's debts and credits across every ledger they participate in.
 
@@ -41,6 +41,7 @@ Key model types: `Ulid`, `Timestamp`, `Currency`, `NodeId`, `InviteToken`, `Ledg
 | `LedgerNotFound` | Querying a ledger ID that does not exist |
 | `BillNotFound` | Amending, deleting, or restoring a bill ID that does not exist |
 | `MemberNotFound` | Removing a user ID that is not an active member |
+| `DeviceNotFound` | Removing a `NodeId` that is not an active device in the ledger |
 | `UserNotMember` | Adding a bill whose payer or participant is not an active member |
 | `InvalidInvitation` | Join token is expired, already used, or unrecognized |
 | `NotAuthorized` | Peer attempted to sync a ledger they are not a member of |

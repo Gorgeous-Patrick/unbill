@@ -36,6 +36,9 @@ pub struct Device {
     pub node_id: NodeId,
     pub label: String,
     pub added_at: Timestamp,
+    /// Tombstone. A removed device can no longer sync but stays in the document
+    /// so concurrent removals converge correctly.
+    pub removed: bool,
 }
 
 /// Input type for directly adding a member to a ledger.

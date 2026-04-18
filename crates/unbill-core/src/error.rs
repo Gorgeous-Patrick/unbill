@@ -14,6 +14,9 @@ pub enum UnbillError {
     #[error("member not found: {0}")]
     MemberNotFound(String),
 
+    #[error("device not found: {0}")]
+    DeviceNotFound(String),
+
     #[error("invitation invalid or expired")]
     InvalidInvitation,
 
