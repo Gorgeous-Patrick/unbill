@@ -144,12 +144,7 @@ mod tests {
     }
 
     /// Equal split: give every participant 1 share.
-    fn equal_bill(
-        id: u128,
-        payer: Ulid,
-        amount_cents: i64,
-        participants: &[Ulid],
-    ) -> Bill {
+    fn equal_bill(id: u128, payer: Ulid, amount_cents: i64, participants: &[Ulid]) -> Bill {
         Bill {
             id: uid(id),
             payer_user_id: payer,
@@ -254,7 +249,12 @@ mod tests {
     fn test_settlement_balances_to_zero() {
         // Alice paid $90 for all three; each owes $30. Net: alice +60, bob -30, carol -30.
         let members = vec![member(alice()), member(bob()), member(carol())];
-        let bills = EffectiveBills(vec![equal_bill(1, alice(), 9000, &[alice(), bob(), carol()])]);
+        let bills = EffectiveBills(vec![equal_bill(
+            1,
+            alice(),
+            9000,
+            &[alice(), bob(), carol()],
+        )]);
         let s = compute(&members, &bills);
         let total_to_alice: i64 = s
             .transactions

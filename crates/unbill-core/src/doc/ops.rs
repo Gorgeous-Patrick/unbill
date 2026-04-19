@@ -101,10 +101,17 @@ pub(super) fn add_bill(
 /// bill's `prev`. The order matches insertion order.
 pub(super) fn list_bills(doc: &AutoCommit) -> Result<EffectiveBills> {
     let ledger = get_ledger(doc)?;
-    let superseded: std::collections::HashSet<Ulid> =
-        ledger.bills.iter().flat_map(|b| b.prev.iter().copied()).collect();
+    let superseded: std::collections::HashSet<Ulid> = ledger
+        .bills
+        .iter()
+        .flat_map(|b| b.prev.iter().copied())
+        .collect();
     Ok(EffectiveBills(
-        ledger.bills.into_iter().filter(|b| !superseded.contains(&b.id)).collect(),
+        ledger
+            .bills
+            .into_iter()
+            .filter(|b| !superseded.contains(&b.id))
+            .collect(),
     ))
 }
 
