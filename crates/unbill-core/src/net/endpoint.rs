@@ -15,7 +15,7 @@ use crate::service::UnbillService;
 
 use super::identity::{run_identity_host, run_identity_requester};
 use super::join::{run_join_host, run_join_requester};
-use super::protocol::{JoinRequest, ALPN_IDENTITY, ALPN_JOIN, ALPN_SYNC};
+use super::protocol::{ALPN_IDENTITY, ALPN_JOIN, ALPN_SYNC, JoinRequest};
 use super::sync::run_sync_session;
 
 pub struct UnbillEndpoint {

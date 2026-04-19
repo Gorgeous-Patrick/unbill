@@ -5,13 +5,13 @@ fn App() -> impl IntoView {
     view! {
         <main class="shell">
             <section class="panel">
-                <p class="eyebrow">"Leptos Frontend"</p>
+                <p class="eyebrow">"Shared Leptos UI"</p>
                 <h1 class="title">"Unbill"</h1>
                 <p class="copy">
-                    "This Tauri shell is now wired to an alternate Leptos + Trunk frontend."
-                    " Keep the existing React app for comparison, or move feature work here."
+                    "This shared Unbill UI is built with Leptos + Trunk and can be consumed"
+                    " by platform-specific shells like Tauri."
                 </p>
-                <div class="status">"Ready for Tauri API wiring"</div>
+                <div class="status">"Ready for shell integration"</div>
             </section>
         </main>
     }

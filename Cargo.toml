@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-    "apps/unbill-desktop-leptos",
+    "apps/unbill-ui-leptos",
     "crates/unbill-core",
     "crates/unbill-cli",
     "crates/unbill-tauri",

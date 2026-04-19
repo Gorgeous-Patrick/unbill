@@ -14,10 +14,10 @@ use tokio::sync::broadcast;
 
 use crate::doc::LedgerDoc;
 use crate::model::{LedgerMeta, NewDevice, NodeId, Timestamp};
-use crate::service::{load_pending_invitations, save_pending_invitations, ServiceEvent};
+use crate::service::{ServiceEvent, load_pending_invitations, save_pending_invitations};
 use crate::storage::LedgerStore;
 
-use super::protocol::{read_msg, write_msg, JoinError, JoinReply, JoinRequest, JoinResponse};
+use super::protocol::{JoinError, JoinReply, JoinRequest, JoinResponse, read_msg, write_msg};
 
 // ---------------------------------------------------------------------------
 // Host side
@@ -178,7 +178,7 @@ mod tests {
     use crate::model::{
         Currency, Invitation, InviteToken, LedgerMeta, NewDevice, NodeId, Timestamp, Ulid,
     };
-    use crate::service::{save_pending_invitations, ServiceEvent};
+    use crate::service::{ServiceEvent, save_pending_invitations};
     use crate::storage::InMemoryStore;
 
     use super::super::protocol::JoinRequest;
