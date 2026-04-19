@@ -304,22 +304,23 @@ pub async fn bill_amend(
 // Members
 // ---------------------------------------------------------------------------
 
-pub async fn member_add(
-    svc: &UnbillService,
-    ledger_id: &str,
-    user_id: &str,
-    name: String,
-    added_by: &str,
-) -> anyhow::Result<()> {
+pub async fn member_add(svc: &UnbillService, ledger_id: &str, user_id: &str) -> anyhow::Result<()> {
+    let uid = parse_ulid(user_id)?;
+    let identities = svc.list_identities().await?;
+    let identity = identities
+        .iter()
+        .find(|i| i.user_id == uid)
+        .ok_or_else(|| anyhow!("no identity found for {user_id} — add it with `identity new` or `identity import`"))?;
     svc.add_member(
         ledger_id,
         NewMember {
-            user_id: parse_ulid(user_id)?,
-            display_name: name,
-            added_by: parse_ulid(added_by)?,
+            user_id: uid,
+            display_name: identity.display_name.clone(),
+            added_by: uid,
         },
     )
     .await?;
+    println!("added {} ({})", identity.display_name, user_id);
     Ok(())
 }
 
