@@ -15,7 +15,7 @@ use crate::model::NodeId;
 use crate::service::ServiceEvent;
 use crate::storage::LedgerStore;
 
-use super::protocol::{read_msg, write_msg, Hello, HelloAck, SyncDone, SyncFrame, SyncMsg};
+use super::protocol::{Hello, HelloAck, SyncDone, SyncFrame, SyncMsg, read_msg, write_msg};
 
 struct LedgerSyncState {
     sync_state: automerge::sync::State,

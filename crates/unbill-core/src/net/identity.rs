@@ -10,11 +10,11 @@ use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::model::Ulid;
-use crate::service::{load_pending_identity_tokens, save_pending_identity_tokens, Identity};
+use crate::service::{Identity, load_pending_identity_tokens, save_pending_identity_tokens};
 use crate::storage::LedgerStore;
 
 use super::protocol::{
-    read_msg, write_msg, IdentityError, IdentityReply, IdentityRequest, IdentityResponse,
+    IdentityError, IdentityReply, IdentityRequest, IdentityResponse, read_msg, write_msg,
 };
 
 const IDENTITIES_KEY: &str = "identities.json";
@@ -127,7 +127,7 @@ mod tests {
     use std::sync::Arc;
 
     use crate::model::Ulid;
-    use crate::service::{save_pending_identity_tokens, Identity};
+    use crate::service::{Identity, save_pending_identity_tokens};
     use crate::storage::InMemoryStore;
 
     use super::{run_identity_host, run_identity_requester};

@@ -3,8 +3,8 @@
 //! Every message on every protocol is framed as:
 //!   `[ u32 big-endian length ][ CBOR-encoded message bytes ]`
 
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 // ---------------------------------------------------------------------------

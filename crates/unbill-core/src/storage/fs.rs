@@ -254,11 +254,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = FsStore::new(dir.path().to_path_buf());
 
-        assert!(store
-            .load_device_meta("device_key.bin")
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            store
+                .load_device_meta("device_key.bin")
+                .await
+                .unwrap()
+                .is_none()
+        );
 
         store
             .save_device_meta("device_key.bin", b"secret")

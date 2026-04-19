@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use anyhow::{bail, Context as _};
+use anyhow::{Context as _, bail};
 use clap::Parser;
 use unbill_core::service::UnbillService;
 use unbill_core::storage::FsStore;

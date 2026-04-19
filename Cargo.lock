@@ -7189,14 +7189,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "unbill-desktop-leptos"
-version = "0.1.0"
-dependencies = [
- "console_error_panic_hook",
- "leptos",
-]
-
-[[package]]
 name = "unbill-tauri"
 version = "0.1.0"
 dependencies = [
@@ -7210,6 +7202,14 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "unbill-core",
+]
+
+[[package]]
+name = "unbill-ui-leptos"
+version = "0.1.0"
+dependencies = [
+ "console_error_panic_hook",
+ "leptos",
 ]
 
 [[package]]
