@@ -25,6 +25,9 @@
   # https://devenv.sh/packages/
   packages = [
     pkgs.cargo-tauri
+  ] ++ lib.optionals pkgs.stdenv.isLinux [
+    # GTK/WebKit dependencies only needed on Linux
+    # macOS uses native WebKit framework
     pkgs.glib
     pkgs.atkmm
     pkgs.pango
@@ -32,6 +35,11 @@
     pkgs.gtk3
     pkgs.webkitgtk_4_1
   ];
+
+  # https://devenv.sh/basics/
+  enterShell = ''
+    pnpm install
+  '';
 
   # See full reference at https://devenv.sh/reference/options/
 }
