@@ -10,6 +10,7 @@ A thin clap-driven command-line frontend for `UnbillService`. Useful for dogfood
 - `identity list` — list all identities stored on this device (user ID + display name for each).
 - `identity share --user-id <user_id>` — generate an `unbill://identity/...` URL for a specific identity so another device can import it via `identity import`.
 - `device show` — print this device's node ID and data directory.
+- `device list --ledger-id <id>` — list all devices authorized on a ledger (node ID + label for each).
 
 - `ledger create | list | show | delete | invite | join` — ledger lifecycle. `ledger create` registers the creator's own device in `ledger.devices`. `ledger invite` generates an `unbill://join/...` URL authorizing a new device to access the ledger; `ledger join <url> [--label <name>]` dials the host and joins.
 - `bill add | list | amend` — bill management. `bill amend` records a new version of an existing bill (same bill ID, all fields required); the latest version becomes the effective bill.
