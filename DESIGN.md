@@ -1,6 +1,6 @@
-# unbill
+# Unbill
 
-unbill is a decentralized expense ledger for small trusted groups. Each ledger is stored on member devices and syncs peer-to-peer. No server or account system owns the data.
+Unbill is a decentralized expense ledger for small trusted groups. Each ledger is stored on member devices and syncs peer-to-peer. No server or account system owns the data.
 
 ## Purpose
 

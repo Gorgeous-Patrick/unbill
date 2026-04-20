@@ -1,4 +1,4 @@
-# unbill-tauri
+# Unbill Tauri
 
 Tauri bridge around `UnbillService`. It exposes async commands and frontend-ready DTOs without adding new business logic.
 

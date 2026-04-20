@@ -1,4 +1,4 @@
-# unbill-tauri — Implementation
+# Unbill Tauri — Implementation
 
 `src/lib.rs` defines the DTOs, command handlers, and bootstrap flow. Tauri setup opens `FsStore`, constructs `UnbillService`, and shares it through `tauri::State`.
 

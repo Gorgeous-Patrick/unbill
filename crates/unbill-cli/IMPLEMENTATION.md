@@ -1,4 +1,4 @@
-# unbill-cli — Implementation
+# Unbill CLI — Implementation
 
 `main.rs` parses commands with `clap`, opens `FsStore`, creates `UnbillService`, and dispatches to `commands.rs`. `output.rs` renders human-readable or JSON output.
 

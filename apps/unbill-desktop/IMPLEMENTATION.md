@@ -1,4 +1,4 @@
-# unbill-desktop — Implementation
+# Unbill Desktop — Implementation
 
 The current app is a small React/Vite shell with custom window chrome in `src/App.tsx`. The richer desktop architecture described for later milestones is not implemented here yet.
 

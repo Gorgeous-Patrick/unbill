@@ -1,4 +1,4 @@
-# unbill-core — Implementation
+# Unbill Core — Implementation
 
 ## Modules
 

@@ -1,4 +1,4 @@
-# unbill-core
+# Unbill Core
 
 The unbill engine: typed ledger model, Automerge document, storage, sync, settlement, and service API.
 

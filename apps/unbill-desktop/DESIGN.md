@@ -1,4 +1,4 @@
-# unbill-desktop
+# Unbill Desktop
 
 Early React desktop shell served inside Tauri. It is a presentation layer, not a second implementation of unbill.
 

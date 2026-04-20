@@ -1,4 +1,4 @@
-# unbill-core
+# Unbill Core
 
 The core crate defines the shared ledger, persistence boundary, sync boundary, and settlement rules. Every frontend depends on it; none reimplement its domain logic.
 
