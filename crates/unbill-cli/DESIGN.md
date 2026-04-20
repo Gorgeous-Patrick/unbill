@@ -1,4 +1,4 @@
-# unbill-cli
+# Unbill CLI
 
 Terminal frontend for `UnbillService`. It exists for dogfooding, scripting, and end-to-end verification.
 

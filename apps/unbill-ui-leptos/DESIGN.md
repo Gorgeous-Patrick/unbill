@@ -1,4 +1,4 @@
-# unbill-ui-leptos
+# Unbill UI Leptos
 
 Shared Leptos UI for compact and desktop-style shells. The same page components drive both layouts.
 
