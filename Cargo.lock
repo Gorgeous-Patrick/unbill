@@ -7209,7 +7209,13 @@ name = "unbill-ui-leptos"
 version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
+ "js-sys",
  "leptos",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]
