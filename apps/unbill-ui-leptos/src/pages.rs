@@ -343,6 +343,7 @@ pub fn BillEditorPage(
     on_back: Callback<()>,
     on_save: Callback<BillSaveRequest>,
 ) -> impl IntoView {
+    let _ = users;
     let description = RwSignal::new(seed.description);
     let amount_text = RwSignal::new(seed.amount_text);
     let payer_mode = RwSignal::new(seed.payer_mode);

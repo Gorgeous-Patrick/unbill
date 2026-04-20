@@ -435,14 +435,14 @@ async fn map_bills(service: &Arc<UnbillService>, ledger_id: &str) -> Result<Vec<
                 amount_cents: bill.amount_cents,
                 description: bill.description,
                 created_at_ms: bill.created_at.as_millis(),
-                payers: bill.payers.into_iter().map(|s| to_share_dto(s)).collect(),
-                payees: bill.payees.into_iter().map(|s| to_share_dto(s)).collect(),
+                payers: bill.payers.into_iter().map(&to_share_dto).collect(),
+                payees: bill.payees.into_iter().map(to_share_dto).collect(),
                 prev: bill.prev.into_iter().map(|prev| prev.to_string()).collect(),
             }
         })
         .collect::<Vec<_>>();
 
-    items.sort_by(|left, right| right.created_at_ms.cmp(&left.created_at_ms));
+    items.sort_by_key(|item| std::cmp::Reverse(item.created_at_ms));
     Ok(items)
 }
 
