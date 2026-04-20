@@ -37,7 +37,7 @@ Selecting a row opens that row's page context. On mobile this pushes a page. On 
 
 Each ledger row shows:
 - Ledger name
-- Member count
+- User count
 - Latest bill timestamp when at least one bill exists
 
 ### Layout
@@ -98,7 +98,7 @@ The `New Bill` button stays available as the page's primary action.
 
 The form shows two sections:
 - Payment setup
-- Participant setup
+- Share setup
 
 Payment setup shows:
 - Description field
@@ -108,12 +108,12 @@ Payment setup shows:
 - Payment date field
 - Optional note field
 
-Participant setup shows:
-- Participant list sourced from current ledger members
-- Per-participant inclusion toggle
+Share setup shows:
+- User list sourced from current ledger users
+- Per-user inclusion toggle
 - Split mode control
-- Per-participant share editor when the split mode uses custom shares
-- Derived per-participant amount summary
+- Per-user share editor when the split mode uses custom shares
+- Derived per-user amount summary
 
 ### Layout
 
@@ -125,12 +125,12 @@ The save action remains visible from the top bar.
 
 - In create mode, initialize fields from ledger defaults and device-local defaults.
 - In amend mode, load the selected bill and populate all fields from the persisted bill data.
-- The payer picker and participant list both load members from the current ledger.
-- The payer must be one of the current ledger members.
-- The participant list is derived from the current ledger members and writes to `shares`.
-- Equal split mode assigns `1` share to each included participant.
-- Custom split mode allows editing the integer share value for each included participant.
-- The derived per-participant amount summary recalculates immediately from `amount`, selected participants, and share weights.
+- The payer picker and share list both load users from the current ledger.
+- The payer must be one of the current ledger users.
+- The share list is derived from the current ledger users and writes to `shares`.
+- Equal split mode assigns `1` share to each included user.
+- Custom split mode allows editing the integer share value for each included user.
+- The derived per-user amount summary recalculates immediately from `amount`, selected users, and share weights.
 - Saving validates required fields, creates a new bill entry in the current ledger, and returns to the ledger page with the saved effective bill selected.
 - Saving in amend mode writes the new bill with `prev` containing the superseded bill identifier so the prior bill is no longer effective.
 
@@ -139,43 +139,43 @@ The save action remains visible from the top bar.
 ### Elements
 
 - Top bar title: `Device Settings`
-- Scrollable saved identity list
-- `Add Identity` button
+- Scrollable saved user list
+- `Add User` button
 - `Import Ledger` button
 - `Scan QR Code` button
 
-Each saved identity row shows:
-- Identity name
-- Identity identifier
+Each saved user row shows:
+- User name
+- User identifier
 
 ### Layout
 
-Saved identities appear first as the main content block.
+Saved users appear first as the main content block.
 
-Import actions appear as full-width action rows below the identities block.
+Import actions appear as full-width action rows below the saved-users block.
 
 ### Data Logic
 
-- Load all device-local saved identities.
-- Sort identities by name ascending.
-- Tapping `Add Identity` opens identity creation for a new device-local saved identity and persists it locally on save.
+- Load all device-local saved users.
+- Sort saved users by name ascending.
+- Tapping `Add User` opens creation for a new device-local saved user and persists it locally on save.
 - Tapping `Import Ledger` reads the current clipboard text, parses it as an invitation URL, and opens a join confirmation sheet when the URL is valid.
 - Tapping `Scan QR Code` opens the device scanner, reads a QR payload as an invitation URL, and opens a join confirmation sheet when the payload is valid.
-- The join confirmation sheet shows the invitation URL, a required device label field, and a confirm action.
-- Confirming the join confirmation sheet calls ledger join with the parsed invitation URL and the entered device label.
+- The join confirmation sheet shows the invitation URL, an optional device label field for a local nickname, and a confirm action.
+- Confirming the join confirmation sheet calls ledger join with the parsed invitation URL and optionally stores the entered device label locally for the inviting device.
 
 ## Ledger Settings Page
 
 ### Elements
 
 - Top bar title: `Ledger Settings`
-- Scrollable ledger member list
-- `Add Member` button
+- Scrollable ledger user list
+- `Add User` button
 - `Invitation` section
 
-Each ledger member row shows:
-- Member name
-- Member identifier in the ledger
+Each ledger user row shows:
+- User name
+- User identifier in the ledger
 
 The invitation section shows:
 - `Device Invitation` button
@@ -184,15 +184,15 @@ The invitation section shows:
 
 ### Layout
 
-Ledger members appear first as the main content block.
+Ledger users appear first as the main content block.
 
-The invitation section sits below the members list as a dedicated settings block.
+The invitation section sits below the users list as a dedicated settings block.
 
 ### Data Logic
 
-- Load all members in the current ledger.
-- Sort members by creation order within the ledger.
-- Tapping `Add Member` opens a single-name input flow and appends the new member to the ledger on save.
+- Load all users in the current ledger.
+- Sort users by creation order within the ledger.
+- Tapping `Add User` opens a single-name input flow and appends the new user to the ledger on save.
 - Tapping `Device Invitation` generates the invitation URL for the current ledger, stores it in page state, and renders both the QR code and the `Copy URL` button.
 - Tapping `Copy URL` writes the generated invitation URL to the clipboard.
 

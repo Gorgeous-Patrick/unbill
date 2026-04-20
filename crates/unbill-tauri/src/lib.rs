@@ -4,9 +4,9 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
-use unbill_core::model::{NewBill, NewMember, NodeId, Share, Ulid};
+use unbill_core::model::{NewBill, NewUser, NodeId, Share, Ulid};
 use unbill_core::path::UNBILL_PATH;
-use unbill_core::service::{Identity, UnbillService};
+use unbill_core::service::{LocalUser, UnbillService};
 use unbill_core::storage::FsStore;
 
 struct AppState {
@@ -17,7 +17,7 @@ struct AppState {
 #[serde(rename_all = "camelCase")]
 struct AppBootstrapDto {
     ledgers: Vec<LedgerSummaryDto>,
-    identities: Vec<IdentityDto>,
+    local_users: Vec<LocalUserDto>,
     devices: Vec<SyncDeviceDto>,
 }
 
@@ -29,7 +29,7 @@ struct LedgerSummaryDto {
     currency: String,
     created_at_ms: i64,
     updated_at_ms: i64,
-    member_count: usize,
+    user_count: usize,
     latest_bill_at_ms: Option<i64>,
 }
 
@@ -37,24 +37,23 @@ struct LedgerSummaryDto {
 #[serde(rename_all = "camelCase")]
 struct LedgerDetailDto {
     summary: LedgerSummaryDto,
-    members: Vec<MemberDto>,
+    users: Vec<UserDto>,
     bills: Vec<BillDto>,
 }
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct IdentityDto {
+struct LocalUserDto {
     user_id: String,
     display_name: String,
 }
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct MemberDto {
+struct UserDto {
     user_id: String,
     display_name: String,
     added_at_ms: i64,
-    added_by: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -95,13 +94,13 @@ struct CreateLedgerInput {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct AddIdentityInput {
+struct AddLocalUserInput {
     display_name: String,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct AddMemberInput {
+struct AddUserInput {
     ledger_id: String,
     display_name: String,
 }
@@ -136,11 +135,11 @@ async fn bootstrap_app(state: State<'_, AppState>) -> std::result::Result<AppBoo
     let ledgers = load_ledgers(&state.service)
         .await
         .map_err(stringify_error)?;
-    let identities = state
+    let local_users = state
         .service
-        .list_identities()
+        .list_local_users()
         .await
-        .map(|items| items.into_iter().map(IdentityDto::from).collect())
+        .map(|items| items.into_iter().map(LocalUserDto::from).collect())
         .map_err(stringify_error)?;
     let devices = load_sync_devices(&state.service)
         .await
@@ -148,7 +147,7 @@ async fn bootstrap_app(state: State<'_, AppState>) -> std::result::Result<AppBoo
 
     Ok(AppBootstrapDto {
         ledgers,
-        identities,
+        local_users,
         devices,
     })
 }
@@ -181,59 +180,48 @@ async fn load_ledger_detail(
 }
 
 #[tauri::command]
-async fn add_identity(
-    input: AddIdentityInput,
+async fn add_local_user(
+    input: AddLocalUserInput,
     state: State<'_, AppState>,
-) -> std::result::Result<IdentityDto, String> {
+) -> std::result::Result<LocalUserDto, String> {
     state
         .service
-        .add_identity(input.display_name)
+        .add_local_user(input.display_name)
         .await
-        .map(IdentityDto::from)
+        .map(LocalUserDto::from)
         .map_err(stringify_error)
 }
 
 #[tauri::command]
-async fn add_member(
-    input: AddMemberInput,
+async fn add_user(
+    input: AddUserInput,
     state: State<'_, AppState>,
-) -> std::result::Result<MemberDto, String> {
-    let existing_members = state
-        .service
-        .list_members(&input.ledger_id)
-        .await
-        .map_err(stringify_error)?;
-
+) -> std::result::Result<UserDto, String> {
     let user_id = Ulid::new();
-    let added_by = existing_members
-        .first()
-        .map(|member| member.user_id)
-        .unwrap_or(user_id);
 
     state
         .service
-        .add_member(
+        .add_user(
             &input.ledger_id,
-            NewMember {
+            NewUser {
                 user_id,
                 display_name: input.display_name,
-                added_by,
             },
         )
         .await
         .map_err(stringify_error)?;
 
-    let added_member = state
+    let added_user = state
         .service
-        .list_members(&input.ledger_id)
+        .list_users(&input.ledger_id)
         .await
         .map_err(stringify_error)?
         .into_iter()
-        .find(|member| member.user_id == user_id)
-        .context("new member missing after add")
+        .find(|user| user.user_id == user_id)
+        .context("new user missing after add")
         .map_err(stringify_error)?;
 
-    Ok(MemberDto::from(added_member))
+    Ok(UserDto::from(added_user))
 }
 
 #[tauri::command]
@@ -326,6 +314,7 @@ async fn load_ledgers(service: &Arc<UnbillService>) -> Result<Vec<LedgerSummaryD
 
 async fn load_sync_devices(service: &Arc<UnbillService>) -> Result<Vec<SyncDeviceDto>> {
     let local_node_id = service.device_id().to_string();
+    let device_labels = service.list_device_labels().await?;
     let mut by_node_id = BTreeMap::<String, SyncDeviceDto>::new();
 
     for meta in service.list_ledgers().await? {
@@ -341,13 +330,12 @@ async fn load_sync_devices(service: &Arc<UnbillService>) -> Result<Vec<SyncDevic
                 .entry(node_id.clone())
                 .or_insert_with(|| SyncDeviceDto {
                     node_id,
-                    label: device.label.clone(),
+                    label: device_labels
+                        .get(&device.node_id.to_string())
+                        .cloned()
+                        .unwrap_or_default(),
                     ledger_names: Vec::new(),
                 });
-
-            if entry.label.is_empty() && !device.label.is_empty() {
-                entry.label = device.label.clone();
-            }
             if !entry.ledger_names.iter().any(|name| name == &ledger_name) {
                 entry.ledger_names.push(ledger_name.clone());
             }
@@ -376,17 +364,17 @@ async fn load_ledger_detail_inner(
         .with_context(|| format!("ledger {ledger_id} not found"))?;
 
     let summary = summarize_ledger(service, meta).await?;
-    let members = service
-        .list_members(ledger_id)
+    let users = service
+        .list_users(ledger_id)
         .await?
         .into_iter()
-        .map(MemberDto::from)
+        .map(UserDto::from)
         .collect::<Vec<_>>();
     let bills = map_bills(service, ledger_id).await?;
 
     Ok(LedgerDetailDto {
         summary,
-        members,
+        users,
         bills,
     })
 }
@@ -396,7 +384,7 @@ async fn summarize_ledger(
     meta: unbill_core::model::LedgerMeta,
 ) -> Result<LedgerSummaryDto> {
     let ledger_id = meta.ledger_id.to_string();
-    let members = service.list_members(&ledger_id).await?;
+    let users = service.list_users(&ledger_id).await?;
     let bills = service.list_bills(&ledger_id).await?;
     let latest_bill_at_ms = bills.iter().map(|bill| bill.created_at.as_millis()).max();
 
@@ -406,16 +394,16 @@ async fn summarize_ledger(
         currency: meta.currency.code().to_owned(),
         created_at_ms: meta.created_at.as_millis(),
         updated_at_ms: meta.updated_at.as_millis(),
-        member_count: members.len(),
+        user_count: users.len(),
         latest_bill_at_ms,
     })
 }
 
 async fn map_bills(service: &Arc<UnbillService>, ledger_id: &str) -> Result<Vec<BillDto>> {
-    let members = service.list_members(ledger_id).await?;
-    let member_lookup = members
+    let users = service.list_users(ledger_id).await?;
+    let user_lookup = users
         .iter()
-        .map(|member| (member.user_id, member.display_name.clone()))
+        .map(|user| (user.user_id, user.display_name.clone()))
         .collect::<std::collections::HashMap<_, _>>();
     let bills = service.list_bills(ledger_id).await?;
 
@@ -425,7 +413,7 @@ async fn map_bills(service: &Arc<UnbillService>, ledger_id: &str) -> Result<Vec<
         .map(|bill| BillDto {
             id: bill.id.to_string(),
             payer_user_id: bill.payer_user_id.to_string(),
-            payer_name: member_lookup
+            payer_name: user_lookup
                 .get(&bill.payer_user_id)
                 .cloned()
                 .unwrap_or_else(|| bill.payer_user_id.to_string()),
@@ -436,7 +424,7 @@ async fn map_bills(service: &Arc<UnbillService>, ledger_id: &str) -> Result<Vec<
                 .shares
                 .into_iter()
                 .map(|share| ShareDto {
-                    display_name: member_lookup
+                    display_name: user_lookup
                         .get(&share.user_id)
                         .cloned()
                         .unwrap_or_else(|| share.user_id.to_string()),
@@ -460,8 +448,8 @@ fn stringify_error(error: impl std::fmt::Display) -> String {
     error.to_string()
 }
 
-impl From<Identity> for IdentityDto {
-    fn from(value: Identity) -> Self {
+impl From<LocalUser> for LocalUserDto {
+    fn from(value: LocalUser) -> Self {
         Self {
             user_id: value.user_id.to_string(),
             display_name: value.display_name,
@@ -469,13 +457,12 @@ impl From<Identity> for IdentityDto {
     }
 }
 
-impl From<unbill_core::model::Member> for MemberDto {
-    fn from(value: unbill_core::model::Member) -> Self {
+impl From<unbill_core::model::User> for UserDto {
+    fn from(value: unbill_core::model::User) -> Self {
         Self {
             user_id: value.user_id.to_string(),
             display_name: value.display_name,
             added_at_ms: value.added_at.as_millis(),
-            added_by: value.added_by.to_string(),
         }
     }
 }
@@ -509,8 +496,8 @@ pub fn run() {
             bootstrap_app,
             create_ledger,
             load_ledger_detail,
-            add_identity,
-            add_member,
+            add_local_user,
+            add_user,
             create_invitation,
             join_ledger,
             save_bill,

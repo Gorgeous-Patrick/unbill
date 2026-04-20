@@ -20,7 +20,7 @@ extern "C" {
 #[serde(rename_all = "camelCase")]
 pub struct AppBootstrap {
     pub ledgers: Vec<LedgerSummary>,
-    pub identities: Vec<Identity>,
+    pub local_users: Vec<LocalUser>,
     pub devices: Vec<SyncDevice>,
 }
 
@@ -32,7 +32,7 @@ pub struct LedgerSummary {
     pub currency: String,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
-    pub member_count: usize,
+    pub user_count: usize,
     pub latest_bill_at_ms: Option<i64>,
 }
 
@@ -40,13 +40,13 @@ pub struct LedgerSummary {
 #[serde(rename_all = "camelCase")]
 pub struct LedgerDetail {
     pub summary: LedgerSummary,
-    pub members: Vec<Member>,
+    pub users: Vec<User>,
     pub bills: Vec<Bill>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub struct Identity {
+pub struct LocalUser {
     pub user_id: String,
     pub display_name: String,
 }
@@ -61,11 +61,10 @@ pub struct SyncDevice {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub struct Member {
+pub struct User {
     pub user_id: String,
     pub display_name: String,
     pub added_at_ms: i64,
-    pub added_by: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -98,13 +97,13 @@ pub struct CreateLedgerInput {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AddIdentityInput {
+pub struct AddLocalUserInput {
     pub display_name: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AddMemberInput {
+pub struct AddUserInput {
     pub ledger_id: String,
     pub display_name: String,
 }
@@ -150,12 +149,12 @@ pub async fn load_ledger_detail(ledger_id: &str) -> Result<LedgerDetail, String>
     .await
 }
 
-pub async fn add_identity(input: AddIdentityInput) -> Result<Identity, String> {
-    invoke("add_identity", &serde_json::json!({ "input": input })).await
+pub async fn add_local_user(input: AddLocalUserInput) -> Result<LocalUser, String> {
+    invoke("add_local_user", &serde_json::json!({ "input": input })).await
 }
 
-pub async fn add_member(input: AddMemberInput) -> Result<Member, String> {
-    invoke("add_member", &serde_json::json!({ "input": input })).await
+pub async fn add_user(input: AddUserInput) -> Result<User, String> {
+    invoke("add_user", &serde_json::json!({ "input": input })).await
 }
 
 pub async fn create_invitation(ledger_id: &str) -> Result<String, String> {

@@ -31,11 +31,6 @@ pub struct Cli {
 pub enum Command {
     /// Initialize this device (generates a key if one does not exist).
     Init,
-    /// Manage user identities on this device.
-    Identity {
-        #[command(subcommand)]
-        sub: IdentityCmd,
-    },
     /// Show information about this device.
     Device {
         #[command(subcommand)]
@@ -51,10 +46,10 @@ pub enum Command {
         #[command(subcommand)]
         sub: BillCmd,
     },
-    /// Manage members.
-    Member {
+    /// Manage saved users on this device and users in a ledger.
+    User {
         #[command(subcommand)]
-        sub: MemberCmd,
+        sub: UserCmd,
     },
     /// Sync with peers.
     Sync {
@@ -63,23 +58,6 @@ pub enum Command {
     },
     /// Show net settlement for a user across all ledgers.
     Settlement { user_id: String },
-}
-
-#[derive(clap::Subcommand)]
-pub enum IdentityCmd {
-    /// Create a fresh user identity (new user ID + display name) on this device.
-    Create { display_name: String },
-    /// Import an existing identity from another device via an unbill://identity/... URL.
-    Import { url: String },
-    /// List all identities stored on this device.
-    List,
-    /// Generate an unbill://identity/... URL to share a specific identity with another device.
-    Share {
-        #[arg(long)]
-        user_id: String,
-    },
-    /// Delete an identity from this device's local storage.
-    Delete { user_id: String },
 }
 
 #[derive(clap::Subcommand)]
@@ -109,9 +87,9 @@ pub enum LedgerCmd {
     /// Join a ledger using an unbill://join/... URL.
     Join {
         url: String,
-        /// Human-readable label for this device recorded in the ledger.
-        #[arg(long, default_value = "new device")]
-        label: String,
+        /// Optional device-local label to remember the host device on this machine.
+        #[arg(long)]
+        label: Option<String>,
     },
 }
 
@@ -129,9 +107,9 @@ pub enum BillCmd {
         amount: String,
         #[arg(long)]
         description: String,
-        /// Participant user IDs (equal shares). Repeat for each participant.
-        #[arg(long = "participant")]
-        participants: Vec<String>,
+        /// User IDs in the bill's share list (equal shares). Repeat for each user.
+        #[arg(long = "share-user")]
+        share_users: Vec<String>,
     },
     /// List all bills in a ledger.
     List {
@@ -151,19 +129,31 @@ pub enum BillCmd {
         amount: String,
         #[arg(long)]
         description: String,
-        /// Participants (equal shares). Repeat for each.
-        #[arg(long = "participant")]
-        participants: Vec<String>,
+        /// User IDs in the bill's share list (equal shares). Repeat for each user.
+        #[arg(long = "share-user")]
+        share_users: Vec<String>,
     },
 }
 
 #[derive(clap::Subcommand)]
-pub enum MemberCmd {
+pub enum UserCmd {
+    /// Create a fresh saved user (new user ID + display name) on this device.
+    Create { display_name: String },
+    /// Import an existing saved user from another device via an unbill://user/... URL.
+    Import { url: String },
     List {
+        /// When provided, list users in this ledger instead of device-local saved users.
         #[arg(long)]
-        ledger_id: String,
+        ledger_id: Option<String>,
     },
-    /// Add a member directly by user ID and display name.
+    /// Generate an unbill://user/... URL to share a specific saved user with another device.
+    Share {
+        #[arg(long)]
+        user_id: String,
+    },
+    /// Delete a saved user from this device's local storage.
+    Delete { user_id: String },
+    /// Add a user directly to a ledger by user ID and display name.
     Add {
         #[arg(long)]
         ledger_id: String,
@@ -171,9 +161,6 @@ pub enum MemberCmd {
         user_id: String,
         #[arg(long)]
         name: String,
-        /// User ID of the person performing this action.
-        #[arg(long)]
-        added_by: String,
     },
 }
 
@@ -215,15 +202,6 @@ async fn run() -> anyhow::Result<()> {
 
     match cli.command {
         Command::Init => commands::init(&svc, json).await,
-        Command::Identity { sub } => match sub {
-            IdentityCmd::Create { display_name } => {
-                commands::identity_new(&svc, display_name, json).await
-            }
-            IdentityCmd::Import { url } => commands::identity_import(&svc, url).await,
-            IdentityCmd::List => commands::identity_list(&svc, json).await,
-            IdentityCmd::Share { user_id } => commands::identity_share(&svc, &user_id, json).await,
-            IdentityCmd::Delete { user_id } => commands::identity_remove(&svc, &user_id).await,
-        },
         Command::Device { sub } => match sub {
             DeviceCmd::Show => commands::device_show(&svc, &data_dir, json).await,
         },
@@ -245,7 +223,7 @@ async fn run() -> anyhow::Result<()> {
                 payer,
                 amount,
                 description,
-                participants,
+                share_users,
             } => {
                 commands::bill_add(
                     &svc,
@@ -253,7 +231,7 @@ async fn run() -> anyhow::Result<()> {
                     &payer,
                     &amount,
                     description,
-                    participants,
+                    share_users,
                     json,
                 )
                 .await
@@ -265,7 +243,7 @@ async fn run() -> anyhow::Result<()> {
                 payer,
                 amount,
                 description,
-                participants,
+                share_users,
             } => {
                 commands::bill_amend(
                     &svc,
@@ -274,20 +252,28 @@ async fn run() -> anyhow::Result<()> {
                     &payer,
                     &amount,
                     description,
-                    participants,
+                    share_users,
                     json,
                 )
                 .await
             }
         },
-        Command::Member { sub } => match sub {
-            MemberCmd::List { ledger_id } => commands::member_list(&svc, &ledger_id, json).await,
-            MemberCmd::Add {
+        Command::User { sub } => match sub {
+            UserCmd::Create { display_name } => {
+                commands::local_user_create(&svc, display_name, json).await
+            }
+            UserCmd::Import { url } => commands::local_user_import(&svc, url).await,
+            UserCmd::List { ledger_id } => match ledger_id {
+                Some(ledger_id) => commands::ledger_user_list(&svc, &ledger_id, json).await,
+                None => commands::local_user_list(&svc, json).await,
+            },
+            UserCmd::Share { user_id } => commands::local_user_share(&svc, &user_id, json).await,
+            UserCmd::Delete { user_id } => commands::local_user_remove(&svc, &user_id).await,
+            UserCmd::Add {
                 ledger_id,
                 user_id,
                 name,
-                added_by,
-            } => commands::member_add(&svc, &ledger_id, &user_id, name, &added_by).await,
+            } => commands::ledger_user_add(&svc, &ledger_id, &user_id, name).await,
         },
         Command::Sync { sub } => match sub {
             SyncCmd::Once { peer_node_id } => commands::sync_once(&svc, &peer_node_id).await,

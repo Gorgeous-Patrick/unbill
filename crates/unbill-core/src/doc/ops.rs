@@ -8,8 +8,8 @@ use autosurgeon::{hydrate, reconcile};
 
 use crate::error::UnbillError;
 use crate::model::{
-    Bill, Currency, Device, EffectiveBills, Ledger, Member, NewBill, NewDevice, NewMember, NodeId,
-    Timestamp, Ulid,
+    Bill, Currency, Device, EffectiveBills, Ledger, NewBill, NewDevice, NewUser, NodeId, Timestamp,
+    Ulid, User,
 };
 
 type Result<T> = std::result::Result<T, UnbillError>;
@@ -37,7 +37,7 @@ pub(super) fn init_ledger(
         name,
         currency,
         created_at,
-        members: vec![],
+        users: vec![],
         bills: vec![],
         devices: vec![],
     };
@@ -55,8 +55,8 @@ pub(super) fn get_ledger(doc: &AutoCommit) -> Result<Ledger> {
 
 /// Append a new `Bill` to the ledger. Returns the new bill's ID.
 ///
-/// Returns `UserNotMember` if the payer or any share participant is not a
-/// member of the ledger.
+/// Returns `UserNotInLedger` if the payer or any user in the share list is not
+/// a user in the ledger.
 pub(super) fn add_bill(
     doc: &mut AutoCommit,
     input: NewBill,
@@ -65,14 +65,14 @@ pub(super) fn add_bill(
 ) -> Result<Ulid> {
     let mut ledger = get_ledger(doc)?;
 
-    let member_ids: std::collections::HashSet<Ulid> =
-        ledger.members.iter().map(|m| m.user_id).collect();
+    let user_ids: std::collections::HashSet<Ulid> =
+        ledger.users.iter().map(|user| user.user_id).collect();
 
     let all_users =
         std::iter::once(&input.payer_user_id).chain(input.shares.iter().map(|s| &s.user_id));
     for user_id in all_users {
-        if !member_ids.contains(user_id) {
-            return Err(UnbillError::UserNotMember(user_id.to_string()));
+        if !user_ids.contains(user_id) {
+            return Err(UnbillError::UserNotInLedger(user_id.to_string()));
         }
     }
 
@@ -116,30 +116,33 @@ pub(super) fn list_bills(doc: &AutoCommit) -> Result<EffectiveBills> {
 }
 
 // ---------------------------------------------------------------------------
-// Members
+// Users
 // ---------------------------------------------------------------------------
 
-/// Add a new member to the ledger.
+/// Add a new user to the ledger.
 ///
 /// If the `user_id` already exists this is a no-op.
-pub(super) fn add_member(doc: &mut AutoCommit, input: NewMember, now: Timestamp) -> Result<()> {
+pub(super) fn add_user(doc: &mut AutoCommit, input: NewUser, now: Timestamp) -> Result<()> {
     let mut ledger = get_ledger(doc)?;
-    if ledger.members.iter().any(|m| m.user_id == input.user_id) {
+    if ledger
+        .users
+        .iter()
+        .any(|user| user.user_id == input.user_id)
+    {
         return Ok(());
     }
-    ledger.members.push(Member {
+    ledger.users.push(User {
         user_id: input.user_id,
         display_name: input.display_name,
         added_at: now,
-        added_by: input.added_by,
     });
     reconcile(doc, &ledger).map_err(|e| UnbillError::Other(e.into()))
 }
 
-/// Return all members.
-pub(super) fn list_members(doc: &AutoCommit) -> Result<Vec<Member>> {
+/// Return all users.
+pub(super) fn list_users(doc: &AutoCommit) -> Result<Vec<User>> {
     let ledger = get_ledger(doc)?;
-    Ok(ledger.members)
+    Ok(ledger.users)
 }
 
 // ---------------------------------------------------------------------------
@@ -156,7 +159,6 @@ pub(super) fn add_device(doc: &mut AutoCommit, input: NewDevice, now: Timestamp)
     }
     ledger.devices.push(Device {
         node_id: input.node_id,
-        label: input.label,
         added_at: now,
     });
     reconcile(doc, &ledger).map_err(|e| UnbillError::Other(e.into()))
@@ -202,28 +204,27 @@ mod tests {
         doc
     }
 
-    fn doc_with_members(user_ids: &[Ulid]) -> AutoCommit {
-        use crate::model::Member;
+    fn doc_with_users(user_ids: &[Ulid]) -> AutoCommit {
+        use crate::model::User;
         let mut doc = fresh_doc();
         let mut ledger = get_ledger(&doc).unwrap();
         for &user_id in user_ids {
-            ledger.members.push(Member {
+            ledger.users.push(User {
                 user_id,
                 display_name: user_id.to_string(),
                 added_at: ts(0),
-                added_by: uid(0),
             });
         }
         reconcile(&mut doc, &ledger).unwrap();
         doc
     }
 
-    fn simple_bill(payer: Ulid, participants: &[Ulid], amount_cents: i64) -> NewBill {
+    fn simple_bill(payer: Ulid, share_users: &[Ulid], amount_cents: i64) -> NewBill {
         NewBill {
             payer_user_id: payer,
             amount_cents,
             description: "Dinner".into(),
-            shares: participants
+            shares: share_users
                 .iter()
                 .map(|&u| Share {
                     user_id: u,
@@ -244,7 +245,7 @@ mod tests {
         assert_eq!(ledger.currency.code(), "USD");
         assert_eq!(ledger.schema_version, CURRENT_SCHEMA_VERSION);
         assert!(ledger.bills.is_empty());
-        assert!(ledger.members.is_empty());
+        assert!(ledger.users.is_empty());
     }
 
     // --- add_bill ---
@@ -253,7 +254,7 @@ mod tests {
     fn test_add_bill_appears_in_list_bills() {
         let alice = uid(1);
         let bob = uid(2);
-        let mut doc = doc_with_members(&[alice, bob]);
+        let mut doc = doc_with_users(&[alice, bob]);
         let bill_id = add_bill(
             &mut doc,
             simple_bill(alice, &[alice, bob], 3000),
@@ -270,7 +271,7 @@ mod tests {
     #[test]
     fn test_add_multiple_bills_preserves_order() {
         let alice = uid(1);
-        let mut doc = doc_with_members(&[alice]);
+        let mut doc = doc_with_users(&[alice]);
         let id1 = add_bill(
             &mut doc,
             simple_bill(alice, &[alice], 1000),
@@ -291,10 +292,10 @@ mod tests {
     }
 
     #[test]
-    fn test_add_bill_rejects_non_member_payer() {
+    fn test_add_bill_rejects_non_user_payer() {
         let alice = uid(1);
         let stranger = uid(99);
-        let mut doc = doc_with_members(&[alice]);
+        let mut doc = doc_with_users(&[alice]);
         let result = add_bill(
             &mut doc,
             simple_bill(stranger, &[alice], 1000),
@@ -302,16 +303,16 @@ mod tests {
             ts(1),
         );
         assert!(
-            matches!(result, Err(UnbillError::UserNotMember(_))),
-            "expected UserNotMember, got {result:?}"
+            matches!(result, Err(UnbillError::UserNotInLedger(_))),
+            "expected UserNotInLedger, got {result:?}"
         );
     }
 
     #[test]
-    fn test_add_bill_rejects_non_member_participant() {
+    fn test_add_bill_rejects_non_user_share_user() {
         let alice = uid(1);
         let stranger = uid(99);
-        let mut doc = doc_with_members(&[alice]);
+        let mut doc = doc_with_users(&[alice]);
         let result = add_bill(
             &mut doc,
             simple_bill(alice, &[alice, stranger], 1000),
@@ -319,8 +320,8 @@ mod tests {
             ts(1),
         );
         assert!(
-            matches!(result, Err(UnbillError::UserNotMember(_))),
-            "expected UserNotMember, got {result:?}"
+            matches!(result, Err(UnbillError::UserNotInLedger(_))),
+            "expected UserNotInLedger, got {result:?}"
         );
     }
 
@@ -329,7 +330,7 @@ mod tests {
     #[test]
     fn test_amendment_supersedes_original() {
         let alice = uid(1);
-        let mut doc = doc_with_members(&[alice]);
+        let mut doc = doc_with_users(&[alice]);
         let original_id = add_bill(
             &mut doc,
             simple_bill(alice, &[alice], 1000),
@@ -355,7 +356,7 @@ mod tests {
     #[test]
     fn test_amendment_with_unknown_prev_returns_error() {
         let alice = uid(1);
-        let mut doc = doc_with_members(&[alice]);
+        let mut doc = doc_with_users(&[alice]);
         let result = add_bill(
             &mut doc,
             NewBill {
@@ -368,33 +369,31 @@ mod tests {
         assert!(matches!(result, Err(UnbillError::BillNotFound(_))));
     }
 
-    // --- list_members ---
+    // --- list_users ---
 
     #[test]
-    fn test_list_members_returns_all() {
+    fn test_list_users_returns_all() {
         let mut doc = fresh_doc();
-        add_member(
+        add_user(
             &mut doc,
-            NewMember {
+            NewUser {
                 user_id: uid(1),
                 display_name: "Alice".into(),
-                added_by: uid(1),
             },
             ts(0),
         )
         .unwrap();
-        add_member(
+        add_user(
             &mut doc,
-            NewMember {
+            NewUser {
                 user_id: uid(2),
                 display_name: "Bob".into(),
-                added_by: uid(1),
             },
             ts(1),
         )
         .unwrap();
-        let members = list_members(&doc).unwrap();
-        assert_eq!(members.len(), 2);
+        let users = list_users(&doc).unwrap();
+        assert_eq!(users.len(), 2);
     }
 
     // --- save/load round-trip ---
@@ -403,7 +402,7 @@ mod tests {
     fn test_save_and_reload_preserves_bills() {
         let alice = uid(1);
         let bob = uid(2);
-        let mut doc = doc_with_members(&[alice, bob]);
+        let mut doc = doc_with_users(&[alice, bob]);
         let bill_id = add_bill(
             &mut doc,
             simple_bill(alice, &[alice, bob], 6000),
@@ -427,10 +426,7 @@ mod tests {
     }
 
     fn new_device(seed: u8) -> NewDevice {
-        NewDevice {
-            node_id: dev(seed),
-            label: format!("device-{seed}"),
-        }
+        NewDevice { node_id: dev(seed) }
     }
 
     #[test]
@@ -440,7 +436,7 @@ mod tests {
         let devices = list_devices(&doc).unwrap();
         assert_eq!(devices.len(), 1);
         assert_eq!(devices[0].node_id, dev(1));
-        assert_eq!(devices[0].label, "device-1");
+        assert_eq!(devices[0].added_at, ts(0));
     }
 
     #[test]

@@ -1,7 +1,7 @@
-use crate::api::{self, Identity, LedgerDetail, LedgerSummary, Member, SyncDevice};
+use crate::api::{self, LedgerDetail, LedgerSummary, LocalUser, SyncDevice, User};
 use crate::app::{
     BillEditorSeed, BillSaveRequest, ShareMode, derived_share_preview, parse_amount_text,
-    participant_lookup_shares,
+    share_lookup_shares,
 };
 use crate::components::{
     ActionButton, ButtonTone, FieldBlock, ListRow, ModalSheet, ScreenFrame, SectionCard, TagPill,
@@ -26,11 +26,7 @@ pub fn StatusStrip(status: Option<String>, error: Option<String>, busy: bool) ->
         <section class=class_name>
             <div class="status-copy">
                 {message.unwrap_or_default()}
-                {if busy {
-                    view! { <span class="status-chip">"Working"</span> }.into_any()
-                } else {
-                    view! {}.into_any()
-                }}
+                {busy.then(|| view! { <span class="status-chip">"Working"</span> })}
             </div>
         </section>
     }
@@ -85,7 +81,7 @@ pub fn LedgersPage(
                             view! {
                                 <ListRow
                                     title=ledger.name
-                                    meta=format!("{} members · {}", ledger.member_count, ledger.currency)
+                                    meta=format!("{} users · {}", ledger.user_count, ledger.currency)
                                     detail=detail
                                     selected=selected_ledger_id
                                         .as_ref()
@@ -157,10 +153,10 @@ pub fn LedgerPage(
 
 #[component]
 pub fn DeviceSettingsPage(
-    identities: Vec<Identity>,
+    local_users: Vec<LocalUser>,
     devices: Vec<SyncDevice>,
     on_back: Callback<()>,
-    on_add_identity: Callback<()>,
+    on_add_local_user: Callback<()>,
     on_import_ledger: Callback<()>,
     on_scan_qr: Callback<()>,
     on_sync_device: Callback<String>,
@@ -168,19 +164,19 @@ pub fn DeviceSettingsPage(
     view! {
         <ScreenFrame
             title="Device Settings".to_owned()
-            subtitle="Local identities, known devices, and join actions".to_owned()
+            subtitle="Saved users, known devices, and join actions".to_owned()
             leading={view! { <TopBarButton label="Back".to_owned() on_press=Callback::new(move |_| on_back.run(())) /> }.into_any()}
         >
             <div class="stack-gap">
                 <SectionCard
-                    kicker="Saved identities".to_owned()
+                    kicker="Saved users".to_owned()
                     title="On this device".to_owned()
                 >
                     <div class="stack-gap">
-                        {identities
+                        {local_users
                             .into_iter()
-                            .map(|identity| {
-                                view! { <ListRow title=identity.display_name meta=identity.user_id /> }
+                            .map(|local_user| {
+                                view! { <ListRow title=local_user.display_name meta=local_user.user_id /> }
                             })
                             .collect_view()}
                     </div>
@@ -189,7 +185,7 @@ pub fn DeviceSettingsPage(
                 <SectionCard
                     kicker="Sync peers".to_owned()
                     title="Known devices".to_owned()
-                    description="Authorized devices gathered from the ledgers stored on this device.".to_owned()
+                    description="Authorized devices gathered from the ledgers stored on this device. Labels are local to this device.".to_owned()
                 >
                     <div class="stack-gap">
                         {if devices.is_empty() {
@@ -241,10 +237,10 @@ pub fn DeviceSettingsPage(
                 >
                     <div class="stack-gap">
                         <ActionButton
-                            label="Add Identity".to_owned()
+                            label="Add Saved User".to_owned()
                             tone=ButtonTone::Secondary
                             full_width=true
-                            on_press=Callback::new(move |_| on_add_identity.run(()))
+                            on_press=Callback::new(move |_| on_add_local_user.run(()))
                         />
                         <ActionButton
                             label="Import Ledger".to_owned()
@@ -270,35 +266,35 @@ pub fn LedgerSettingsPage(
     detail: LedgerDetail,
     invitation_url: Option<String>,
     on_back: Callback<()>,
-    on_add_member: Callback<()>,
+    on_add_user: Callback<()>,
     on_create_invitation: Callback<()>,
     on_copy_invitation: Callback<()>,
 ) -> impl IntoView {
     view! {
         <ScreenFrame
             title="Ledger Settings".to_owned()
-            subtitle="Members and invitation flow".to_owned()
+            subtitle="Users and invitation flow".to_owned()
             leading={view! { <TopBarButton label="Back".to_owned() on_press=Callback::new(move |_| on_back.run(())) /> }.into_any()}
         >
             <div class="stack-gap">
                 <SectionCard
-                    kicker="Members".to_owned()
+                    kicker="Users".to_owned()
                     title=detail.summary.name.clone()
                 >
                     <div class="stack-gap">
                         {detail
-                            .members
+                            .users
                             .into_iter()
-                            .map(|member| {
-                                view! { <ListRow title=member.display_name meta=member.user_id /> }
+                            .map(|user| {
+                                view! { <ListRow title=user.display_name meta=user.user_id /> }
                             })
                             .collect_view()}
 
                         <ActionButton
-                            label="Add Member".to_owned()
+                            label="Add User".to_owned()
                             tone=ButtonTone::Secondary
                             full_width=true
-                            on_press=Callback::new(move |_| on_add_member.run(()))
+                            on_press=Callback::new(move |_| on_add_user.run(()))
                         />
                     </div>
                 </SectionCard>
@@ -342,7 +338,7 @@ pub fn LedgerSettingsPage(
 pub fn BillEditorPage(
     title: String,
     currency: String,
-    members: Vec<Member>,
+    users: Vec<User>,
     seed: BillEditorSeed,
     on_back: Callback<()>,
     on_save: Callback<BillSaveRequest>,
@@ -351,7 +347,7 @@ pub fn BillEditorPage(
     let amount_text = RwSignal::new(seed.amount_text);
     let payer_user_id = RwSignal::new(seed.payer_user_id.unwrap_or_default());
     let share_mode = RwSignal::new(seed.share_mode);
-    let participants = RwSignal::new(seed.participants);
+    let share_rows = RwSignal::new(seed.share_rows);
     let validation_error = RwSignal::new(None::<String>);
     let currency_field_value = currency.clone();
     let split_currency = currency.clone();
@@ -371,27 +367,25 @@ pub fn BillEditorPage(
             return;
         }
 
-        let active_participants = participants
+        let active_share_rows = share_rows
             .get()
             .into_iter()
-            .filter(|participant| participant.included)
+            .filter(|share_row| share_row.included)
             .collect::<Vec<_>>();
 
-        if active_participants.is_empty() {
-            validation_error.set(Some(
-                "Select at least one participant before saving.".to_owned(),
-            ));
+        if active_share_rows.is_empty() {
+            validation_error.set(Some("Select at least one user before saving.".to_owned()));
             return;
         }
 
-        let shares = active_participants
+        let shares = active_share_rows
             .into_iter()
-            .map(|participant| crate::api::BillShareInput {
-                user_id: participant.user_id,
+            .map(|share_row| crate::api::BillShareInput {
+                user_id: share_row.user_id,
                 shares: if share_mode.get() == ShareMode::Equal {
                     1
                 } else {
-                    participant.shares
+                    share_row.shares
                 },
             })
             .collect::<Vec<_>>();
@@ -414,7 +408,7 @@ pub fn BillEditorPage(
     view! {
         <ScreenFrame
             title=title
-            subtitle="Description, payer, amount, and participant shares".to_owned()
+            subtitle="Description, payer, amount, and share weights".to_owned()
             leading={view! { <TopBarButton label="Back".to_owned() on_press=Callback::new(move |_| on_back.run(())) /> }.into_any()}
             trailing={view! { <ActionButton label="Save".to_owned() tone=ButtonTone::Secondary on_press=Callback::new(save_click) /> }.into_any()}
         >
@@ -439,12 +433,12 @@ pub fn BillEditorPage(
                                 prop:value=move || payer_user_id.get()
                                 on:change=move |event| payer_user_id.set(event_target_value(&event))
                             >
-                                <option value="">"Select a member"</option>
-                                {members
+                                <option value="">"Select a user"</option>
+                                {users
                                     .iter()
-                                    .map(|member| {
+                                    .map(|user| {
                                         view! {
-                                            <option value=member.user_id.clone()>{member.display_name.clone()}</option>
+                                            <option value=user.user_id.clone()>{user.display_name.clone()}</option>
                                         }
                                     })
                                     .collect_view()}
@@ -467,9 +461,9 @@ pub fn BillEditorPage(
                 </SectionCard>
 
                 <SectionCard
-                    kicker="Participants".to_owned()
+                    kicker="Shares".to_owned()
                     title="Share split".to_owned()
-                    description="Equal split assigns one share per active participant.".to_owned()
+                    description="Equal split assigns one share per active user.".to_owned()
                 >
                     <div class="stack-gap">
                         <div class="chip-row">
@@ -504,33 +498,33 @@ pub fn BillEditorPage(
                         {move || {
                             let current_mode = share_mode.get();
                             let current_amount = parse_amount_text(&amount_text.get()).unwrap_or(0);
-                            let current_rows = participants.get();
+                            let current_rows = share_rows.get();
                             let preview = derived_share_preview(current_amount, current_mode, &current_rows);
 
                             current_rows
                                 .into_iter()
-                                .map(|participant| {
-                                    let participant_id = participant.user_id.clone();
-                                    let toggle_participant_id = participant_id.clone();
-                                    let share_participant_id = participant_id.clone();
-                                    let share_value_id = participant_id.clone();
-                                    let display_name = participant.display_name.clone();
+                                .map(|share_row| {
+                                    let user_id = share_row.user_id.clone();
+                                    let toggle_user_id = user_id.clone();
+                                    let share_user_id = user_id.clone();
+                                    let share_value_user_id = user_id.clone();
+                                    let display_name = share_row.display_name.clone();
                                     let preview_text = preview
                                         .iter()
-                                        .find(|(user_id, _)| user_id == &participant_id)
+                                        .find(|(preview_user_id, _)| preview_user_id == &user_id)
                                         .map(|(_, cents)| api::format_money(*cents, &split_currency))
                                         .unwrap_or_else(|| format!("{} 0.00", split_currency));
 
                                     view! {
-                                        <div class="participant-row">
-                                            <label class="participant-toggle">
+                                        <div class="share-row">
+                                            <label class="share-toggle">
                                                 <input
                                                     type="checkbox"
-                                                    prop:checked=participant.included
+                                                    prop:checked=share_row.included
                                                     on:change=move |event| {
                                                         let checked = event_target_checked(&event);
-                                                        participants.update(|items| {
-                                                            if let Some(item) = items.iter_mut().find(|item| item.user_id == toggle_participant_id) {
+                                                        share_rows.update(|items| {
+                                                            if let Some(item) = items.iter_mut().find(|item| item.user_id == toggle_user_id) {
                                                                 item.included = checked;
                                                             }
                                                         });
@@ -539,20 +533,20 @@ pub fn BillEditorPage(
                                                 <span>{display_name}</span>
                                             </label>
 
-                                            <div class="participant-side">
+                                            <div class="share-side">
                                                 {if current_mode == ShareMode::Custom {
                                                     view! {
                                                         <input
-                                                            class="participant-share-input"
-                                                            prop:value=participant_lookup_shares(&participants.get(), &share_value_id).to_string()
+                                                            class="share-input"
+                                                            prop:value=share_lookup_shares(&share_rows.get(), &share_value_user_id).to_string()
                                                             on:input=move |event| {
                                                                 let value = event_target_value(&event)
                                                                     .parse::<u32>()
                                                                     .ok()
                                                                     .filter(|value| *value > 0)
                                                                     .unwrap_or(1);
-                                                                participants.update(|items| {
-                                                                    if let Some(item) = items.iter_mut().find(|item| item.user_id == share_participant_id) {
+                                                                share_rows.update(|items| {
+                                                                    if let Some(item) = items.iter_mut().find(|item| item.user_id == share_user_id) {
                                                                         item.shares = value;
                                                                     }
                                                                 });
@@ -563,7 +557,7 @@ pub fn BillEditorPage(
                                                 } else {
                                                     view! { <TagPill label="1 share".to_owned() active=true /> }.into_any()
                                                 }}
-                                                <span class="participant-amount">{preview_text}</span>
+                                                <span class="share-amount">{preview_text}</span>
                                             </div>
                                         </div>
                                     }
@@ -627,17 +621,17 @@ pub fn CreateLedgerSheet(
 }
 
 #[component]
-pub fn AddIdentitySheet(on_cancel: Callback<()>, on_submit: Callback<String>) -> impl IntoView {
+pub fn AddLocalUserSheet(on_cancel: Callback<()>, on_submit: Callback<String>) -> impl IntoView {
     let display_name = RwSignal::new(String::new());
 
     view! {
         <ModalSheet
-            title="Add Identity".to_owned()
+            title="Add Saved User".to_owned()
             description="Save a person on this device for later reuse.".to_owned()
             on_close=Callback::new(move |_| on_cancel.run(()))
         >
             <div class="stack-gap">
-                <FieldBlock label="Identity name".to_owned()>
+                <FieldBlock label="User name".to_owned()>
                     <input
                         class="ui-input"
                         prop:value=move || display_name.get()
@@ -645,7 +639,7 @@ pub fn AddIdentitySheet(on_cancel: Callback<()>, on_submit: Callback<String>) ->
                     />
                 </FieldBlock>
                 <ActionButton
-                    label="Save Identity".to_owned()
+                    label="Save User".to_owned()
                     full_width=true
                     on_press=Callback::new(move |_| on_submit.run(display_name.get()))
                 />
@@ -655,17 +649,17 @@ pub fn AddIdentitySheet(on_cancel: Callback<()>, on_submit: Callback<String>) ->
 }
 
 #[component]
-pub fn AddMemberSheet(on_cancel: Callback<()>, on_submit: Callback<String>) -> impl IntoView {
+pub fn AddUserSheet(on_cancel: Callback<()>, on_submit: Callback<String>) -> impl IntoView {
     let display_name = RwSignal::new(String::new());
 
     view! {
         <ModalSheet
-            title="Add Member".to_owned()
-            description="Append a member to the current ledger.".to_owned()
+            title="Add User".to_owned()
+            description="Append a user to the current ledger.".to_owned()
             on_close=Callback::new(move |_| on_cancel.run(()))
         >
             <div class="stack-gap">
-                <FieldBlock label="Member name".to_owned()>
+                <FieldBlock label="User name".to_owned()>
                     <input
                         class="ui-input"
                         prop:value=move || display_name.get()
@@ -673,7 +667,7 @@ pub fn AddMemberSheet(on_cancel: Callback<()>, on_submit: Callback<String>) -> i
                     />
                 </FieldBlock>
                 <ActionButton
-                    label="Add Member".to_owned()
+                    label="Add User".to_owned()
                     full_width=true
                     on_press=Callback::new(move |_| on_submit.run(display_name.get()))
                 />
@@ -694,7 +688,7 @@ pub fn JoinLedgerSheet(
     view! {
         <ModalSheet
             title="Join Ledger".to_owned()
-            description="Confirm the invitation URL and enter the device label to store in the ledger.".to_owned()
+            description="Confirm the invitation URL and optionally save a local nickname for the inviting device.".to_owned()
             on_close=Callback::new(move |_| on_cancel.run(()))
         >
             <div class="stack-gap">
@@ -705,7 +699,7 @@ pub fn JoinLedgerSheet(
                         on:input=move |event| url.set(event_target_value(&event))
                     />
                 </FieldBlock>
-                <FieldBlock label="Device label".to_owned()>
+                <FieldBlock label="Local device label".to_owned()>
                     <input
                         class="ui-input"
                         prop:value=move || label.get()

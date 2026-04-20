@@ -5,12 +5,11 @@
 use std::sync::Arc;
 
 use anyhow::anyhow;
-use unbill_core::model::{NewBill, NewMember, NodeId, Share, Ulid};
+use unbill_core::model::{NewBill, NewUser, NodeId, Share, Ulid};
 use unbill_core::service::UnbillService;
 
 use crate::output::{
-    bill_out, fmt_amount, ledger_out, member_out, parse_amount, print_json, settlement_out,
-    truncate,
+    bill_out, fmt_amount, ledger_out, parse_amount, print_json, settlement_out, truncate, user_out,
 };
 
 fn parse_ulid(s: &str) -> anyhow::Result<Ulid> {
@@ -18,7 +17,7 @@ fn parse_ulid(s: &str) -> anyhow::Result<Ulid> {
 }
 
 // ---------------------------------------------------------------------------
-// Init / Identity
+// Init / local users
 // ---------------------------------------------------------------------------
 
 pub async fn init(svc: &UnbillService, json: bool) -> anyhow::Result<()> {
@@ -31,53 +30,53 @@ pub async fn init(svc: &UnbillService, json: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn identity_new(
+pub async fn local_user_create(
     svc: &UnbillService,
     display_name: String,
     json: bool,
 ) -> anyhow::Result<()> {
-    let identity = svc.add_identity(display_name).await?;
+    let local_user = svc.add_local_user(display_name).await?;
     if json {
         print_json(&serde_json::json!({
-            "user_id": identity.user_id.to_string(),
-            "display_name": identity.display_name,
+            "user_id": local_user.user_id.to_string(),
+            "display_name": local_user.display_name,
         }))?;
     } else {
-        println!("user ID:  {}", identity.user_id);
-        println!("name:     {}", identity.display_name);
+        println!("user ID:  {}", local_user.user_id);
+        println!("name:     {}", local_user.display_name);
     }
     Ok(())
 }
 
-pub async fn identity_list(svc: &UnbillService, json: bool) -> anyhow::Result<()> {
-    let identities = svc.list_identities().await?;
+pub async fn local_user_list(svc: &UnbillService, json: bool) -> anyhow::Result<()> {
+    let local_users = svc.list_local_users().await?;
     if json {
-        let out: Vec<_> = identities
+        let out: Vec<_> = local_users
             .iter()
-            .map(|i| {
+            .map(|local_user| {
                 serde_json::json!({
-                    "user_id": i.user_id.to_string(),
-                    "display_name": i.display_name,
+                    "user_id": local_user.user_id.to_string(),
+                    "display_name": local_user.display_name,
                 })
             })
             .collect();
         print_json(&out)?;
     } else {
-        if identities.is_empty() {
-            println!("no identities");
+        if local_users.is_empty() {
+            println!("no saved users");
             return Ok(());
         }
-        for i in &identities {
-            println!("{:26}  {}", i.user_id, i.display_name);
+        for local_user in &local_users {
+            println!("{:26}  {}", local_user.user_id, local_user.display_name);
         }
     }
     Ok(())
 }
 
-pub async fn identity_remove(svc: &UnbillService, user_id: &str) -> anyhow::Result<()> {
+pub async fn local_user_remove(svc: &UnbillService, user_id: &str) -> anyhow::Result<()> {
     let uid = parse_ulid(user_id)?;
-    svc.remove_identity(uid).await?;
-    println!("removed identity {user_id}");
+    svc.remove_local_user(uid).await?;
+    println!("removed saved user {user_id}");
     Ok(())
 }
 
@@ -142,20 +141,20 @@ pub async fn ledger_show(svc: &UnbillService, ledger_id: &str, json: bool) -> an
         .find(|m| m.ledger_id.to_string() == ledger_id)
         .ok_or_else(|| anyhow!("ledger not found: {ledger_id}"))?;
     let bills = svc.list_bills(ledger_id).await?;
-    let members = svc.list_members(ledger_id).await?;
+    let users = svc.list_users(ledger_id).await?;
 
     if json {
         print_json(&serde_json::json!({
             "ledger": ledger_out(meta),
             "bill_count": bills.0.len(),
-            "member_count": members.len(),
+            "user_count": users.len(),
         }))?;
     } else {
         println!("ID:       {}", meta.ledger_id);
         println!("Name:     {}", meta.name);
         println!("Currency: {}", meta.currency.code());
         println!("Bills:    {}", bills.0.len());
-        println!("Members:  {}", members.len());
+        println!("Users:    {}", users.len());
     }
     Ok(())
 }
@@ -175,18 +174,18 @@ pub async fn bill_add(
     payer: &str,
     amount: &str,
     description: String,
-    participants: Vec<String>,
+    share_users: Vec<String>,
     json: bool,
 ) -> anyhow::Result<()> {
     let payer_id = parse_ulid(payer)?;
     let amount_cents = parse_amount(amount)?;
-    let shares = if participants.is_empty() {
+    let shares = if share_users.is_empty() {
         vec![Share {
             user_id: payer_id,
             shares: 1,
         }]
     } else {
-        participants
+        share_users
             .iter()
             .map(|p| {
                 parse_ulid(p).map(|u| Share {
@@ -248,7 +247,7 @@ pub async fn bill_amend(
     payer: &str,
     amount: &str,
     description: String,
-    participants: Vec<String>,
+    share_users: Vec<String>,
     json: bool,
 ) -> anyhow::Result<()> {
     let prev_ids = prev
@@ -256,7 +255,7 @@ pub async fn bill_amend(
         .map(|p| parse_ulid(p))
         .collect::<anyhow::Result<Vec<_>>>()?;
     let amount_cents = parse_amount(amount)?;
-    let shares = participants
+    let shares = share_users
         .iter()
         .map(|p| {
             parse_ulid(p).map(|u| Share {
@@ -286,39 +285,41 @@ pub async fn bill_amend(
 }
 
 // ---------------------------------------------------------------------------
-// Members
+// Users
 // ---------------------------------------------------------------------------
 
-pub async fn member_add(
+pub async fn ledger_user_add(
     svc: &UnbillService,
     ledger_id: &str,
     user_id: &str,
     name: String,
-    added_by: &str,
 ) -> anyhow::Result<()> {
-    svc.add_member(
+    svc.add_user(
         ledger_id,
-        NewMember {
+        NewUser {
             user_id: parse_ulid(user_id)?,
             display_name: name,
-            added_by: parse_ulid(added_by)?,
         },
     )
     .await?;
     Ok(())
 }
 
-pub async fn member_list(svc: &UnbillService, ledger_id: &str, json: bool) -> anyhow::Result<()> {
-    let members = svc.list_members(ledger_id).await?;
+pub async fn ledger_user_list(
+    svc: &UnbillService,
+    ledger_id: &str,
+    json: bool,
+) -> anyhow::Result<()> {
+    let users = svc.list_users(ledger_id).await?;
     if json {
-        print_json(&members.iter().map(member_out).collect::<Vec<_>>())?;
+        print_json(&users.iter().map(user_out).collect::<Vec<_>>())?;
     } else {
-        if members.is_empty() {
-            println!("no members");
+        if users.is_empty() {
+            println!("no users");
             return Ok(());
         }
-        for m in &members {
-            println!("{:26}  {}", m.user_id, m.display_name);
+        for user in &users {
+            println!("{:26}  {}", user.user_id, user.display_name);
         }
     }
     Ok(())
@@ -331,9 +332,9 @@ pub async fn member_list(svc: &UnbillService, ledger_id: &str, json: bool) -> an
 pub async fn ledger_join(
     svc: &Arc<UnbillService>,
     url: String,
-    label: String,
+    label: Option<String>,
 ) -> anyhow::Result<()> {
-    svc.join_ledger(&url, label).await?;
+    svc.join_ledger(&url, label.unwrap_or_default()).await?;
     Ok(())
 }
 
@@ -352,20 +353,20 @@ pub async fn ledger_invite(
 }
 
 // ---------------------------------------------------------------------------
-// Identity share
+// Local user share
 // ---------------------------------------------------------------------------
 
-pub async fn identity_import(svc: &Arc<UnbillService>, url: String) -> anyhow::Result<()> {
-    svc.fetch_identity(&url).await?;
+pub async fn local_user_import(svc: &Arc<UnbillService>, url: String) -> anyhow::Result<()> {
+    svc.fetch_local_user(&url).await?;
     Ok(())
 }
 
-pub async fn identity_share(
+pub async fn local_user_share(
     svc: &Arc<UnbillService>,
     user_id: &str,
     json: bool,
 ) -> anyhow::Result<()> {
-    let url = svc.create_identity_share(user_id).await?;
+    let url = svc.create_local_user_share(user_id).await?;
     if json {
         print_json(&serde_json::json!({ "url": url }))?;
     } else {
