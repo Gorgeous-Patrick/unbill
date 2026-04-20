@@ -1,15 +1,7 @@
-# unbill-cli — Implementation Notes
+# Unbill CLI — Implementation
 
-## Dependencies
+`main.rs` parses commands with `clap`, opens `FsStore`, creates `UnbillService`, and dispatches to `commands.rs`. `output.rs` renders human-readable or JSON output.
 
-| Crate | Why |
-|-------|-----|
-| `unbill-core` | All business logic |
-| `clap` | Argument parsing and subcommand dispatch |
-| `tokio` | Async runtime for service calls |
-| `tracing-subscriber` | Log output formatting |
-| `anyhow` | Error propagation |
+`commands.rs` is intentionally thin: it parses command arguments into typed inputs, calls the service, and prints either text or JSON. `output.rs` owns the serializable JSON views so `unbill-core` does not need to derive CLI-facing serialization.
 
-## Testing strategy
-
-Rust integration tests in `tests/e2e.rs`. Each test creates a `tempfile::TempDir`, sets `UNBILL_DATA_DIR` to point at it, and drives the real binary via `std::process::Command`. Assertions use `--json` output parsed with `serde_json`. No unit tests in the CLI itself — logic lives in `unbill-core`.
+End-to-end coverage runs the real binary against temp directories with `UNBILL_DATA_DIR`, so CLI behavior stays coupled to the core service instead of reimplemented in unit tests. The e2e suite also acts as a contract check for the `--json` output shape and the multi-process sync flows.

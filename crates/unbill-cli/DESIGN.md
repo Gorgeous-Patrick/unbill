@@ -1,31 +1,32 @@
-# unbill-cli
+# Unbill CLI
 
-A thin clap-driven command-line frontend for `UnbillService`. Useful for dogfooding, automated testing, and terminal users. Contains no business logic — all work is delegated to `unbill-core`.
+Terminal frontend for `UnbillService`. It exists for dogfooding, scripting, and end-to-end verification.
 
-## Commands
+## Surface
 
-- `init` — initialize this device: generate a device key. Must be run once before any other command.
-- `user create <display_name>` — add a fresh saved user (new user ID + display name) to this device. A device may hold many saved users.
-- `user import <url>` — fetch an existing saved user from another device via an `unbill://user/...` URL and add it to this device's saved-user list. The other device must be online and have issued the URL via `user share`.
-- `user list` — list all saved users stored on this device (user ID + display name for each).
-- `user share --user-id <user_id>` — generate an `unbill://user/...` URL for a specific saved user so another device can import it via `user import`.
-- `device show` — print this device's node ID and data directory.
+- `init` prints or creates the local device identity
+- `device show` reports the device ID and data directory
+- `ledger create | list | show | delete | invite | join` covers the ledger lifecycle and device join flow
+- `bill add | list | amend` manages effective bills in one ledger
+- `user create | import | list | share | delete` manages saved users on this device
+- `user add --ledger-id ...` and `user list --ledger-id ...` manage users inside one ledger
+- `sync daemon | once | status` exposes peer-to-peer sync control
+- `settlement <user_id>` prints the net settlement for one user across every ledger they appear in
 
-- `ledger create | list | show | delete | invite | join` — ledger lifecycle. `ledger create` registers the creator's own device in `ledger.devices`. `ledger invite` generates an `unbill://join/...` URL authorizing a new device to access the ledger; `ledger join <url> [--label <name>]` dials the host, joins, and optionally stores a device-local label for the host device.
-- `bill add | list | amend` — bill management. `bill amend` records a new version of an existing bill (same bill ID, all fields required); the latest version becomes the effective bill.
-- `user add --ledger-id ...` and `user list --ledger-id ...` — managing named users in a ledger. Omitting `--ledger-id` operates on device-local saved users instead.
-- `sync daemon | once | status` — P2P sync control. `sync once <peer_node_id>` dials a specific peer and syncs; `sync daemon` opens the endpoint and waits for incoming connections.
-- `settlement <user_id>` — display who owes whom for a user, aggregated across all their ledgers.
+The CLI has two distinct user concepts and the docs should say so plainly:
 
-Ledger and bill IDs are ULID strings on the command line. Most commands accept `--json` for machine-readable output, used in end-to-end tests.
+- saved users are device-local identities used for convenience and transfer between devices
+- ledger users are shared records inside one ledger and are the identities referenced by bills
 
-## Invariants
+## Rules
 
-- The binary never touches storage or network directly. All side effects go through `UnbillService`.
-- Exit code 0 on success, non-zero on any error. Error messages go to stderr.
+- the CLI owns parsing, formatting, and exit codes only
+- storage, validation, sync, and settlement stay in `unbill-core`
+- IDs and node identities are treated as opaque input strings until parsed by the CLI or core
+- `--json` is the stable machine-readable surface for scripts and end-to-end tests
 
-## Failure modes
+## Failure model
 
-- `UnbillError` variants are mapped to human-readable stderr messages.
-- `sync once` exits non-zero if the peer is unreachable.
-- `ledger join` exits non-zero if the host is offline or the token is invalid.
+- invalid IDs, invalid amounts, and invalid node IDs fail before calling the service
+- service errors surface as non-zero exits with human-readable stderr
+- join and user-import commands fail if the remote device is offline or the provided URL is invalid

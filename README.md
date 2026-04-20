@@ -1,87 +1,65 @@
-# unbill
+# Unbill
 
-A fully decentralized, peer-to-peer, offline-first bill-splitting application.
-Think of it as "Splitwise without servers."
+Offline-first bill splitting for small trusted groups.
 
-> **Status:** Early development — Milestone M0 (workspace skeleton).
-> Nothing is user-facing yet. See the [roadmap](#roadmap) below.
+Think of unbill as shared expense tracking that does not depend on a company staying alive.
 
-## What is it?
+Each ledger lives on member devices and syncs directly between them. There is no hosted source of truth, no account system, and no telemetry. The app records who paid and who owes whom. It does not move money.
 
-A group of friends shares a **ledger**: a history of expenses, who paid, and who owes whom.
-Each group member runs unbill on their own device. **There is no central server.**
-Devices sync directly with each other over P2P networking (Iroh/QUIC) when online;
-changes made while offline propagate automatically once connectivity returns.
+## Why This Exists
 
-See [DESIGN.md](DESIGN.md) for the full architecture and design rationale.
+Splitting expenses is usually treated as a hosted service problem: sign up, trust the server, hope the product stays around, and accept that your group's data lives somewhere else.
 
-## Non-goals
+Unbill takes the opposite approach. It starts from a simple idea:
 
-- Not a payment processor — unbill records who owes whom; it does not move money.
-- Not a commercial service — no accounts, no subscriptions, no telemetry.
-- Not a general-purpose accounting tool.
+- expense tracking should still work when you are offline
+- your group should keep its own data
+- sync should happen between devices, not through a permanent central owner
+- the system should stay understandable enough that the whole codebase can be reasoned about
 
-## Repository layout
+That makes unbill a good fit for households, trips, couples, and other small groups that already trust each other and just want one durable shared record.
 
-```
-unbill/
-├── crates/
-│   ├── unbill-core/     # The library: CRDT ledger, persistence, P2P sync
-│   ├── unbill-cli/      # Command-line frontend
-│   └── unbill-tauri/    # Tauri desktop/mobile backend
-└── apps/
-    └── unbill-desktop/  # React frontend (Vite + TanStack Query + Tailwind)
-```
+## What Kind Of Project This Is
 
-## Building
+Unbill is intentionally narrow.
 
-**Prerequisites:** Rust (stable), Cargo.
+- It is not a payment network.
+- It is not a bank integration layer.
+- It is not a general accounting package.
+- It is not designed for hostile or anonymous groups.
 
-```bash
-# Check / build the core library and CLI
-cargo build -p unbill-core -p unbill-cli
+The goal is not to cover every edge of personal finance. The goal is to make shared expense tracking durable, local-first, and easy to trust.
 
-# Run tests
-cargo test -p unbill-core
+## How It Works
 
-# Run the CLI (stub — commands are not yet implemented)
-cargo run -p unbill-cli -- --help
-```
+Each group uses a ledger. That ledger contains users, authorized devices, and bills. Devices can create and amend bills while offline, then sync later when they can reach each other again.
 
-The `unbill-tauri` crate additionally requires GTK and WebKit system libraries.
-On Ubuntu/Debian:
+At the data level, the system prefers append-only shared history and deterministic projection over mutable central state. At the product level, that means unbill tries to behave like a tool your group keeps, not a service you rent.
 
-```bash
-sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev \
-  librsvg2-dev patchelf
-cargo build  # full workspace
-```
+## Repository Shape
 
-The JavaScript frontend requires Node.js ≥ 20 and pnpm ≥ 9:
+The repository is centered on one Rust core and a few thin adapters around it.
 
-```bash
-pnpm install
-pnpm dev     # Vite dev server on :1420
-```
+- `crates/unbill-core/` — the domain engine: ledger model, storage, sync, settlement, service API
+- `crates/unbill-cli/` — command-line frontend for scripting, dogfooding, and end-to-end verification
+- `crates/unbill-tauri/` — Tauri bridge between the Rust core and app shells
+- `apps/unbill-ui-leptos/` — shared Leptos UI for compact and multi-column layouts
+- `apps/unbill-desktop/` — early React desktop shell
 
-## Roadmap
+That structure is deliberate. The core owns the rules. Shells adapt the core to different environments without becoming competing implementations of the product.
 
-| Milestone | Description | Status |
-|-----------|-------------|--------|
-| M0 | Workspace skeleton, DESIGN.md, stub crates, tests | **Done** |
-| M1 | Core data model: `LedgerDoc`, `add_bill`, `list_bills` | Planned |
-| M2 | Persistence: `SqliteStore`, `UnbillService`, CLI commands | Planned |
-| M3 | Offline file sync: export/import `.unbill` files | Planned |
-| M4 | P2P sync: Iroh integration, invite flow | Planned |
-| M5 | Desktop GUI: Tauri + React frontend | Planned |
+## If You’re Reading The Code
 
-## Design philosophy
+- [DESIGN.md](DESIGN.md) explains the system intent, model, and invariants.
+- [IMPLEMENTATION.md](IMPLEMENTATION.md) explains how the workspace is put together.
+- Crate and module `DESIGN.md` and `IMPLEMENTATION.md` files explain each local boundary.
 
-This project is **design-first and test-first**. Every non-trivial module begins
-with a `DESIGN.md` before any production code, and tests are written before the
-implementation. See [DESIGN.md §0](DESIGN.md#0-preamble-design-first-test-first-philosophy)
-for the full rationale.
+The repo is design-first and test-first. Non-trivial changes are expected to update the relevant docs and land with tests close to the code they protect.
+
+## Status
+
+The Rust core, CLI, sync layer, and Tauri boundary exist today. UI work is split between an active Leptos app and an early React shell.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
