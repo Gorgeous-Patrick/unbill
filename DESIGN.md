@@ -14,6 +14,7 @@ The design favors a small number of concepts that compose cleanly: ledgers, user
 flowchart LR
     UI["UI shell"]
     CLI["CLI"]
+    TUI["TUI"]
     Tauri["Tauri bridge"]
     Service["UnbillService"]
     Doc["LedgerDoc"]
@@ -23,6 +24,7 @@ flowchart LR
 
     UI --> Tauri
     CLI --> Service
+    TUI --> Service
     Tauri --> Service
     Service --> Doc
     Service --> Store
