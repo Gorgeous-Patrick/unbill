@@ -242,9 +242,9 @@ async fn run() -> anyhow::Result<()> {
                 .await
             }
             BillCmd::List { ledger_id } => commands::bill_list(&svc, &ledger_id, json).await,
-        BillCmd::Conflicts { ledger_id } => {
-            commands::bill_conflicts(&svc, &ledger_id, json).await
-        }
+            BillCmd::Conflicts { ledger_id } => {
+                commands::bill_conflicts(&svc, &ledger_id, json).await
+            }
             BillCmd::Amend {
                 ledger_id,
                 prev,

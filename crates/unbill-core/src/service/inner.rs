@@ -6,13 +6,13 @@ use std::sync::Arc;
 use rand::TryRng as _;
 use tokio::sync::broadcast;
 
+use crate::conflict::{self, ConflictGroup};
 use crate::doc::LedgerDoc;
 use crate::error::{Result, UnbillError};
 use crate::model::{
     Currency, Device, EffectiveBills, Invitation, InviteToken, LedgerMeta, NewBill, NewDevice,
     NewUser, NodeId, Timestamp, Ulid, User,
 };
-use crate::conflict::{self, ConflictGroup};
 use crate::settlement;
 use crate::storage::LedgerStore;
 

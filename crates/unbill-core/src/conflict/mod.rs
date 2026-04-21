@@ -91,10 +91,7 @@ pub fn detect(bills: &[Bill]) -> Vec<ConflictGroup> {
         }
     }
 
-    let superseded: HashSet<Ulid> = bills
-        .iter()
-        .flat_map(|b| b.prev.iter().copied())
-        .collect();
+    let superseded: HashSet<Ulid> = bills.iter().flat_map(|b| b.prev.iter().copied()).collect();
 
     // Group bills by root into (conflicting, ancestors).
     let mut groups: HashMap<Ulid, (Vec<Bill>, Vec<Bill>)> = HashMap::new();
