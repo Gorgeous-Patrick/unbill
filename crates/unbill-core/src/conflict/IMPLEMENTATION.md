@@ -4,11 +4,13 @@ The module is pure and takes no I/O. Its only input is the full bill list from a
 
 ## Structure
 
-`detect` builds a Union-Find over every bill ID in the full bill list, unions each bill with the IDs in its `prev` list, then groups the effective bills by root. Groups with one member are discarded; groups with two or more are returned as `ConflictGroup` values.
+`detect` builds a Union-Find over every bill ID in the full bill list, unions each bill with the IDs in its `prev` list, then groups all bills by root. For each group, effective bills become `conflicting` and non-effective bills become `ancestors`. Groups with fewer than two effective members are discarded.
 
 ## Types
 
-- `ConflictGroup` — a `Vec<Bill>` of effective bills that share a Union-Find root; always has at least two members.
+- `ConflictGroup` — two fields sharing the same Union-Find root:
+  - `conflicting: Vec<Bill>` — effective bills in the component; always at least two
+  - `ancestors: Vec<Bill>` — non-effective bills in the component; the superseded history leading to the conflict
 
 ## Testing
 

@@ -32,7 +32,12 @@ Bills outside any conflict group have exactly one effective bill in their compon
 
 ## Output
 
-A `ConflictGroup` is a non-empty collection of effective bills that share a root in the Union-Find. The service exposes conflict groups per ledger so shells can surface them to the user.
+A `ConflictGroup` contains two sets of bills from the same Union-Find component:
+
+- `conflicting` — the effective bills in the component; always two or more members
+- `ancestors` — every non-effective bill in the same component; the full amendment history that led to the conflict
+
+The service exposes conflict groups per ledger so shells can surface them to the user.
 
 ## Resolution
 
