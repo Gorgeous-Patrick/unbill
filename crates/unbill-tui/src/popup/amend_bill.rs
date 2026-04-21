@@ -7,8 +7,10 @@ use ratatui::{
 };
 use unbill_core::model::{Bill, NewBill, Share, User};
 
-use super::{PopupAction, PopupOutcome, PopupView, TextInput, render_popup_base, render_text_field};
 use super::add_bill::{format_cents, parse_amount_cents};
+use super::{
+    PopupAction, PopupOutcome, PopupView, TextInput, render_popup_base, render_text_field,
+};
 
 #[derive(PartialEq, Eq)]
 enum Section {
@@ -42,7 +44,10 @@ impl AmendBillPopup {
         // Pre-select payees
         let payee_ids: std::collections::HashSet<_> =
             bill.payees.iter().map(|s| s.user_id).collect();
-        let payee_selected: Vec<bool> = users.iter().map(|u| payee_ids.contains(&u.user_id)).collect();
+        let payee_selected: Vec<bool> = users
+            .iter()
+            .map(|u| payee_ids.contains(&u.user_id))
+            .collect();
 
         Self {
             ledger_id,
@@ -98,14 +103,20 @@ impl AmendBillPopup {
         }
 
         let payer_user = &self.users[self.payer_cursor];
-        let payers = vec![Share { user_id: payer_user.user_id, shares: 1 }];
+        let payers = vec![Share {
+            user_id: payer_user.user_id,
+            shares: 1,
+        }];
 
         let payees: Vec<Share> = self
             .users
             .iter()
             .zip(self.payee_selected.iter())
             .filter(|(_, sel)| **sel)
-            .map(|(u, _)| Share { user_id: u.user_id, shares: 1 })
+            .map(|(u, _)| Share {
+                user_id: u.user_id,
+                shares: 1,
+            })
             .collect();
 
         if payees.is_empty() {
@@ -147,8 +158,18 @@ impl PopupView for AmendBillPopup {
         ])
         .split(inner);
 
-        render_text_field(frame, rows[0], &self.description, self.section == Section::Description);
-        render_text_field(frame, rows[1], &self.amount, self.section == Section::Amount);
+        render_text_field(
+            frame,
+            rows[0],
+            &self.description,
+            self.section == Section::Description,
+        );
+        render_text_field(
+            frame,
+            rows[1],
+            &self.amount,
+            self.section == Section::Amount,
+        );
 
         let payer_label_style = if self.section == Section::Payer {
             Style::default().fg(Color::Yellow)
@@ -161,7 +182,12 @@ impl PopupView for AmendBillPopup {
             if rows[3].height == 0 || i >= rows[3].height as usize {
                 break;
             }
-            let row = Rect { x: rows[3].x, y: rows[3].y + i as u16, width: rows[3].width, height: 1 };
+            let row = Rect {
+                x: rows[3].x,
+                y: rows[3].y + i as u16,
+                width: rows[3].width,
+                height: 1,
+            };
             let is_cursor = self.section == Section::Payer && i == self.payer_cursor;
             let style = if is_cursor {
                 Style::default().add_modifier(Modifier::REVERSED)
@@ -182,13 +208,21 @@ impl PopupView for AmendBillPopup {
         };
         frame.render_widget(Paragraph::new("Payees:").style(payees_label_style), rows[4]);
 
-        for (i, (user, &selected)) in
-            self.users.iter().zip(self.payee_selected.iter()).enumerate()
+        for (i, (user, &selected)) in self
+            .users
+            .iter()
+            .zip(self.payee_selected.iter())
+            .enumerate()
         {
             if rows[5].height == 0 || i >= rows[5].height as usize {
                 break;
             }
-            let row = Rect { x: rows[5].x, y: rows[5].y + i as u16, width: rows[5].width, height: 1 };
+            let row = Rect {
+                x: rows[5].x,
+                y: rows[5].y + i as u16,
+                width: rows[5].width,
+                height: 1,
+            };
             let is_cursor = self.section == Section::Payees && i == self.payee_cursor;
             let style = if is_cursor {
                 Style::default().add_modifier(Modifier::REVERSED)
@@ -209,8 +243,10 @@ impl PopupView for AmendBillPopup {
             );
         } else {
             frame.render_widget(
-                Paragraph::new("[Tab] next  [j/k] move  [Space] toggle  [Enter] confirm  [Esc] cancel")
-                    .style(Style::default().fg(Color::DarkGray)),
+                Paragraph::new(
+                    "[Tab] next  [j/k] move  [Space] toggle  [Enter] confirm  [Esc] cancel",
+                )
+                .style(Style::default().fg(Color::DarkGray)),
                 rows[6],
             );
         }
@@ -239,7 +275,8 @@ impl PopupView for AmendBillPopup {
                     Section::Payer => {
                         if c == 'j' {
                             if !self.users.is_empty() {
-                                self.payer_cursor = (self.payer_cursor + 1).min(self.users.len() - 1);
+                                self.payer_cursor =
+                                    (self.payer_cursor + 1).min(self.users.len() - 1);
                             }
                         } else if c == 'k' {
                             self.payer_cursor = self.payer_cursor.saturating_sub(1);
@@ -248,7 +285,8 @@ impl PopupView for AmendBillPopup {
                     Section::Payees => {
                         if c == 'j' {
                             if !self.users.is_empty() {
-                                self.payee_cursor = (self.payee_cursor + 1).min(self.users.len() - 1);
+                                self.payee_cursor =
+                                    (self.payee_cursor + 1).min(self.users.len() - 1);
                             }
                         } else if c == 'k' {
                             self.payee_cursor = self.payee_cursor.saturating_sub(1);

@@ -14,11 +14,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
     let full_area = frame.area();
 
     // Split vertically: main area + 1-line status bar.
-    let vertical = Layout::vertical([
-        Constraint::Min(0),
-        Constraint::Length(1),
-    ])
-    .split(full_area);
+    let vertical = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(full_area);
 
     let main_area = vertical[0];
     let status_area = vertical[1];
@@ -41,7 +37,9 @@ pub fn render(frame: &mut Frame, state: &AppState) {
     } else {
         Style::default().fg(Color::DarkGray)
     };
-    let detail_block = Block::bordered().title("Detail").border_style(detail_border_style);
+    let detail_block = Block::bordered()
+        .title("Detail")
+        .border_style(detail_border_style);
     frame.render_widget(detail_block, cols[2]);
 
     // Status bar.
@@ -71,15 +69,20 @@ fn render_status_bar(frame: &mut Frame, area: ratatui::layout::Rect, state: &App
         _ => Style::default().fg(Color::DarkGray),
     };
 
-    let cols = Layout::horizontal([Constraint::Min(0), Constraint::Length(sync_text.len().max(1) as u16)])
-        .split(area);
+    let cols = Layout::horizontal([
+        Constraint::Min(0),
+        Constraint::Length(sync_text.len().max(1) as u16),
+    ])
+    .split(area);
 
     frame.render_widget(
         Paragraph::new(hints).style(Style::default().fg(Color::DarkGray)),
         cols[0],
     );
     frame.render_widget(
-        Paragraph::new(sync_text).style(sync_style).alignment(Alignment::Right),
+        Paragraph::new(sync_text)
+            .style(sync_style)
+            .alignment(Alignment::Right),
         cols[1],
     );
 }

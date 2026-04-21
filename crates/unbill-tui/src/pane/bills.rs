@@ -87,7 +87,9 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
 
         frame.render_widget(Paragraph::new(desc).style(style), cols[0]);
         frame.render_widget(
-            Paragraph::new(amount_str).style(style).alignment(Alignment::Right),
+            Paragraph::new(amount_str)
+                .style(style)
+                .alignment(Alignment::Right),
             cols[1],
         );
     }

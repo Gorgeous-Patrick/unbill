@@ -6,7 +6,9 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use super::{PopupAction, PopupOutcome, PopupView, TextInput, render_popup_base, render_text_field};
+use super::{
+    PopupAction, PopupOutcome, PopupView, TextInput, render_popup_base, render_text_field,
+};
 
 // ---------------------------------------------------------------------------
 // InvitePopup — two-tab Invite / Join
@@ -53,9 +55,8 @@ impl PopupView for InvitePopup {
         .split(inner);
 
         // Tab bar
-        let tab_cols =
-            Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(rows[0]);
+        let tab_cols = Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(rows[0]);
         let invite_style = if self.tab == InviteTab::Invite {
             Style::default().add_modifier(Modifier::REVERSED)
         } else {
@@ -180,7 +181,10 @@ impl PopupView for InviteResultPopup {
         ])
         .split(inner);
 
-        frame.render_widget(Paragraph::new(self.url.as_str()).wrap(ratatui::widgets::Wrap { trim: false }), rows[0]);
+        frame.render_widget(
+            Paragraph::new(self.url.as_str()).wrap(ratatui::widgets::Wrap { trim: false }),
+            rows[0],
+        );
         frame.render_widget(
             Paragraph::new("[Esc] close").style(Style::default().fg(Color::DarkGray)),
             rows[1],

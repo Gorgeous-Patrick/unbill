@@ -7,7 +7,9 @@ use ratatui::{
 };
 use unbill_core::model::{NewBill, Share, User};
 
-use super::{PopupAction, PopupOutcome, PopupView, TextInput, render_popup_base, render_text_field};
+use super::{
+    PopupAction, PopupOutcome, PopupView, TextInput, render_popup_base, render_text_field,
+};
 
 #[derive(PartialEq, Eq)]
 enum AddBillSection {
@@ -85,14 +87,20 @@ impl AddBillPopup {
         }
 
         let payer_user = &self.users[self.payer_cursor];
-        let payers = vec![Share { user_id: payer_user.user_id, shares: 1 }];
+        let payers = vec![Share {
+            user_id: payer_user.user_id,
+            shares: 1,
+        }];
 
         let payees: Vec<Share> = self
             .users
             .iter()
             .zip(self.payee_selected.iter())
             .filter(|(_, sel)| **sel)
-            .map(|(u, _)| Share { user_id: u.user_id, shares: 1 })
+            .map(|(u, _)| Share {
+                user_id: u.user_id,
+                shares: 1,
+            })
             .collect();
 
         if payees.is_empty() {
@@ -125,13 +133,13 @@ impl PopupView for AddBillPopup {
         // Rows: description, amount, payer header, payer list, payees header, payees list, error
         let user_count = self.users.len().max(1);
         let rows = Layout::vertical([
-            Constraint::Length(1),                          // description
-            Constraint::Length(1),                          // amount
-            Constraint::Length(1),                          // payer label
-            Constraint::Length(user_count as u16),          // payer list
-            Constraint::Length(1),                          // payees label
-            Constraint::Length(user_count as u16),          // payees list
-            Constraint::Length(1),                          // error/hint
+            Constraint::Length(1),                 // description
+            Constraint::Length(1),                 // amount
+            Constraint::Length(1),                 // payer label
+            Constraint::Length(user_count as u16), // payer list
+            Constraint::Length(1),                 // payees label
+            Constraint::Length(user_count as u16), // payees list
+            Constraint::Length(1),                 // error/hint
         ])
         .split(inner);
 
@@ -185,8 +193,11 @@ impl PopupView for AddBillPopup {
         };
         frame.render_widget(Paragraph::new("Payees:").style(payees_label_style), rows[4]);
 
-        for (i, (user, &selected)) in
-            self.users.iter().zip(self.payee_selected.iter()).enumerate()
+        for (i, (user, &selected)) in self
+            .users
+            .iter()
+            .zip(self.payee_selected.iter())
+            .enumerate()
         {
             if rows[5].height == 0 || i >= rows[5].height as usize {
                 break;
@@ -217,8 +228,10 @@ impl PopupView for AddBillPopup {
             );
         } else {
             frame.render_widget(
-                Paragraph::new("[Tab] next  [j/k] move  [Space] toggle  [Enter] confirm  [Esc] cancel")
-                    .style(Style::default().fg(Color::DarkGray)),
+                Paragraph::new(
+                    "[Tab] next  [j/k] move  [Space] toggle  [Enter] confirm  [Esc] cancel",
+                )
+                .style(Style::default().fg(Color::DarkGray)),
                 rows[6],
             );
         }

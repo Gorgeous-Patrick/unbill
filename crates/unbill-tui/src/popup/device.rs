@@ -6,7 +6,9 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use super::{PopupAction, PopupOutcome, PopupView, TextInput, render_popup_base, render_text_field};
+use super::{
+    PopupAction, PopupOutcome, PopupView, TextInput, render_popup_base, render_text_field,
+};
 
 pub struct DevicePopup {
     device_id: String,
@@ -73,7 +75,9 @@ impl PopupView for DevicePopup {
                     return PopupOutcome::Pending;
                 }
                 self.error = None;
-                PopupOutcome::Action(PopupAction::SyncOnce { peer_node_id: peer_str })
+                PopupOutcome::Action(PopupAction::SyncOnce {
+                    peer_node_id: peer_str,
+                })
             }
             KeyCode::Char(c) if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 let _ = c;

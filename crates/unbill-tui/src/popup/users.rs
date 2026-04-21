@@ -26,7 +26,11 @@ pub struct UsersPopup {
 }
 
 impl UsersPopup {
-    pub fn new(ledger_id: String, ledger_users: Vec<User>, all_local_users: Vec<LocalUser>) -> Self {
+    pub fn new(
+        ledger_id: String,
+        ledger_users: Vec<User>,
+        all_local_users: Vec<LocalUser>,
+    ) -> Self {
         let ledger_user_ids: std::collections::HashSet<_> =
             ledger_users.iter().map(|u| u.user_id).collect();
         let local_users: Vec<LocalUser> = all_local_users
@@ -60,9 +64,8 @@ impl PopupView for UsersPopup {
         .split(inner);
 
         // Tab bar
-        let tab_cols =
-            Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(rows[0]);
+        let tab_cols = Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(rows[0]);
 
         let ledger_style = if self.tab == UsersTab::LedgerUsers {
             Style::default().add_modifier(Modifier::REVERSED)
@@ -75,7 +78,10 @@ impl PopupView for UsersPopup {
             Style::default().fg(Color::DarkGray)
         };
 
-        frame.render_widget(Paragraph::new(" Ledger Users ").style(ledger_style), tab_cols[0]);
+        frame.render_widget(
+            Paragraph::new(" Ledger Users ").style(ledger_style),
+            tab_cols[0],
+        );
         frame.render_widget(Paragraph::new(" Add User ").style(add_style), tab_cols[1]);
 
         match self.tab {
@@ -136,7 +142,8 @@ impl PopupView for UsersPopup {
                         };
                         let marker = if is_cursor { ">" } else { " " };
                         frame.render_widget(
-                            Paragraph::new(format!("{} {}", marker, user.display_name)).style(style),
+                            Paragraph::new(format!("{} {}", marker, user.display_name))
+                                .style(style),
                             row,
                         );
                     }

@@ -18,7 +18,11 @@ pub struct ConfirmPopup {
 
 impl ConfirmPopup {
     pub fn new(message: String, action: PopupAction) -> Self {
-        Self { message, action, selected: false }
+        Self {
+            message,
+            action,
+            selected: false,
+        }
     }
 }
 

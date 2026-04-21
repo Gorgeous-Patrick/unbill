@@ -6,7 +6,9 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use super::{PopupAction, PopupOutcome, PopupView, TextInput, render_popup_base, render_text_field};
+use super::{
+    PopupAction, PopupOutcome, PopupView, TextInput, render_popup_base, render_text_field,
+};
 
 pub struct CreateLedgerPopup {
     name: TextInput,

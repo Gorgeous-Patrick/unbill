@@ -21,7 +21,10 @@ pub struct PickUserPopup {
 
 impl PickUserPopup {
     pub fn new(local_users: Vec<LocalUser>) -> Self {
-        Self { local_users, cursor: 0 }
+        Self {
+            local_users,
+            cursor: 0,
+        }
     }
 }
 
@@ -124,12 +127,20 @@ impl SettlementResultPopup {
         transactions: Vec<Transaction>,
         user_names: std::collections::HashMap<String, String>,
     ) -> Self {
-        Self { user_display_name, transactions, user_names, scroll: 0 }
+        Self {
+            user_display_name,
+            transactions,
+            user_names,
+            scroll: 0,
+        }
     }
 
     fn resolve_name(&self, id: &unbill_core::model::Ulid) -> String {
         let key = id.to_string();
-        self.user_names.get(&key).cloned().unwrap_or_else(|| key[..8.min(key.len())].to_string())
+        self.user_names
+            .get(&key)
+            .cloned()
+            .unwrap_or_else(|| key[..8.min(key.len())].to_string())
     }
 }
 
@@ -187,8 +198,7 @@ impl PopupView for SettlementResultPopup {
         }
 
         frame.render_widget(
-            Paragraph::new("[j/k] scroll  [Esc] close")
-                .style(Style::default().fg(Color::DarkGray)),
+            Paragraph::new("[j/k] scroll  [Esc] close").style(Style::default().fg(Color::DarkGray)),
             rows[2],
         );
     }

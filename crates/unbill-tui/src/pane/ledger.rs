@@ -16,7 +16,9 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
         Style::default().fg(Color::DarkGray)
     };
 
-    let block = Block::bordered().title("Ledgers").border_style(border_style);
+    let block = Block::bordered()
+        .title("Ledgers")
+        .border_style(border_style);
 
     if state.ledgers.is_empty() {
         let inner = block.inner(area);

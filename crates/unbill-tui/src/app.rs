@@ -59,7 +59,9 @@ impl AppState {
     }
 
     fn current_ledger_id(&self) -> Option<String> {
-        self.ledgers.get(self.ledger_cursor).map(|l| l.ledger_id.to_string())
+        self.ledgers
+            .get(self.ledger_cursor)
+            .map(|l| l.ledger_id.to_string())
     }
 }
 
@@ -233,14 +235,12 @@ async fn handle_ledger_key(key: KeyEvent, state: &mut AppState, svc: &Arc<Unbill
                 }
             }
         }
-        KeyCode::Char('s') => {
-            match svc.list_local_users().await {
-                Ok(local_users) => {
-                    state.popup = Some(Box::new(PickUserPopup::new(local_users)));
-                }
-                Err(e) => state.status_message = Some(e.to_string()),
+        KeyCode::Char('s') => match svc.list_local_users().await {
+            Ok(local_users) => {
+                state.popup = Some(Box::new(PickUserPopup::new(local_users)));
             }
-        }
+            Err(e) => state.status_message = Some(e.to_string()),
+        },
         KeyCode::Char('S') => {
             let device_id = svc.device_id().to_string();
             state.popup = Some(Box::new(DevicePopup::new(device_id)));
@@ -282,9 +282,9 @@ async fn handle_bills_key(key: KeyEvent, state: &mut AppState, svc: &Arc<UnbillS
             if let Some(ledger_id) = state.current_ledger_id() {
                 match svc.list_users(&ledger_id).await {
                     Ok(users) => {
-                        state.popup = Some(Box::new(
-                            crate::popup::add_bill::AddBillPopup::new(ledger_id, users),
-                        ));
+                        state.popup = Some(Box::new(crate::popup::add_bill::AddBillPopup::new(
+                            ledger_id, users,
+                        )));
                     }
                     Err(e) => state.status_message = Some(e.to_string()),
                 }
@@ -296,11 +296,10 @@ async fn handle_bills_key(key: KeyEvent, state: &mut AppState, svc: &Arc<UnbillS
                     let bill = bill.clone();
                     match svc.list_users(&ledger_id).await {
                         Ok(users) => {
-                            state.popup = Some(Box::new(
-                                crate::popup::amend_bill::AmendBillPopup::new(
+                            state.popup =
+                                Some(Box::new(crate::popup::amend_bill::AmendBillPopup::new(
                                     ledger_id, &bill, users,
-                                ),
-                            ));
+                                )));
                         }
                         Err(e) => state.status_message = Some(e.to_string()),
                     }
@@ -336,33 +335,28 @@ async fn execute_action(action: PopupAction, state: &mut AppState, svc: &Arc<Unb
             }
         }
 
-        PopupAction::DeleteLedger { ledger_id } => {
-            match svc.delete_ledger(&ledger_id).await {
-                Ok(_) => {
-                    refresh_ledgers(svc, state).await;
-                    state.ledger_cursor =
-                        state.ledger_cursor.min(state.ledgers.len().saturating_sub(1));
-                    refresh_bills(svc, state).await;
-                }
-                Err(e) => state.status_message = Some(format!("delete ledger: {e}")),
+        PopupAction::DeleteLedger { ledger_id } => match svc.delete_ledger(&ledger_id).await {
+            Ok(_) => {
+                refresh_ledgers(svc, state).await;
+                state.ledger_cursor = state
+                    .ledger_cursor
+                    .min(state.ledgers.len().saturating_sub(1));
+                refresh_bills(svc, state).await;
             }
-        }
+            Err(e) => state.status_message = Some(format!("delete ledger: {e}")),
+        },
 
-        PopupAction::AddBill { ledger_id, bill } => {
-            match svc.add_bill(&ledger_id, bill).await {
-                Ok(_) => {
-                    refresh_bills(svc, state).await;
-                }
-                Err(e) => state.status_message = Some(format!("add bill: {e}")),
+        PopupAction::AddBill { ledger_id, bill } => match svc.add_bill(&ledger_id, bill).await {
+            Ok(_) => {
+                refresh_bills(svc, state).await;
             }
-        }
+            Err(e) => state.status_message = Some(format!("add bill: {e}")),
+        },
 
-        PopupAction::AddUser { ledger_id, user } => {
-            match svc.add_user(&ledger_id, user).await {
-                Ok(_) => {}
-                Err(e) => state.status_message = Some(format!("add user: {e}")),
-            }
-        }
+        PopupAction::AddUser { ledger_id, user } => match svc.add_user(&ledger_id, user).await {
+            Ok(_) => {}
+            Err(e) => state.status_message = Some(format!("add user: {e}")),
+        },
 
         PopupAction::AddLocalUser { display_name } => {
             match svc.add_local_user(display_name).await {
@@ -371,7 +365,10 @@ async fn execute_action(action: PopupAction, state: &mut AppState, svc: &Arc<Unb
             }
         }
 
-        PopupAction::ShowSettlement { user_id, display_name } => {
+        PopupAction::ShowSettlement {
+            user_id,
+            display_name,
+        } => {
             match svc.compute_settlement_for_user(&user_id).await {
                 Ok(settlement) => {
                     // Build a name map from all known users across ledgers.
@@ -413,15 +410,13 @@ async fn execute_action(action: PopupAction, state: &mut AppState, svc: &Arc<Unb
             }
         }
 
-        PopupAction::JoinLedger { url } => {
-            match svc.join_ledger(&url, String::new()).await {
-                Ok(_) => {
-                    refresh_ledgers(svc, state).await;
-                    refresh_bills(svc, state).await;
-                }
-                Err(e) => state.status_message = Some(format!("join ledger: {e}")),
+        PopupAction::JoinLedger { url } => match svc.join_ledger(&url, String::new()).await {
+            Ok(_) => {
+                refresh_ledgers(svc, state).await;
+                refresh_bills(svc, state).await;
             }
-        }
+            Err(e) => state.status_message = Some(format!("join ledger: {e}")),
+        },
 
         PopupAction::SyncOnce { peer_node_id } => {
             match peer_node_id.parse::<NodeId>() {

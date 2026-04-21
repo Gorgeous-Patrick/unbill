@@ -1,5 +1,10 @@
 use crossterm::event::KeyEvent;
-use ratatui::{Frame, layout::Rect, style::{Color, Modifier, Style}, widgets::{Block, Clear, Paragraph}};
+use ratatui::{
+    Frame,
+    layout::Rect,
+    style::{Color, Modifier, Style},
+    widgets::{Block, Clear, Paragraph},
+};
 
 use unbill_core::model::{NewBill, NewUser};
 
@@ -35,15 +40,37 @@ pub enum PopupOutcome {
 /// Describes the service mutation to perform after a popup confirms.
 #[allow(dead_code)]
 pub enum PopupAction {
-    CreateLedger { name: String, currency: String },
-    DeleteLedger { ledger_id: String },
-    AddBill { ledger_id: String, bill: NewBill },
-    AddUser { ledger_id: String, user: NewUser },
-    AddLocalUser { display_name: String },
-    ShowSettlement { user_id: String, display_name: String },
-    GenerateInvite { ledger_id: String },
-    JoinLedger { url: String },
-    SyncOnce { peer_node_id: String },
+    CreateLedger {
+        name: String,
+        currency: String,
+    },
+    DeleteLedger {
+        ledger_id: String,
+    },
+    AddBill {
+        ledger_id: String,
+        bill: NewBill,
+    },
+    AddUser {
+        ledger_id: String,
+        user: NewUser,
+    },
+    AddLocalUser {
+        display_name: String,
+    },
+    ShowSettlement {
+        user_id: String,
+        display_name: String,
+    },
+    GenerateInvite {
+        ledger_id: String,
+    },
+    JoinLedger {
+        url: String,
+    },
+    SyncOnce {
+        peer_node_id: String,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -58,7 +85,10 @@ pub struct TextInput {
 
 impl TextInput {
     pub fn new(label: &'static str) -> Self {
-        Self { label, value: String::new() }
+        Self {
+            label,
+            value: String::new(),
+        }
     }
 
     pub fn with_value(label: &'static str, value: String) -> Self {
@@ -136,7 +166,10 @@ pub fn render_text_field(frame: &mut Frame, area: Rect, input: &TextInput, focus
     };
 
     let cols = Layout::horizontal([Constraint::Length(14), Constraint::Min(0)]).split(area);
-    frame.render_widget(Paragraph::new(format!("{}: ", input.label)).style(label_style), cols[0]);
+    frame.render_widget(
+        Paragraph::new(format!("{}: ", input.label)).style(label_style),
+        cols[0],
+    );
     frame.render_widget(
         Paragraph::new(format!("{}_", input.value)).style(value_style),
         cols[1],
