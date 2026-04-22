@@ -182,38 +182,34 @@ async fn handle_key(key: KeyEvent, state: &mut AppState, svc: &Arc<UnbillService
 
 async fn handle_ledger_key(key: KeyEvent, state: &mut AppState, svc: &Arc<UnbillService>) {
     match key.code {
-        KeyCode::Char('j') | KeyCode::Down
-            if !state.ledgers.is_empty() => {
-                state.ledger_cursor = (state.ledger_cursor + 1).min(state.ledgers.len() - 1);
-                state.bill_cursor = 0;
-                refresh_bills(svc, state).await;
-                refresh_users(svc, state).await;
-                refresh_settlement(svc, state).await;
-            }
-        KeyCode::Char('k') | KeyCode::Up
-            if state.ledger_cursor > 0 => {
-                state.ledger_cursor -= 1;
-                state.bill_cursor = 0;
-                refresh_bills(svc, state).await;
-                refresh_users(svc, state).await;
-                refresh_settlement(svc, state).await;
-            }
-        KeyCode::Char('g')
-            if !state.ledgers.is_empty() => {
-                state.ledger_cursor = 0;
-                state.bill_cursor = 0;
-                refresh_bills(svc, state).await;
-                refresh_users(svc, state).await;
-                refresh_settlement(svc, state).await;
-            }
-        KeyCode::Char('G')
-            if !state.ledgers.is_empty() => {
-                state.ledger_cursor = state.ledgers.len() - 1;
-                state.bill_cursor = 0;
-                refresh_bills(svc, state).await;
-                refresh_users(svc, state).await;
-                refresh_settlement(svc, state).await;
-            }
+        KeyCode::Char('j') | KeyCode::Down if !state.ledgers.is_empty() => {
+            state.ledger_cursor = (state.ledger_cursor + 1).min(state.ledgers.len() - 1);
+            state.bill_cursor = 0;
+            refresh_bills(svc, state).await;
+            refresh_users(svc, state).await;
+            refresh_settlement(svc, state).await;
+        }
+        KeyCode::Char('k') | KeyCode::Up if state.ledger_cursor > 0 => {
+            state.ledger_cursor -= 1;
+            state.bill_cursor = 0;
+            refresh_bills(svc, state).await;
+            refresh_users(svc, state).await;
+            refresh_settlement(svc, state).await;
+        }
+        KeyCode::Char('g') if !state.ledgers.is_empty() => {
+            state.ledger_cursor = 0;
+            state.bill_cursor = 0;
+            refresh_bills(svc, state).await;
+            refresh_users(svc, state).await;
+            refresh_settlement(svc, state).await;
+        }
+        KeyCode::Char('G') if !state.ledgers.is_empty() => {
+            state.ledger_cursor = state.ledgers.len() - 1;
+            state.bill_cursor = 0;
+            refresh_bills(svc, state).await;
+            refresh_users(svc, state).await;
+            refresh_settlement(svc, state).await;
+        }
         KeyCode::Char('l') | KeyCode::Tab | KeyCode::Enter => {
             state.focused_pane = Pane::Bills;
         }
@@ -265,20 +261,18 @@ async fn handle_ledger_key(key: KeyEvent, state: &mut AppState, svc: &Arc<Unbill
 
 async fn handle_bills_key(key: KeyEvent, state: &mut AppState, svc: &Arc<UnbillService>) {
     match key.code {
-        KeyCode::Char('j') | KeyCode::Down
-            if !state.bills.is_empty() => {
-                state.bill_cursor = (state.bill_cursor + 1).min(state.bills.len() - 1);
-            }
+        KeyCode::Char('j') | KeyCode::Down if !state.bills.is_empty() => {
+            state.bill_cursor = (state.bill_cursor + 1).min(state.bills.len() - 1);
+        }
         KeyCode::Char('k') | KeyCode::Up => {
             state.bill_cursor = state.bill_cursor.saturating_sub(1);
         }
         KeyCode::Char('g') => {
             state.bill_cursor = 0;
         }
-        KeyCode::Char('G')
-            if !state.bills.is_empty() => {
-                state.bill_cursor = state.bills.len() - 1;
-            }
+        KeyCode::Char('G') if !state.bills.is_empty() => {
+            state.bill_cursor = state.bills.len() - 1;
+        }
         KeyCode::Char('h') | KeyCode::BackTab => {
             state.focused_pane = Pane::Ledger;
         }
@@ -299,16 +293,17 @@ async fn handle_bills_key(key: KeyEvent, state: &mut AppState, svc: &Arc<UnbillS
         }
         KeyCode::Char('e') => {
             if let Some(ledger_id) = state.current_ledger_id()
-                && let Some(bill) = state.bills.get(state.bill_cursor).cloned() {
-                    match svc.list_users(&ledger_id).await {
-                        Ok(users) => {
-                            let editor = build_amend_editor(ledger_id, &bill, users);
-                            state.bill_editor = Some(editor);
-                            state.focused_pane = Pane::Detail;
-                        }
-                        Err(e) => state.status_message = Some(e.to_string()),
+                && let Some(bill) = state.bills.get(state.bill_cursor).cloned()
+            {
+                match svc.list_users(&ledger_id).await {
+                    Ok(users) => {
+                        let editor = build_amend_editor(ledger_id, &bill, users);
+                        state.bill_editor = Some(editor);
+                        state.focused_pane = Pane::Detail;
                     }
+                    Err(e) => state.status_message = Some(e.to_string()),
                 }
+            }
         }
         _ => {}
     }
@@ -351,16 +346,12 @@ async fn handle_editor_key(key: KeyEvent, state: &mut AppState, svc: &Arc<Unbill
                 editor.section = retreat_section(editor.section);
             }
             KeyCode::Down => match editor.section {
-                EditorSection::Payers
-                    if !editor.payers.is_empty() => {
-                        editor.payer_cursor =
-                            (editor.payer_cursor + 1).min(editor.payers.len() - 1);
-                    }
-                EditorSection::Payees
-                    if !editor.payees.is_empty() => {
-                        editor.payee_cursor =
-                            (editor.payee_cursor + 1).min(editor.payees.len() - 1);
-                    }
+                EditorSection::Payers if !editor.payers.is_empty() => {
+                    editor.payer_cursor = (editor.payer_cursor + 1).min(editor.payers.len() - 1);
+                }
+                EditorSection::Payees if !editor.payees.is_empty() => {
+                    editor.payee_cursor = (editor.payee_cursor + 1).min(editor.payees.len() - 1);
+                }
                 _ => {}
             },
             KeyCode::Up => match editor.section {
@@ -377,11 +368,10 @@ async fn handle_editor_key(key: KeyEvent, state: &mut AppState, svc: &Arc<Unbill
                 EditorSection::Amount if c != 'j' && c != 'k' => editor.amount_str.push(c),
                 EditorSection::Amount => {}
                 EditorSection::Payers => match c {
-                    'j'
-                        if !editor.payers.is_empty() => {
-                            editor.payer_cursor =
-                                (editor.payer_cursor + 1).min(editor.payers.len() - 1);
-                        }
+                    'j' if !editor.payers.is_empty() => {
+                        editor.payer_cursor =
+                            (editor.payer_cursor + 1).min(editor.payers.len() - 1);
+                    }
                     'k' => {
                         editor.payer_cursor = editor.payer_cursor.saturating_sub(1);
                     }
@@ -401,11 +391,10 @@ async fn handle_editor_key(key: KeyEvent, state: &mut AppState, svc: &Arc<Unbill
                     _ => {}
                 },
                 EditorSection::Payees => match c {
-                    'j'
-                        if !editor.payees.is_empty() => {
-                            editor.payee_cursor =
-                                (editor.payee_cursor + 1).min(editor.payees.len() - 1);
-                        }
+                    'j' if !editor.payees.is_empty() => {
+                        editor.payee_cursor =
+                            (editor.payee_cursor + 1).min(editor.payees.len() - 1);
+                    }
                     'k' => {
                         editor.payee_cursor = editor.payee_cursor.saturating_sub(1);
                     }
