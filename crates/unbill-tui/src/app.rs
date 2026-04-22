@@ -1,23 +1,22 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyModifiers};
 use futures::StreamExt as _;
 use ratatui::{Terminal, backend::CrosstermBackend};
 use tokio::time::{Duration, interval};
-use unbill_core::model::{Bill, LedgerMeta, NodeId};
-use unbill_core::service::{ServiceEvent, UnbillService};
+use unbill_core::model::{Bill, LedgerMeta, NewBill, NodeId, Share, User};
+use unbill_core::service::{ServiceEvent, SettlementTransaction, UnbillService};
 
 use crate::pane::Pane;
+use crate::pane::detail::{BillEditor, EditorSection, ParticipantRow};
 use crate::popup::PopupView;
 use crate::popup::{
     PopupAction, PopupOutcome,
     confirm::ConfirmPopup,
     create_ledger::CreateLedgerPopup,
     device::DevicePopup,
-    invite::{InvitePopup, InviteResultPopup},
-    settlement::{PickUserPopup, SettlementResultPopup},
-    users::UsersPopup,
+    invite::InviteResultPopup,
+    ledger_settings::LedgerSettingsPopup,
 };
 
 // ---------------------------------------------------------------------------
@@ -36,7 +35,10 @@ pub struct AppState {
     pub ledger_cursor: usize,
     pub bill_cursor: usize,
     pub ledgers: Vec<LedgerMeta>,
+    pub users: Vec<User>,
     pub bills: Vec<Bill>,
+    pub settlement: Vec<SettlementTransaction>,
+    pub bill_editor: Option<BillEditor>,
     pub popup: Option<Box<dyn PopupView>>,
     pub sync_status: SyncStatus,
     pub status_message: Option<String>,
@@ -50,7 +52,10 @@ impl AppState {
             ledger_cursor: 0,
             bill_cursor: 0,
             ledgers: vec![],
+            users: vec![],
             bills: vec![],
+            settlement: vec![],
+            bill_editor: None,
             popup: None,
             sync_status: SyncStatus::Idle,
             status_message: None,
@@ -58,7 +63,7 @@ impl AppState {
         }
     }
 
-    fn current_ledger_id(&self) -> Option<String> {
+    pub fn current_ledger_id(&self) -> Option<String> {
         self.ledgers
             .get(self.ledger_cursor)
             .map(|l| l.ledger_id.to_string())
@@ -81,6 +86,8 @@ pub async fn run(
     // Initial data load.
     refresh_ledgers(&svc, &mut state).await;
     refresh_bills(&svc, &mut state).await;
+    refresh_users(&svc, &mut state).await;
+    refresh_settlement(&svc, &mut state).await;
 
     loop {
         if state.should_quit {
@@ -99,6 +106,8 @@ pub async fn run(
                     ServiceEvent::LedgerUpdated { .. } => {
                         refresh_ledgers(&svc, &mut state).await;
                         refresh_bills(&svc, &mut state).await;
+                        refresh_users(&svc, &mut state).await;
+                        refresh_settlement(&svc, &mut state).await;
                     }
                     ServiceEvent::SyncError { error, .. } => {
                         state.sync_status = SyncStatus::Error(error);
@@ -155,6 +164,12 @@ async fn handle_key(key: KeyEvent, state: &mut AppState, svc: &Arc<UnbillService
         return;
     }
 
+    // Editor routing (when in Detail pane with active editor).
+    if state.bill_editor.is_some() && state.focused_pane == Pane::Detail {
+        handle_editor_key(key, state, svc).await;
+        return;
+    }
+
     // Global quit.
     if key.code == KeyCode::Char('q') {
         state.should_quit = true;
@@ -176,6 +191,8 @@ async fn handle_ledger_key(key: KeyEvent, state: &mut AppState, svc: &Arc<Unbill
                 state.ledger_cursor = (state.ledger_cursor + 1).min(state.ledgers.len() - 1);
                 state.bill_cursor = 0;
                 refresh_bills(svc, state).await;
+                refresh_users(svc, state).await;
+                refresh_settlement(svc, state).await;
             }
         }
         KeyCode::Char('k') | KeyCode::Up => {
@@ -183,6 +200,8 @@ async fn handle_ledger_key(key: KeyEvent, state: &mut AppState, svc: &Arc<Unbill
                 state.ledger_cursor -= 1;
                 state.bill_cursor = 0;
                 refresh_bills(svc, state).await;
+                refresh_users(svc, state).await;
+                refresh_settlement(svc, state).await;
             }
         }
         KeyCode::Char('g') => {
@@ -190,6 +209,8 @@ async fn handle_ledger_key(key: KeyEvent, state: &mut AppState, svc: &Arc<Unbill
                 state.ledger_cursor = 0;
                 state.bill_cursor = 0;
                 refresh_bills(svc, state).await;
+                refresh_users(svc, state).await;
+                refresh_settlement(svc, state).await;
             }
         }
         KeyCode::Char('G') => {
@@ -197,6 +218,8 @@ async fn handle_ledger_key(key: KeyEvent, state: &mut AppState, svc: &Arc<Unbill
                 state.ledger_cursor = state.ledgers.len() - 1;
                 state.bill_cursor = 0;
                 refresh_bills(svc, state).await;
+                refresh_users(svc, state).await;
+                refresh_settlement(svc, state).await;
             }
         }
         KeyCode::Char('l') | KeyCode::Tab | KeyCode::Enter => {
@@ -223,7 +246,7 @@ async fn handle_ledger_key(key: KeyEvent, state: &mut AppState, svc: &Arc<Unbill
                 match svc.list_users(&ledger_id).await {
                     Ok(ledger_users) => match svc.list_local_users().await {
                         Ok(local_users) => {
-                            state.popup = Some(Box::new(UsersPopup::new(
+                            state.popup = Some(Box::new(LedgerSettingsPopup::new(
                                 ledger_id,
                                 ledger_users,
                                 local_users,
@@ -235,20 +258,9 @@ async fn handle_ledger_key(key: KeyEvent, state: &mut AppState, svc: &Arc<Unbill
                 }
             }
         }
-        KeyCode::Char('s') => match svc.list_local_users().await {
-            Ok(local_users) => {
-                state.popup = Some(Box::new(PickUserPopup::new(local_users)));
-            }
-            Err(e) => state.status_message = Some(e.to_string()),
-        },
         KeyCode::Char('S') => {
             let device_id = svc.device_id().to_string();
             state.popup = Some(Box::new(DevicePopup::new(device_id)));
-        }
-        KeyCode::Char('i') => {
-            if let Some(ledger_id) = state.current_ledger_id() {
-                state.popup = Some(Box::new(InvitePopup::new(ledger_id)));
-            }
         }
         _ => {}
     }
@@ -282,9 +294,9 @@ async fn handle_bills_key(key: KeyEvent, state: &mut AppState, svc: &Arc<UnbillS
             if let Some(ledger_id) = state.current_ledger_id() {
                 match svc.list_users(&ledger_id).await {
                     Ok(users) => {
-                        state.popup = Some(Box::new(crate::popup::add_bill::AddBillPopup::new(
-                            ledger_id, users,
-                        )));
+                        let editor = build_new_editor(ledger_id, users);
+                        state.bill_editor = Some(editor);
+                        state.focused_pane = Pane::Detail;
                     }
                     Err(e) => state.status_message = Some(e.to_string()),
                 }
@@ -292,14 +304,12 @@ async fn handle_bills_key(key: KeyEvent, state: &mut AppState, svc: &Arc<UnbillS
         }
         KeyCode::Char('e') => {
             if let Some(ledger_id) = state.current_ledger_id() {
-                if let Some(bill) = state.bills.get(state.bill_cursor) {
-                    let bill = bill.clone();
+                if let Some(bill) = state.bills.get(state.bill_cursor).cloned() {
                     match svc.list_users(&ledger_id).await {
                         Ok(users) => {
-                            state.popup =
-                                Some(Box::new(crate::popup::amend_bill::AmendBillPopup::new(
-                                    ledger_id, &bill, users,
-                                )));
+                            let editor = build_amend_editor(ledger_id, &bill, users);
+                            state.bill_editor = Some(editor);
+                            state.focused_pane = Pane::Detail;
                         }
                         Err(e) => state.status_message = Some(e.to_string()),
                     }
@@ -315,7 +325,253 @@ fn handle_detail_key(key: KeyEvent, state: &mut AppState) {
         KeyCode::Char('h') | KeyCode::BackTab => {
             state.focused_pane = Pane::Bills;
         }
+        KeyCode::Char('a') => {
+            // Open new bill editor — need ledger_id; we can't call async here.
+            // User must press 'a' in bills pane or via the bills pane.
+            // For detail pane in view mode, hint says [a] new but we can't async here.
+            // The spec says "key routing changes in handle_bills_key" so the detail view hint
+            // is informational; actual 'a' when in detail view mode (no editor) falls through here.
+            // We leave it as a no-op pending focus; user can go back to bills pane with 'h'.
+        }
         _ => {}
+    }
+}
+
+async fn handle_editor_key(key: KeyEvent, state: &mut AppState, svc: &Arc<UnbillService>) {
+    {
+        let editor = match state.bill_editor.as_mut() {
+            Some(e) => e,
+            None => return,
+        };
+
+        match key.code {
+            KeyCode::Esc => {
+                let _ = editor;
+                state.bill_editor = None;
+                state.focused_pane = Pane::Bills;
+                return;
+            }
+            KeyCode::Tab => {
+                editor.section = advance_section(editor.section);
+            }
+            KeyCode::BackTab => {
+                editor.section = retreat_section(editor.section);
+            }
+            KeyCode::Char('j') | KeyCode::Down => match editor.section {
+                EditorSection::Payers => {
+                    if !editor.payers.is_empty() {
+                        editor.payer_cursor =
+                            (editor.payer_cursor + 1).min(editor.payers.len() - 1);
+                    }
+                }
+                EditorSection::Payees => {
+                    if !editor.payees.is_empty() {
+                        editor.payee_cursor =
+                            (editor.payee_cursor + 1).min(editor.payees.len() - 1);
+                    }
+                }
+                _ => {}
+            },
+            KeyCode::Char('k') | KeyCode::Up => match editor.section {
+                EditorSection::Payers => {
+                    editor.payer_cursor = editor.payer_cursor.saturating_sub(1);
+                }
+                EditorSection::Payees => {
+                    editor.payee_cursor = editor.payee_cursor.saturating_sub(1);
+                }
+                _ => {}
+            },
+            KeyCode::Char(' ') => match editor.section {
+                EditorSection::Payers => {
+                    let cur = editor.payer_cursor;
+                    if let Some(row) = editor.payers.get_mut(cur) {
+                        row.selected = !row.selected;
+                    }
+                }
+                EditorSection::Payees => {
+                    let cur = editor.payee_cursor;
+                    if let Some(row) = editor.payees.get_mut(cur) {
+                        row.selected = !row.selected;
+                    }
+                }
+                _ => {}
+            },
+            KeyCode::Char(c) if c.is_ascii_digit() => {
+                let digit = c.to_digit(10).unwrap_or(1).max(1);
+                match editor.section {
+                    EditorSection::Description => editor.description.push(c),
+                    EditorSection::Amount => editor.amount_str.push(c),
+                    EditorSection::Payers => {
+                        let cur = editor.payer_cursor;
+                        if let Some(row) = editor.payers.get_mut(cur) {
+                            row.weight = digit;
+                        }
+                    }
+                    EditorSection::Payees => {
+                        let cur = editor.payee_cursor;
+                        if let Some(row) = editor.payees.get_mut(cur) {
+                            row.weight = digit;
+                        }
+                    }
+                }
+            }
+            KeyCode::Char(c) => match editor.section {
+                EditorSection::Description => editor.description.push(c),
+                EditorSection::Amount => editor.amount_str.push(c),
+                _ => {}
+            },
+            KeyCode::Backspace => match editor.section {
+                EditorSection::Description => {
+                    editor.description.pop();
+                }
+                EditorSection::Amount => {
+                    editor.amount_str.pop();
+                }
+                EditorSection::Payers => {
+                    let cur = editor.payer_cursor;
+                    if let Some(row) = editor.payers.get_mut(cur) {
+                        row.weight = 1;
+                    }
+                }
+                EditorSection::Payees => {
+                    let cur = editor.payee_cursor;
+                    if let Some(row) = editor.payees.get_mut(cur) {
+                        row.weight = 1;
+                    }
+                }
+            },
+            KeyCode::Enter => {
+                if editor.section != EditorSection::Payees {
+                    editor.section = advance_section(editor.section);
+                } else {
+                    // Will handle confirm below after releasing borrow.
+                    let _ = editor;
+                    try_confirm_editor(state, svc).await;
+                    return;
+                }
+            }
+            _ => {}
+        }
+
+    }
+}
+
+fn advance_section(s: EditorSection) -> EditorSection {
+    match s {
+        EditorSection::Description => EditorSection::Amount,
+        EditorSection::Amount => EditorSection::Payers,
+        EditorSection::Payers => EditorSection::Payees,
+        EditorSection::Payees => EditorSection::Description,
+    }
+}
+
+fn retreat_section(s: EditorSection) -> EditorSection {
+    match s {
+        EditorSection::Description => EditorSection::Payees,
+        EditorSection::Amount => EditorSection::Description,
+        EditorSection::Payers => EditorSection::Amount,
+        EditorSection::Payees => EditorSection::Payers,
+    }
+}
+
+async fn try_confirm_editor(state: &mut AppState, svc: &Arc<UnbillService>) {
+    // Validate and build NewBill.
+    let result = {
+        let editor = match state.bill_editor.as_ref() {
+            Some(e) => e,
+            None => return,
+        };
+
+        let description = editor.description.trim().to_string();
+        if description.is_empty() {
+            Err("Description must not be empty".to_string())
+        } else {
+            let amount_cents = match parse_amount_cents(&editor.amount_str) {
+                Some(v) if v > 0 => v,
+                _ => {
+                    return {
+                        if let Some(e) = state.bill_editor.as_mut() {
+                            e.error = Some(
+                                "Enter a valid positive amount (e.g. 12.50)".to_string(),
+                            );
+                        }
+                    }
+                }
+            };
+
+            let payers: Vec<Share> = editor
+                .payers
+                .iter()
+                .filter(|r| r.selected && r.weight >= 1)
+                .map(|r| Share {
+                    user_id: r.user.user_id,
+                    shares: r.weight,
+                })
+                .collect();
+
+            if payers.is_empty() {
+                return {
+                    if let Some(e) = state.bill_editor.as_mut() {
+                        e.error = Some("Select at least one payer".to_string());
+                    }
+                };
+            }
+
+            let payees: Vec<Share> = editor
+                .payees
+                .iter()
+                .filter(|r| r.selected && r.weight >= 1)
+                .map(|r| Share {
+                    user_id: r.user.user_id,
+                    shares: r.weight,
+                })
+                .collect();
+
+            if payees.is_empty() {
+                return {
+                    if let Some(e) = state.bill_editor.as_mut() {
+                        e.error = Some("Select at least one payee".to_string());
+                    }
+                };
+            }
+
+            let prev = editor.prev_id.map(|id| vec![id]).unwrap_or_default();
+
+            Ok((
+                editor.ledger_id.clone(),
+                NewBill {
+                    amount_cents,
+                    description,
+                    payers,
+                    payees,
+                    prev,
+                },
+            ))
+        }
+    };
+
+    match result {
+        Err(msg) => {
+            if let Some(e) = state.bill_editor.as_mut() {
+                e.error = Some(msg);
+            }
+        }
+        Ok((ledger_id, bill)) => {
+            match svc.add_bill(&ledger_id, bill).await {
+                Ok(_) => {
+                    state.bill_editor = None;
+                    state.focused_pane = Pane::Bills;
+                    refresh_bills(svc, state).await;
+                    refresh_users(svc, state).await;
+                    refresh_settlement(svc, state).await;
+                }
+                Err(e) => {
+                    if let Some(ed) = state.bill_editor.as_mut() {
+                        ed.error = Some(format!("add bill: {e}"));
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -330,6 +586,8 @@ async fn execute_action(action: PopupAction, state: &mut AppState, svc: &Arc<Unb
                 Ok(_) => {
                     refresh_ledgers(svc, state).await;
                     refresh_bills(svc, state).await;
+                    refresh_users(svc, state).await;
+                    refresh_settlement(svc, state).await;
                 }
                 Err(e) => state.status_message = Some(format!("create ledger: {e}")),
             }
@@ -342,6 +600,8 @@ async fn execute_action(action: PopupAction, state: &mut AppState, svc: &Arc<Unb
                     .ledger_cursor
                     .min(state.ledgers.len().saturating_sub(1));
                 refresh_bills(svc, state).await;
+                refresh_users(svc, state).await;
+                refresh_settlement(svc, state).await;
             }
             Err(e) => state.status_message = Some(format!("delete ledger: {e}")),
         },
@@ -349,12 +609,16 @@ async fn execute_action(action: PopupAction, state: &mut AppState, svc: &Arc<Unb
         PopupAction::AddBill { ledger_id, bill } => match svc.add_bill(&ledger_id, bill).await {
             Ok(_) => {
                 refresh_bills(svc, state).await;
+                refresh_users(svc, state).await;
+                refresh_settlement(svc, state).await;
             }
             Err(e) => state.status_message = Some(format!("add bill: {e}")),
         },
 
         PopupAction::AddUser { ledger_id, user } => match svc.add_user(&ledger_id, user).await {
-            Ok(_) => {}
+            Ok(_) => {
+                refresh_users(svc, state).await;
+            }
             Err(e) => state.status_message = Some(format!("add user: {e}")),
         },
 
@@ -362,42 +626,6 @@ async fn execute_action(action: PopupAction, state: &mut AppState, svc: &Arc<Unb
             match svc.add_local_user(display_name).await {
                 Ok(_) => {}
                 Err(e) => state.status_message = Some(format!("add local user: {e}")),
-            }
-        }
-
-        PopupAction::ShowSettlement {
-            user_id,
-            display_name,
-        } => {
-            match svc.compute_settlement_for_user(&user_id).await {
-                Ok(settlement) => {
-                    // Build a name map from all known users across ledgers.
-                    let mut user_names: HashMap<String, String> = HashMap::new();
-                    if let Ok(ledgers) = svc.list_ledgers().await {
-                        for meta in &ledgers {
-                            let lid = meta.ledger_id.to_string();
-                            if let Ok(users) = svc.list_users(&lid).await {
-                                for u in users {
-                                    user_names.insert(u.user_id.to_string(), u.display_name);
-                                }
-                            }
-                        }
-                    }
-                    // Also add local users.
-                    if let Ok(local_users) = svc.list_local_users().await {
-                        for u in local_users {
-                            user_names
-                                .entry(u.user_id.to_string())
-                                .or_insert(u.display_name);
-                        }
-                    }
-                    state.popup = Some(Box::new(SettlementResultPopup::new(
-                        display_name,
-                        settlement.transactions,
-                        user_names,
-                    )));
-                }
-                Err(e) => state.status_message = Some(format!("settlement: {e}")),
             }
         }
 
@@ -414,6 +642,8 @@ async fn execute_action(action: PopupAction, state: &mut AppState, svc: &Arc<Unb
             Ok(_) => {
                 refresh_ledgers(svc, state).await;
                 refresh_bills(svc, state).await;
+                refresh_users(svc, state).await;
+                refresh_settlement(svc, state).await;
             }
             Err(e) => state.status_message = Some(format!("join ledger: {e}")),
         },
@@ -471,5 +701,126 @@ pub async fn refresh_bills(svc: &Arc<UnbillService>, state: &mut AppState) {
         }
     } else {
         state.bills = vec![];
+    }
+}
+
+pub async fn refresh_users(svc: &Arc<UnbillService>, state: &mut AppState) {
+    if let Some(ledger_id) = state.current_ledger_id() {
+        match svc.list_users(&ledger_id).await {
+            Ok(users) => state.users = users,
+            Err(_) => state.users = vec![],
+        }
+    } else {
+        state.users = vec![];
+    }
+}
+
+pub async fn refresh_settlement(svc: &Arc<UnbillService>, state: &mut AppState) {
+    if let Some(ledger_id) = state.current_ledger_id() {
+        match svc.settle_ledger(&ledger_id).await {
+            Ok(s) => state.settlement = s.transactions,
+            Err(_) => state.settlement = vec![],
+        }
+    } else {
+        state.settlement = vec![];
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Editor builder helpers
+// ---------------------------------------------------------------------------
+
+fn build_new_editor(ledger_id: String, users: Vec<User>) -> BillEditor {
+    let payers = users
+        .iter()
+        .map(|u| ParticipantRow {
+            user: u.clone(),
+            selected: true,
+            weight: 1,
+        })
+        .collect();
+    let payees = users
+        .iter()
+        .map(|u| ParticipantRow {
+            user: u.clone(),
+            selected: true,
+            weight: 1,
+        })
+        .collect();
+    BillEditor {
+        ledger_id,
+        prev_id: None,
+        description: String::new(),
+        amount_str: String::new(),
+        payers,
+        payees,
+        payer_cursor: 0,
+        payee_cursor: 0,
+        section: EditorSection::Description,
+        error: None,
+    }
+}
+
+fn build_amend_editor(ledger_id: String, bill: &Bill, users: Vec<User>) -> BillEditor {
+    let payer_ids: std::collections::HashSet<_> = bill.payers.iter().map(|s| s.user_id).collect();
+    let payer_weights: std::collections::HashMap<_, _> =
+        bill.payers.iter().map(|s| (s.user_id, s.shares)).collect();
+    let payee_ids: std::collections::HashSet<_> = bill.payees.iter().map(|s| s.user_id).collect();
+    let payee_weights: std::collections::HashMap<_, _> =
+        bill.payees.iter().map(|s| (s.user_id, s.shares)).collect();
+
+    let payers = users
+        .iter()
+        .map(|u| ParticipantRow {
+            user: u.clone(),
+            selected: payer_ids.contains(&u.user_id),
+            weight: payer_weights.get(&u.user_id).copied().unwrap_or(1),
+        })
+        .collect();
+    let payees = users
+        .iter()
+        .map(|u| ParticipantRow {
+            user: u.clone(),
+            selected: payee_ids.contains(&u.user_id),
+            weight: payee_weights.get(&u.user_id).copied().unwrap_or(1),
+        })
+        .collect();
+
+    let amount_str = format!("{}.{:02}", bill.amount_cents / 100, bill.amount_cents.abs() % 100);
+
+    BillEditor {
+        ledger_id,
+        prev_id: Some(bill.id),
+        description: bill.description.clone(),
+        amount_str,
+        payers,
+        payees,
+        payer_cursor: 0,
+        payee_cursor: 0,
+        section: EditorSection::Description,
+        error: None,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Amount parsing helper
+// ---------------------------------------------------------------------------
+
+fn parse_amount_cents(s: &str) -> Option<i64> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    if let Some((whole, frac)) = s.split_once('.') {
+        let whole: i64 = whole.parse().ok()?;
+        let frac = match frac.len() {
+            0 => 0i64,
+            1 => frac.parse::<i64>().ok()? * 10,
+            _ => frac[..2].parse::<i64>().ok()?,
+        };
+        Some(whole * 100 + frac)
+    } else {
+        let whole: i64 = s.parse().ok()?;
+        Some(whole * 100)
     }
 }

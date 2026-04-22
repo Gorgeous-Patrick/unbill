@@ -4,22 +4,20 @@
 
 ```
 src/
-├── main.rs         — entry point: open service, run event loop
-├── app.rs          — AppState and top-level event dispatch
-├── ui.rs           — top-level render function; composes panes, popup, status bar
+├── main.rs          — entry point
+├── app.rs           — AppState, event loop, key routing
+├── ui.rs            — top-level render
 ├── pane/
-│   ├── mod.rs      — Pane enum (Ledger, Bills, Detail) and shared types
-│   ├── ledger.rs   — render and key handling for the ledger list pane
-│   └── bills.rs    — render and key handling for the bill list pane
+│   ├── mod.rs       — Pane enum and hints
+│   ├── ledger.rs    — ledger list render
+│   ├── bills.rs     — bill list + inline settlement render
+│   └── detail.rs    — bill detail view + bill editor (BillEditor, ParticipantRow, EditorSection)
 └── popup/
-    ├── mod.rs           — PopupView trait, PopupOutcome, active popup dispatch
+    ├── mod.rs           — PopupView trait, PopupOutcome, PopupAction
     ├── create_ledger.rs
-    ├── add_bill.rs
-    ├── amend_bill.rs
-    ├── users.rs
-    ├── settlement.rs    — pick-user and result views, each a separate PopupView
+    ├── ledger_settings.rs — users tab + invite tab (was users.rs)
     ├── device.rs
-    ├── invite.rs
+    ├── invite.rs        — InviteResultPopup only
     └── confirm.rs
 ```
 
@@ -32,36 +30,47 @@ src/
 
 ## AppState
 
-`AppState` is the single source of UI state. It holds no ledger data directly — domain data is fetched from the service and held only for the duration of a render frame.
-
 ```
 focused_pane: Pane
 ledger_cursor: usize
 bill_cursor: usize
+ledgers: Vec<LedgerMeta>
+users: Vec<User>             — ledger users for current ledger
+bills: Vec<Bill>
+settlement: Vec<SettlementTransaction>
+bill_editor: Option<BillEditor>
 popup: Option<Box<dyn PopupView>>
-sync_status: SyncStatus        // Idle | Syncing | Error(String)
-status_message: Option<String> // transient error or info shown in status bar
+sync_status: SyncStatus
+status_message: Option<String>
 ```
-
-After every mutation the relevant cursor is bounds-checked and the cached data is invalidated so the next render re-fetches from the service.
 
 ## Event loop
 
 The main loop runs in a single tokio task and selects across three concurrent streams:
 
 1. **Terminal events** — crossterm key and resize events via `EventStream`.
-2. **Service events** — `broadcast::Receiver<ServiceEvent>` from `UnbillService::subscribe()`. A `LedgerUpdated` event clears the bill cache and schedules a redraw.
+2. **Service events** — `broadcast::Receiver<ServiceEvent>` from `UnbillService::subscribe()`. A `LedgerUpdated` event refreshes bills, users, and settlement.
 3. **Render tick** — a 16 ms interval (~60 fps) that triggers a redraw unconditionally.
 
-Key events are routed first to the active popup (if any), then to the focused pane.
+Key events are routed first to the active popup (if any), then to the bill editor (if active and Detail pane is focused), then to the focused pane.
 
 ## Rendering
 
-`ui.rs` calls `Layout::horizontal` to divide the terminal into three columns (roughly 20 % / 40 % / 40 %) and a fixed one-line status bar at the bottom. Each pane module exposes a `render(frame, area, state, data)` function.
+`ui.rs` calls `Layout::horizontal` to divide the terminal into three columns (roughly 20 % / 40 % / 40 %) and a fixed one-line status bar at the bottom. Each pane module exposes a `render(frame, area, state)` function.
 
-When a popup is active, `ui.rs` renders the main layout first (dimmed), then draws the popup centered over the screen using `ratatui`'s `Clear` widget followed by a `Block`-framed area.
+When a popup is active, `ui.rs` renders the main layout first, then draws the popup centered over the screen using `ratatui`'s `Clear` widget followed by a `Block`-framed area.
 
 Focused pane borders are styled bright; unfocused borders are dim.
+
+## Bill editor
+
+`BillEditor` lives in `pane/detail.rs` and is stored in `AppState.bill_editor`. It covers both "new bill" and "amend bill" workflows. When `bill_editor` is `Some`, the Detail pane renders the editor form; when `None` it renders a read-only bill detail view.
+
+The editor has four sections (Description, Amount, Payers, Payees). Tab / Enter advance through sections; Esc closes without saving. Confirming on the Payees section validates and calls `svc.add_bill`.
+
+## Settlement inline rendering
+
+After the bill list, `pane/bills.rs` renders a separator and per-ledger settlement transactions resolved against `AppState.users`. `refresh_settlement` calls `svc.settle_ledger` and stores results in `AppState.settlement`.
 
 ## PopupView trait
 
@@ -76,20 +85,18 @@ fn handle_key(&mut self, key: KeyEvent) -> PopupOutcome;
 
 ```rust
 enum PopupOutcome {
-    Pending,                    // popup stays open, no action
-    Cancelled,                  // close popup, no action
-    Action(PopupAction),        // close popup, call service with this action
-    OpenNext(Box<dyn PopupView>), // replace current popup with a new one
+    Pending,
+    Cancelled,
+    Action(PopupAction),
+    OpenNext(Box<dyn PopupView>),
 }
 ```
 
-`PopupAction` carries the data for the service call (e.g. `CreateLedger { name, currency }`, `AddBill { ... }`, `DeleteLedger { id }`). The event loop matches on the action and calls the appropriate `UnbillService` method.
+`PopupAction` carries the data for the service call. The event loop matches on the action and calls the appropriate `UnbillService` method.
 
-The `OpenNext` variant handles sequential multi-step flows: the settlement pick-user popup returns `OpenNext(Box::new(SettlementResultPopup { user_id }))` when the user confirms their selection.
+## Ledger settings popup
 
-## Status bar hints
-
-Each `Pane` variant has a `hints()` method returning a slice of `(key, label)` pairs. The status bar renders them as `[key] label` and rebuilds the string only when focus changes. When a popup is open the hints area shows `[Esc] close` instead.
+`LedgerSettingsPopup` (in `popup/ledger_settings.rs`) replaces the old `UsersPopup` and `InvitePopup`. It has two tabs: Users (read-only list + add-from-local) and Invite (press Enter to generate URL). Generating an invite returns `Action(GenerateInvite { ledger_id })`, which the app handles by calling `svc.create_invitation` and then opening `InviteResultPopup` via direct assignment to `state.popup`.
 
 ## Testing
 

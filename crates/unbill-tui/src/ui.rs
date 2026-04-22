@@ -2,7 +2,7 @@ use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Layout},
     style::{Color, Style},
-    widgets::{Block, Paragraph},
+    widgets::Paragraph,
 };
 
 use crate::app::{AppState, SyncStatus};
@@ -30,17 +30,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
     // Render panes.
     pane::ledger::render(frame, cols[0], state);
     pane::bills::render(frame, cols[1], state);
-
-    // Detail pane — empty bordered block.
-    let detail_border_style = if state.focused_pane == crate::pane::Pane::Detail {
-        Style::default().fg(Color::Yellow)
-    } else {
-        Style::default().fg(Color::DarkGray)
-    };
-    let detail_block = Block::bordered()
-        .title("Detail")
-        .border_style(detail_border_style);
-    frame.render_widget(detail_block, cols[2]);
+    pane::detail::render(frame, cols[2], state);
 
     // Status bar.
     render_status_bar(frame, status_area, state);

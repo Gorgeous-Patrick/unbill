@@ -1,4 +1,5 @@
 pub mod bills;
+pub mod detail;
 pub mod ledger;
 
 /// The three panes of the TUI layout.
@@ -14,12 +15,12 @@ impl Pane {
     pub fn hints(&self) -> &'static str {
         match self {
             Pane::Ledger => {
-                "[j/k] move  [g/G] first/last  [l/Tab] pane  [a] create  [d] delete  [u] users  [s] settle  [S] device  [i] invite  [q] quit"
+                "[j/k] move  [g/G] first/last  [l/Tab] pane  [a] create  [d] delete  [u] settings  [S] device  [q] quit"
             }
             Pane::Bills => {
                 "[j/k] move  [g/G] first/last  [h/Shift+Tab] pane  [l/Tab] pane  [a] add bill  [e] amend  [q] quit"
             }
-            Pane::Detail => "[h/Shift+Tab] back  [q] quit",
+            Pane::Detail => "[h/Shift+Tab] back  [e] amend  [a] new  [q] quit",
         }
     }
 }

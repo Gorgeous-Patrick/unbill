@@ -8,14 +8,11 @@ use ratatui::{
 
 use unbill_core::model::{NewBill, NewUser};
 
-pub mod add_bill;
-pub mod amend_bill;
 pub mod confirm;
 pub mod create_ledger;
 pub mod device;
 pub mod invite;
-pub mod settlement;
-pub mod users;
+pub mod ledger_settings;
 
 /// Trait implemented by every popup view.
 pub trait PopupView: Send {
@@ -58,10 +55,6 @@ pub enum PopupAction {
     AddLocalUser {
         display_name: String,
     },
-    ShowSettlement {
-        user_id: String,
-        display_name: String,
-    },
     GenerateInvite {
         ledger_id: String,
     },
@@ -91,6 +84,7 @@ impl TextInput {
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_value(label: &'static str, value: String) -> Self {
         Self { label, value }
     }
