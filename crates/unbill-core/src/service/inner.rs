@@ -201,6 +201,19 @@ impl UnbillService {
         Ok(settlement::Settlement { transactions })
     }
 
+    /// Compute settlement for a single ledger.
+    pub async fn settle_ledger(
+        &self,
+        ledger_id: &str,
+    ) -> crate::error::Result<settlement::Settlement> {
+        let doc = self.load_doc(ledger_id).await?;
+        let users = doc.list_users()?;
+        let bills = doc.list_bills()?;
+        let mut balances = std::collections::HashMap::new();
+        settlement::accumulate_balances(&users, &bills, &mut balances);
+        Ok(settlement::compute_from_balances(balances))
+    }
+
     // -----------------------------------------------------------------------
     // Conflict detection
     // -----------------------------------------------------------------------

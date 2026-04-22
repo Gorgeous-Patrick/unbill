@@ -5,6 +5,7 @@ members = [
     "crates/unbill-core",
     "crates/unbill-cli",
     "crates/unbill-tauri",
+    "crates/unbill-tui",
 ]
 
 [workspace.package]
@@ -52,3 +53,11 @@ directories = "6.0.0"
 
 # Testing
 proptest = "1"
+
+[profile.release]
+lto = true
+
+[profile.release.package.unbill-tui]
+strip = true  # Automatically strip symbols from the binary.
+opt-level = "z"  # Optimize for size.
+
