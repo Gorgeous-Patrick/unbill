@@ -201,7 +201,10 @@ impl UnbillService {
     }
 
     /// Compute settlement for a single ledger.
-    pub async fn settle_ledger(&self, ledger_id: &str) -> crate::error::Result<settlement::Settlement> {
+    pub async fn settle_ledger(
+        &self,
+        ledger_id: &str,
+    ) -> crate::error::Result<settlement::Settlement> {
         let doc = self.load_doc(ledger_id).await?;
         let users = doc.list_users()?;
         let bills = doc.list_bills()?;

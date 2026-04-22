@@ -93,11 +93,9 @@ impl PopupView for LedgerSettingsPopup {
                 } else {
                     // Split content area: ledger users / add users
                     let half = rows[2].height / 2;
-                    let content_rows = Layout::vertical([
-                        Constraint::Length(half.max(1)),
-                        Constraint::Min(0),
-                    ])
-                    .split(rows[2]);
+                    let content_rows =
+                        Layout::vertical([Constraint::Length(half.max(1)), Constraint::Min(0)])
+                            .split(rows[2]);
 
                     for (i, user) in self.ledger_users.iter().enumerate() {
                         if i >= content_rows[0].height as usize {
@@ -149,10 +147,8 @@ impl PopupView for LedgerSettingsPopup {
                     }
                 }
                 frame.render_widget(
-                    Paragraph::new(
-                        "[j/k] move  [Enter] add user  [h/l] switch tab  [Esc] close",
-                    )
-                    .style(Style::default().fg(Color::DarkGray)),
+                    Paragraph::new("[j/k] move  [Enter] add user  [h/l] switch tab  [Esc] close")
+                        .style(Style::default().fg(Color::DarkGray)),
                     rows[3],
                 );
             }

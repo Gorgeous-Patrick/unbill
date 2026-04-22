@@ -11,12 +11,8 @@ use crate::pane::Pane;
 use crate::pane::detail::{BillEditor, EditorSection, ParticipantRow};
 use crate::popup::PopupView;
 use crate::popup::{
-    PopupAction, PopupOutcome,
-    confirm::ConfirmPopup,
-    create_ledger::CreateLedgerPopup,
-    device::DevicePopup,
-    invite::InviteResultPopup,
-    ledger_settings::LedgerSettingsPopup,
+    PopupAction, PopupOutcome, confirm::ConfirmPopup, create_ledger::CreateLedgerPopup,
+    device::DevicePopup, invite::InviteResultPopup, ledger_settings::LedgerSettingsPopup,
 };
 
 // ---------------------------------------------------------------------------
@@ -457,7 +453,6 @@ async fn handle_editor_key(key: KeyEvent, state: &mut AppState, svc: &Arc<Unbill
             }
             _ => {}
         }
-
     }
 }
 
@@ -496,11 +491,10 @@ async fn try_confirm_editor(state: &mut AppState, svc: &Arc<UnbillService>) {
                 _ => {
                     return {
                         if let Some(e) = state.bill_editor.as_mut() {
-                            e.error = Some(
-                                "Enter a valid positive amount (e.g. 12.50)".to_string(),
-                            );
+                            e.error =
+                                Some("Enter a valid positive amount (e.g. 12.50)".to_string());
                         }
-                    }
+                    };
                 }
             };
 
@@ -561,22 +555,20 @@ async fn try_confirm_editor(state: &mut AppState, svc: &Arc<UnbillService>) {
                 e.error = Some(msg);
             }
         }
-        Ok((ledger_id, bill)) => {
-            match svc.add_bill(&ledger_id, bill).await {
-                Ok(_) => {
-                    state.bill_editor = None;
-                    state.focused_pane = Pane::Bills;
-                    refresh_bills(svc, state).await;
-                    refresh_users(svc, state).await;
-                    refresh_settlement(svc, state).await;
-                }
-                Err(e) => {
-                    if let Some(ed) = state.bill_editor.as_mut() {
-                        ed.error = Some(format!("add bill: {e}"));
-                    }
+        Ok((ledger_id, bill)) => match svc.add_bill(&ledger_id, bill).await {
+            Ok(_) => {
+                state.bill_editor = None;
+                state.focused_pane = Pane::Bills;
+                refresh_bills(svc, state).await;
+                refresh_users(svc, state).await;
+                refresh_settlement(svc, state).await;
+            }
+            Err(e) => {
+                if let Some(ed) = state.bill_editor.as_mut() {
+                    ed.error = Some(format!("add bill: {e}"));
                 }
             }
-        }
+        },
     }
 }
 
@@ -633,6 +625,25 @@ async fn execute_action(action: PopupAction, state: &mut AppState, svc: &Arc<Unb
                 Err(e) => state.status_message = Some(format!("add local user: {e}")),
             }
         }
+
+        PopupAction::ShareLocalUser { user_id } => {
+            match svc.create_local_user_share(&user_id).await {
+                Ok(url) => {
+                    state.popup = Some(Box::new(InviteResultPopup::with_title(
+                        "User Share URL",
+                        url,
+                    )));
+                }
+                Err(e) => state.status_message = Some(format!("share user: {e}")),
+            }
+        }
+
+        PopupAction::ImportLocalUser { url } => match svc.fetch_local_user(&url).await {
+            Ok(_) => {
+                state.status_message = Some("User imported".to_string());
+            }
+            Err(e) => state.status_message = Some(format!("import user: {e}")),
+        },
 
         PopupAction::GenerateInvite { ledger_id } => {
             match svc.create_invitation(&ledger_id).await {
@@ -791,7 +802,11 @@ fn build_amend_editor(ledger_id: String, bill: &Bill, users: Vec<User>) -> BillE
         })
         .collect();
 
-    let amount_str = format!("{}.{:02}", bill.amount_cents / 100, bill.amount_cents.abs() % 100);
+    let amount_str = format!(
+        "{}.{:02}",
+        bill.amount_cents / 100,
+        bill.amount_cents.abs() % 100
+    );
 
     BillEditor {
         ledger_id,

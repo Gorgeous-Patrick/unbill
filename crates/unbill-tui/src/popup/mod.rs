@@ -37,33 +37,16 @@ pub enum PopupOutcome {
 /// Describes the service mutation to perform after a popup confirms.
 #[allow(dead_code)]
 pub enum PopupAction {
-    CreateLedger {
-        name: String,
-        currency: String,
-    },
-    DeleteLedger {
-        ledger_id: String,
-    },
-    AddBill {
-        ledger_id: String,
-        bill: NewBill,
-    },
-    AddUser {
-        ledger_id: String,
-        user: NewUser,
-    },
-    AddLocalUser {
-        display_name: String,
-    },
-    GenerateInvite {
-        ledger_id: String,
-    },
-    JoinLedger {
-        url: String,
-    },
-    SyncOnce {
-        peer_node_id: String,
-    },
+    CreateLedger { name: String, currency: String },
+    DeleteLedger { ledger_id: String },
+    AddBill { ledger_id: String, bill: NewBill },
+    AddUser { ledger_id: String, user: NewUser },
+    AddLocalUser { display_name: String },
+    ShareLocalUser { user_id: String },
+    ImportLocalUser { url: String },
+    GenerateInvite { ledger_id: String },
+    JoinLedger { url: String },
+    SyncOnce { peer_node_id: String },
 }
 
 // ---------------------------------------------------------------------------

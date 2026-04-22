@@ -62,6 +62,8 @@ The device settings popup owns local-only device concerns such as saved users, k
 
 - shows the device ID (read-only)
 - lists saved local users on this device; an add-saved-user action creates a new named user stored only on this device
+- share-user action selects a saved user and generates an `unbill://user/…` URL to hand to another device; the URL is shown in a result overlay
+- import-user action accepts an inbound `unbill://user/…` URL and fetches the user from the originating device, adding them to local saved users
 - sync actions target known peer devices gathered from backend state
 - join-ledger action accepts an inbound `unbill://join/…` URL to import a ledger from a peer device
 - invitation URLs, device labels, and local saved users remain local client concerns

@@ -16,18 +16,26 @@ use super::{PopupOutcome, PopupView, render_popup_base};
 // ---------------------------------------------------------------------------
 
 pub struct InviteResultPopup {
+    title: &'static str,
     url: String,
 }
 
 impl InviteResultPopup {
     pub fn new(url: String) -> Self {
-        Self { url }
+        Self {
+            title: "Invite URL",
+            url,
+        }
+    }
+
+    pub fn with_title(title: &'static str, url: String) -> Self {
+        Self { title, url }
     }
 }
 
 impl PopupView for InviteResultPopup {
     fn title(&self) -> &str {
-        "Invite URL"
+        self.title
     }
 
     fn render(&self, frame: &mut Frame, area: Rect) {

@@ -44,11 +44,8 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
     };
     let settlement_height = (settlement_lines as u16).min(inner.height / 3);
 
-    let split = Layout::vertical([
-        Constraint::Min(0),
-        Constraint::Length(settlement_height),
-    ])
-    .split(inner);
+    let split =
+        Layout::vertical([Constraint::Min(0), Constraint::Length(settlement_height)]).split(inner);
 
     let list_area = split[0];
     let settlement_area = split[1];
@@ -150,11 +147,8 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
                 let to_name = resolve_user_name(&txn.to_user_id, &state.users);
                 let amount_str = format!("${}", format_cents(txn.amount_cents));
                 frame.render_widget(
-                    Paragraph::new(format!(
-                        "  {} → {}  {}",
-                        from_name, to_name, amount_str
-                    ))
-                    .style(Style::default().fg(Color::DarkGray)),
+                    Paragraph::new(format!("  {} → {}  {}", from_name, to_name, amount_str))
+                        .style(Style::default().fg(Color::DarkGray)),
                     Rect {
                         x: settlement_area.x,
                         y: line_y,
@@ -167,7 +161,10 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
     }
 }
 
-fn resolve_user_name(user_id: &unbill_core::model::Ulid, users: &[unbill_core::model::User]) -> String {
+fn resolve_user_name(
+    user_id: &unbill_core::model::Ulid,
+    users: &[unbill_core::model::User],
+) -> String {
     users
         .iter()
         .find(|u| &u.user_id == user_id)

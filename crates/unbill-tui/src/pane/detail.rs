@@ -4,7 +4,7 @@ use ratatui::{
     style::{Color, Modifier, Style},
     widgets::{Block, Paragraph},
 };
-use unbill_core::model::{User, Ulid};
+use unbill_core::model::{Ulid, User};
 
 use crate::app::AppState;
 use crate::pane::Pane;
@@ -52,9 +52,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
         Style::default().fg(Color::DarkGray)
     };
 
-    let block = Block::bordered()
-        .title("Detail")
-        .border_style(border_style);
+    let block = Block::bordered().title("Detail").border_style(border_style);
 
     if let Some(editor) = &state.bill_editor {
         render_editor(frame, area, block, editor);
@@ -93,8 +91,7 @@ fn render_view(frame: &mut Frame, area: Rect, block: Block, state: &AppState) {
         // Combine payers and payees into rows[2] and rows[3].
         // Use rows[2] as a label for payers, rows[3] for the actual content.
         frame.render_widget(
-            Paragraph::new("Payers / Payees:")
-                .style(Style::default().fg(Color::DarkGray)),
+            Paragraph::new("Payers / Payees:").style(Style::default().fg(Color::DarkGray)),
             rows[2],
         );
 
@@ -140,8 +137,7 @@ fn render_view(frame: &mut Frame, area: Rect, block: Block, state: &AppState) {
         }
 
         frame.render_widget(
-            Paragraph::new("[e] amend  [a] new")
-                .style(Style::default().fg(Color::DarkGray)),
+            Paragraph::new("[e] amend  [a] new").style(Style::default().fg(Color::DarkGray)),
             rows[4],
         );
     } else {
@@ -160,14 +156,14 @@ fn render_editor(frame: &mut Frame, area: Rect, block: Block, editor: &BillEdito
 
     let user_count = editor.payers.len().max(1);
     let rows = Layout::vertical([
-        Constraint::Length(1),                     // description
-        Constraint::Length(1),                     // amount
-        Constraint::Length(1),                     // payers label
-        Constraint::Length(user_count as u16),     // payers list
-        Constraint::Length(1),                     // payees label
-        Constraint::Length(user_count as u16),     // payees list
-        Constraint::Length(1),                     // live preview / error
-        Constraint::Length(1),                     // hint
+        Constraint::Length(1),                 // description
+        Constraint::Length(1),                 // amount
+        Constraint::Length(1),                 // payers label
+        Constraint::Length(user_count as u16), // payers list
+        Constraint::Length(1),                 // payees label
+        Constraint::Length(user_count as u16), // payees list
+        Constraint::Length(1),                 // live preview / error
+        Constraint::Length(1),                 // hint
     ])
     .split(inner);
 
@@ -182,8 +178,7 @@ fn render_editor(frame: &mut Frame, area: Rect, block: Block, editor: &BillEdito
     } else {
         Style::default()
     };
-    let desc_cols =
-        Layout::horizontal([Constraint::Length(14), Constraint::Min(0)]).split(rows[0]);
+    let desc_cols = Layout::horizontal([Constraint::Length(14), Constraint::Min(0)]).split(rows[0]);
     frame.render_widget(
         Paragraph::new("Description: ").style(desc_label_style),
         desc_cols[0],
@@ -204,8 +199,7 @@ fn render_editor(frame: &mut Frame, area: Rect, block: Block, editor: &BillEdito
     } else {
         Style::default()
     };
-    let amt_cols =
-        Layout::horizontal([Constraint::Length(14), Constraint::Min(0)]).split(rows[1]);
+    let amt_cols = Layout::horizontal([Constraint::Length(14), Constraint::Min(0)]).split(rows[1]);
     frame.render_widget(
         Paragraph::new("Amount:       ").style(amt_label_style),
         amt_cols[0],
@@ -221,10 +215,7 @@ fn render_editor(frame: &mut Frame, area: Rect, block: Block, editor: &BillEdito
     } else {
         Style::default().fg(Color::DarkGray)
     };
-    frame.render_widget(
-        Paragraph::new("Payers:").style(payers_label_style),
-        rows[2],
-    );
+    frame.render_widget(Paragraph::new("Payers:").style(payers_label_style), rows[2]);
 
     // Payers list.
     for (i, row_data) in editor.payers.iter().enumerate() {
@@ -260,10 +251,7 @@ fn render_editor(frame: &mut Frame, area: Rect, block: Block, editor: &BillEdito
     } else {
         Style::default().fg(Color::DarkGray)
     };
-    frame.render_widget(
-        Paragraph::new("Payees:").style(payees_label_style),
-        rows[4],
-    );
+    frame.render_widget(Paragraph::new("Payees:").style(payees_label_style), rows[4]);
 
     // Payees list.
     for (i, row_data) in editor.payees.iter().enumerate() {
@@ -336,7 +324,12 @@ fn build_preview(editor: &BillEditor) -> String {
         .iter()
         .map(|r| {
             let share = (amount_cents * r.weight as i64) / total_weight as i64;
-            format!("{}: ${}.{:02}", r.user.display_name, share / 100, share.abs() % 100)
+            format!(
+                "{}: ${}.{:02}",
+                r.user.display_name,
+                share / 100,
+                share.abs() % 100
+            )
         })
         .collect();
     parts.join("  ")
