@@ -152,9 +152,8 @@ impl PopupView for SettingsPopup {
         .split(inner);
 
         // Top tab bar
-        let tab_cols =
-            Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(rows[0]);
+        let tab_cols = Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(rows[0]);
 
         let device_style = if self.top_tab == TopTab::Device {
             Style::default().add_modifier(Modifier::REVERSED)
@@ -203,11 +202,11 @@ impl SettingsPopup {
         let saved_box_h = saved_inner_rows + 2;
 
         let rows = Layout::vertical([
-            Constraint::Length(1),          // device ID info line
+            Constraint::Length(1),           // device ID info line
             Constraint::Length(saved_box_h), // saved users box
-            Constraint::Length(3),          // add user box
-            Constraint::Length(3),          // import user box
-            Constraint::Length(3),          // peer sync box
+            Constraint::Length(3),           // add user box
+            Constraint::Length(3),           // import user box
+            Constraint::Length(3),           // peer sync box
             Constraint::Min(0),
         ])
         .split(content);
@@ -221,9 +220,9 @@ impl SettingsPopup {
 
         // Saved Users box
         let share_focused = self.device_field == DeviceField::ShareUser;
-        let saved_block = Block::bordered().title("Saved Users").border_style(
-            focused_border_style(share_focused),
-        );
+        let saved_block = Block::bordered()
+            .title("Saved Users")
+            .border_style(focused_border_style(share_focused));
         let saved_inner = saved_block.inner(rows[1]);
         frame.render_widget(saved_block, rows[1]);
 
@@ -237,7 +236,12 @@ impl SettingsPopup {
                 if i >= saved_inner.height as usize {
                     break;
                 }
-                let row = Rect { x: saved_inner.x, y: saved_inner.y + i as u16, width: saved_inner.width, height: 1 };
+                let row = Rect {
+                    x: saved_inner.x,
+                    y: saved_inner.y + i as u16,
+                    width: saved_inner.width,
+                    height: 1,
+                };
                 let is_cursor = share_focused && i == self.share_cursor;
                 let style = if is_cursor {
                     Style::default().add_modifier(Modifier::REVERSED)
@@ -254,21 +258,27 @@ impl SettingsPopup {
 
         // Add User box
         let add_focused = self.device_field == DeviceField::AddUser;
-        let add_block = Block::bordered().title("Add User").border_style(focused_border_style(add_focused));
+        let add_block = Block::bordered()
+            .title("Add User")
+            .border_style(focused_border_style(add_focused));
         let add_inner = add_block.inner(rows[2]);
         frame.render_widget(add_block, rows[2]);
         render_text_field(frame, add_inner, &self.add_user_input, add_focused);
 
         // Import User box
         let import_focused = self.device_field == DeviceField::ImportUser;
-        let import_block = Block::bordered().title("Import User").border_style(focused_border_style(import_focused));
+        let import_block = Block::bordered()
+            .title("Import User")
+            .border_style(focused_border_style(import_focused));
         let import_inner = import_block.inner(rows[3]);
         frame.render_widget(import_block, rows[3]);
         render_text_field(frame, import_inner, &self.import_user_input, import_focused);
 
         // Peer Sync box
         let peer_focused = self.device_field == DeviceField::PeerSync;
-        let peer_block = Block::bordered().title("Peer Sync").border_style(focused_border_style(peer_focused));
+        let peer_block = Block::bordered()
+            .title("Peer Sync")
+            .border_style(focused_border_style(peer_focused));
         let peer_inner = peer_block.inner(rows[4]);
         frame.render_widget(peer_block, rows[4]);
         render_text_field(frame, peer_inner, &self.peer_input, peer_focused);
@@ -326,18 +336,13 @@ impl SettingsPopup {
                 self.error = None;
                 PopupOutcome::Pending
             }
-            KeyCode::Char('j') | KeyCode::Down
-                if self.device_field == DeviceField::ShareUser =>
-            {
+            KeyCode::Char('j') | KeyCode::Down if self.device_field == DeviceField::ShareUser => {
                 if !self.saved_users.is_empty() {
-                    self.share_cursor =
-                        (self.share_cursor + 1).min(self.saved_users.len() - 1);
+                    self.share_cursor = (self.share_cursor + 1).min(self.saved_users.len() - 1);
                 }
                 PopupOutcome::Pending
             }
-            KeyCode::Char('k') | KeyCode::Up
-                if self.device_field == DeviceField::ShareUser =>
-            {
+            KeyCode::Char('k') | KeyCode::Up if self.device_field == DeviceField::ShareUser => {
                 self.share_cursor = self.share_cursor.saturating_sub(1);
                 PopupOutcome::Pending
             }
@@ -509,8 +514,14 @@ impl SettingsPopup {
         } else {
             Style::default().fg(Color::DarkGray)
         };
-        frame.render_widget(Paragraph::new(" Users ").style(users_style), sub_tab_cols[0]);
-        frame.render_widget(Paragraph::new(" Invite ").style(invite_style), sub_tab_cols[1]);
+        frame.render_widget(
+            Paragraph::new(" Users ").style(users_style),
+            sub_tab_cols[0],
+        );
+        frame.render_widget(
+            Paragraph::new(" Invite ").style(invite_style),
+            sub_tab_cols[1],
+        );
 
         let ledger_users = self
             .ledger_users_map
@@ -530,11 +541,9 @@ impl SettingsPopup {
                     );
                 } else {
                     let half = list_area.height / 2;
-                    let user_rows = Layout::vertical([
-                        Constraint::Length(half.max(1)),
-                        Constraint::Min(0),
-                    ])
-                    .split(list_area);
+                    let user_rows =
+                        Layout::vertical([Constraint::Length(half.max(1)), Constraint::Min(0)])
+                            .split(list_area);
 
                     for (i, user) in ledger_users.iter().enumerate() {
                         if i >= user_rows[0].height as usize {

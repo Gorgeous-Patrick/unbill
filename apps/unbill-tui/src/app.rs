@@ -11,8 +11,11 @@ use crate::pane::Pane;
 use crate::pane::detail::{BillEditor, EditorSection, ParticipantRow};
 use crate::popup::PopupView;
 use crate::popup::{
-    PopupAction, PopupOutcome, confirm::ConfirmPopup, create_ledger::CreateLedgerPopup,
-    invite::InviteResultPopup, settings::{SettingsPopup, TopTab},
+    PopupAction, PopupOutcome,
+    confirm::ConfirmPopup,
+    create_ledger::CreateLedgerPopup,
+    invite::InviteResultPopup,
+    settings::{SettingsPopup, TopTab},
 };
 
 // ---------------------------------------------------------------------------
