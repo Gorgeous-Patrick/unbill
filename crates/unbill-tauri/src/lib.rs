@@ -5,7 +5,6 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 use unbill_core::model::{NewBill, NewUser, NodeId, Share, Ulid};
-use unbill_core::path::UNBILL_PATH;
 use unbill_core::service::{LocalUser, UnbillService};
 use unbill_core::storage::FsStore;
 
@@ -319,10 +318,6 @@ async fn sync_once(
     state.service.sync_once(peer).await.map_err(stringify_error)
 }
 
-fn load_store_root() -> Result<std::path::PathBuf> {
-    UNBILL_PATH.ensure_data_dir()
-}
-
 async fn load_ledgers(service: &Arc<UnbillService>) -> Result<Vec<LedgerSummaryDto>> {
     let metas = service.list_ledgers().await?;
     let mut summaries = Vec::with_capacity(metas.len());
@@ -502,12 +497,14 @@ impl From<unbill_core::model::User> for UserDto {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
-            let root = load_store_root().map_err(|error| -> Box<dyn std::error::Error> {
+            let root = app.path().app_data_dir().map_err(|error| -> Box<dyn std::error::Error> {
                 Box::new(std::io::Error::other(error.to_string()))
             })?;
+            std::fs::create_dir_all(&root)?;
             let store = Arc::new(FsStore::new(root));
             let service = tauri::async_runtime::block_on(UnbillService::open(store)).map_err(
                 |error| -> Box<dyn std::error::Error> {
