@@ -1,8 +1,11 @@
 [package]
 name = "unbill-ui-leptos"
+description = "Leptos web frontend for unbill."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
 console_error_panic_hook = "0.1"

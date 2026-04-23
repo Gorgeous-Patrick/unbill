@@ -1,11 +1,15 @@
 [package]
 name = "unbill-tui"
+description = "Terminal UI for unbill."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [[bin]]
 name = "unbill-tui"
+description = "Terminal UI for unbill."
 path = "src/main.rs"
 
 [dependencies]
