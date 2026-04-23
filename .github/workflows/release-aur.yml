@@ -18,40 +18,28 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        package: [unbill-cli-bin, unbill-tui-bin]
+        include:
+          - package: unbill-cli-bin
+            pkgbuild: .github/aur/unbill-cli-bin/PKGBUILD
+          - package: unbill-tui-bin
+            pkgbuild: .github/aur/unbill-tui-bin/PKGBUILD
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up SSH
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.AUR_SSH_KEY }}
-
-      - name: Add AUR to known hosts
-        run: ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
-
-      - name: Clone AUR package repo
-        run: git clone ssh://aur@aur.archlinux.org/${{ matrix.package }}.git aur-pkg
-
-      - name: Update PKGBUILD
-        working-directory: aur-pkg
+      - name: Update pkgver in PKGBUILD
         run: |
           VERSION="${{ inputs.tag }}"
           VERSION="${VERSION#v}"
-          sed -i "s/^pkgver=.*/pkgver=${VERSION}/" PKGBUILD
-          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
-          updpkgsums
+          sed -i "s/^pkgver=.*/pkgver=${VERSION}/" ${{ matrix.pkgbuild }}
+          sed -i "s/^pkgrel=.*/pkgrel=1/" ${{ matrix.pkgbuild }}
 
-      - name: Regenerate .SRCINFO
-        working-directory: aur-pkg
-        run: makepkg --printsrcinfo > .SRCINFO
-
-      - name: Commit and push
-        working-directory: aur-pkg
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add PKGBUILD .SRCINFO
-          git commit -m "Update to ${{ inputs.tag }}"
-          git push
+      - name: Release ${{ matrix.package }} to AUR
+        uses: jbouter/aur-releaser@v0.0.8
+        with:
+          pkgname: ${{ matrix.package }}
+          pkgbuild: ${{ matrix.pkgbuild }}
+          commit_username: github-actions[bot]
+          commit_email: github-actions[bot]@users.noreply.github.com
+          ssh_private_key: ${{ secrets.AUR_SSH_KEY }}
+          commit_message: Update to ${{ inputs.tag }}
