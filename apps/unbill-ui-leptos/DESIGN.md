@@ -11,14 +11,14 @@ Mode is determined from `window.innerWidth` and updates as the window is resized
 Priority order (first match wins):
 
 1. Bill editor
-2. Ledger Settings (requires an active ledger)
-3. Device Settings
-4. Active ledger
-5. Ledgers list
+2. Active ledger
+3. Ledgers list
+
+The settings popup follows the shared model: full-screen overlay in compact mode, floating overlay in ranger mode.
 
 ## Ranger column assignment
 
-Column one is always the ledgers list. When Device Settings is open it occupies column two and column three renders a placeholder. Otherwise column two shows the active ledger and column three shows the bill editor, Ledger Settings, or a placeholder.
+Column one is always the ledgers list. Column two shows the active ledger. Column three shows the bill editor or a placeholder. The settings popup floats as an overlay above all three columns.
 
 ## Status strip
 
