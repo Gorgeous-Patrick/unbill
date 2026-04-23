@@ -12,7 +12,9 @@ members = [
 version = "0.0.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/patrickli/unbill"
+repository = "https://github.com/unbill-project/unbill"
+homepage = "https://github.com/unbill-project/unbill"
+description = "Shared bill tracking"
 
 [workspace.dependencies]
 # CRDT
