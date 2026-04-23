@@ -3,7 +3,7 @@ use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
-    widgets::Paragraph,
+    widgets::{Block, Paragraph},
 };
 use unbill_core::model::{LedgerMeta, NewUser, User};
 use unbill_core::service::LocalUser;
@@ -198,55 +198,47 @@ impl PopupView for SettingsPopup {
 
 impl SettingsPopup {
     fn render_device_tab(&self, frame: &mut Frame, content: Rect, hint_row: Rect) {
-        let saved_count = self.saved_users.len().max(1) as u16;
+        let saved_inner_rows = self.saved_users.len().max(1) as u16;
+        // Each box: border top + inner rows + border bottom.
+        let saved_box_h = saved_inner_rows + 2;
 
         let rows = Layout::vertical([
-            Constraint::Length(1),           // "Device ID:" label
-            Constraint::Length(1),           // device id value
-            Constraint::Length(1),           // spacer
-            Constraint::Length(1),           // "Saved Users:" label
-            Constraint::Length(saved_count), // saved user list
-            Constraint::Length(1),           // add user input
-            Constraint::Length(1),           // import user input
-            Constraint::Length(1),           // spacer
-            Constraint::Length(1),           // peer sync input
+            Constraint::Length(1),          // device ID info line
+            Constraint::Length(saved_box_h), // saved users box
+            Constraint::Length(3),          // add user box
+            Constraint::Length(3),          // import user box
+            Constraint::Length(3),          // peer sync box
+            Constraint::Min(0),
         ])
         .split(content);
 
+        // Device ID info (no box — read-only)
         frame.render_widget(
-            Paragraph::new("Device ID:").style(Style::default().fg(Color::DarkGray)),
+            Paragraph::new(format!("Device: {}", self.device_id))
+                .style(Style::default().fg(Color::DarkGray)),
             rows[0],
         );
-        frame.render_widget(Paragraph::new(self.device_id.as_str()), rows[1]);
 
-        let users_label_style = if self.device_field == DeviceField::ShareUser {
-            Style::default().fg(Color::Yellow)
-        } else {
-            Style::default().fg(Color::DarkGray)
-        };
-        frame.render_widget(
-            Paragraph::new("Saved Users:").style(users_label_style),
-            rows[3],
+        // Saved Users box
+        let share_focused = self.device_field == DeviceField::ShareUser;
+        let saved_block = Block::bordered().title("Saved Users").border_style(
+            focused_border_style(share_focused),
         );
+        let saved_inner = saved_block.inner(rows[1]);
+        frame.render_widget(saved_block, rows[1]);
 
         if self.saved_users.is_empty() {
             frame.render_widget(
-                Paragraph::new("  none").style(Style::default().fg(Color::DarkGray)),
-                rows[4],
+                Paragraph::new("none").style(Style::default().fg(Color::DarkGray)),
+                saved_inner,
             );
         } else {
             for (i, user) in self.saved_users.iter().enumerate() {
-                if i >= rows[4].height as usize {
+                if i >= saved_inner.height as usize {
                     break;
                 }
-                let row = Rect {
-                    x: rows[4].x,
-                    y: rows[4].y + i as u16,
-                    width: rows[4].width,
-                    height: 1,
-                };
-                let is_cursor =
-                    self.device_field == DeviceField::ShareUser && i == self.share_cursor;
+                let row = Rect { x: saved_inner.x, y: saved_inner.y + i as u16, width: saved_inner.width, height: 1 };
+                let is_cursor = share_focused && i == self.share_cursor;
                 let style = if is_cursor {
                     Style::default().add_modifier(Modifier::REVERSED)
                 } else {
@@ -260,24 +252,26 @@ impl SettingsPopup {
             }
         }
 
-        render_text_field(
-            frame,
-            rows[5],
-            &self.add_user_input,
-            self.device_field == DeviceField::AddUser,
-        );
-        render_text_field(
-            frame,
-            rows[6],
-            &self.import_user_input,
-            self.device_field == DeviceField::ImportUser,
-        );
-        render_text_field(
-            frame,
-            rows[8],
-            &self.peer_input,
-            self.device_field == DeviceField::PeerSync,
-        );
+        // Add User box
+        let add_focused = self.device_field == DeviceField::AddUser;
+        let add_block = Block::bordered().title("Add User").border_style(focused_border_style(add_focused));
+        let add_inner = add_block.inner(rows[2]);
+        frame.render_widget(add_block, rows[2]);
+        render_text_field(frame, add_inner, &self.add_user_input, add_focused);
+
+        // Import User box
+        let import_focused = self.device_field == DeviceField::ImportUser;
+        let import_block = Block::bordered().title("Import User").border_style(focused_border_style(import_focused));
+        let import_inner = import_block.inner(rows[3]);
+        frame.render_widget(import_block, rows[3]);
+        render_text_field(frame, import_inner, &self.import_user_input, import_focused);
+
+        // Peer Sync box
+        let peer_focused = self.device_field == DeviceField::PeerSync;
+        let peer_block = Block::bordered().title("Peer Sync").border_style(focused_border_style(peer_focused));
+        let peer_inner = peer_block.inner(rows[4]);
+        frame.render_widget(peer_block, rows[4]);
+        render_text_field(frame, peer_inner, &self.peer_input, peer_focused);
 
         if let Some(err) = &self.error {
             frame.render_widget(
@@ -286,10 +280,8 @@ impl SettingsPopup {
             );
         } else {
             let hint = match self.device_field {
-                DeviceField::ShareUser => {
-                    "[j/k] move  [Enter] share  [Tab] next tab  [Esc] close"
-                }
-                _ => "[Tab] switch field  [Enter] confirm  [Esc] close",
+                DeviceField::ShareUser => "[j/k] move  [Enter] share  [Tab] next  [Esc] close",
+                _ => "[Tab] switch  [Enter] confirm  [Esc] close",
             };
             frame.render_widget(
                 Paragraph::new(hint).style(Style::default().fg(Color::DarkGray)),
@@ -424,20 +416,29 @@ impl SettingsPopup {
 
 impl SettingsPopup {
     fn render_ledger_tab(&self, frame: &mut Frame, content: Rect, hint_row: Rect) {
-        let selector_height = (self.ledgers.len().max(1) as u16).min(4);
+        let selector_inner_rows = (self.ledgers.len().max(1) as u16).min(4);
+        let selector_box_h = selector_inner_rows + 2;
 
         let sections = Layout::vertical([
-            Constraint::Length(selector_height),
-            Constraint::Length(1), // spacer
-            Constraint::Min(0),    // ledger content
+            Constraint::Length(selector_box_h),
+            Constraint::Min(0), // content box
         ])
         .split(content);
 
-        // Ledger selector
+        let selector_focused = self.ledger_focus == LedgerFocus::Selector;
+        let content_focused = self.ledger_focus == LedgerFocus::Content;
+
+        // Ledger selector box
+        let selector_block = Block::bordered()
+            .title("Ledger")
+            .border_style(focused_border_style(selector_focused));
+        let selector_inner = selector_block.inner(sections[0]);
+        frame.render_widget(selector_block, sections[0]);
+
         if self.ledgers.is_empty() {
             frame.render_widget(
-                Paragraph::new("no ledgers").style(Style::default().fg(Color::DarkGray)),
-                sections[0],
+                Paragraph::new("none").style(Style::default().fg(Color::DarkGray)),
+                selector_inner,
             );
             frame.render_widget(
                 Paragraph::new("[Tab] switch tab  [Esc] close")
@@ -448,17 +449,17 @@ impl SettingsPopup {
         }
 
         for (i, ledger) in self.ledgers.iter().enumerate() {
-            if i >= sections[0].height as usize {
+            if i >= selector_inner.height as usize {
                 break;
             }
             let row = Rect {
-                x: sections[0].x,
-                y: sections[0].y + i as u16,
-                width: sections[0].width,
+                x: selector_inner.x,
+                y: selector_inner.y + i as u16,
+                width: selector_inner.width,
                 height: 1,
             };
             let is_selected = i == self.ledger_cursor;
-            let style = if self.ledger_focus == LedgerFocus::Selector && is_selected {
+            let style = if selector_focused && is_selected {
                 Style::default().add_modifier(Modifier::REVERSED)
             } else if is_selected {
                 Style::default().fg(Color::Yellow)
@@ -472,33 +473,44 @@ impl SettingsPopup {
             );
         }
 
-        // Ledger content area: sub-tab bar + list
-        let content_rows = Layout::vertical([
-            Constraint::Length(1), // sub-tab bar
-            Constraint::Length(1), // spacer
+        // Content box — title shows active sub-tab
+        let content_title = match self.ledger_sub_tab {
+            LedgerSubTab::Users => "Users",
+            LedgerSubTab::Invite => "Invite",
+        };
+        let content_block = Block::bordered()
+            .title(content_title)
+            .border_style(focused_border_style(content_focused));
+        let content_inner = content_block.inner(sections[1]);
+        frame.render_widget(content_block, sections[1]);
+
+        // Sub-tab switcher row inside content box
+        let inner_rows = Layout::vertical([
+            Constraint::Length(1), // sub-tab switcher
             Constraint::Min(0),    // list / action area
         ])
-        .split(sections[2]);
+        .split(content_inner);
 
         let sub_tab_cols =
             Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(content_rows[0]);
+                .split(inner_rows[0]);
 
-        let users_style = if self.ledger_sub_tab == LedgerSubTab::Users {
+        let users_style = if content_focused && self.ledger_sub_tab == LedgerSubTab::Users {
             Style::default().add_modifier(Modifier::REVERSED)
+        } else if self.ledger_sub_tab == LedgerSubTab::Users {
+            Style::default().fg(Color::Yellow)
         } else {
             Style::default().fg(Color::DarkGray)
         };
-        let invite_style = if self.ledger_sub_tab == LedgerSubTab::Invite {
+        let invite_style = if content_focused && self.ledger_sub_tab == LedgerSubTab::Invite {
             Style::default().add_modifier(Modifier::REVERSED)
+        } else if self.ledger_sub_tab == LedgerSubTab::Invite {
+            Style::default().fg(Color::Yellow)
         } else {
             Style::default().fg(Color::DarkGray)
         };
         frame.render_widget(Paragraph::new(" Users ").style(users_style), sub_tab_cols[0]);
-        frame.render_widget(
-            Paragraph::new(" Invite ").style(invite_style),
-            sub_tab_cols[1],
-        );
+        frame.render_widget(Paragraph::new(" Invite ").style(invite_style), sub_tab_cols[1]);
 
         let ledger_users = self
             .ledger_users_map
@@ -506,6 +518,7 @@ impl SettingsPopup {
             .map(|v| v.as_slice())
             .unwrap_or(&[]);
         let addable = self.addable_local_users();
+        let list_area = inner_rows[1];
 
         match self.ledger_sub_tab {
             LedgerSubTab::Users => {
@@ -513,15 +526,15 @@ impl SettingsPopup {
                     frame.render_widget(
                         Paragraph::new("no users in this ledger")
                             .style(Style::default().fg(Color::DarkGray)),
-                        content_rows[2],
+                        list_area,
                     );
                 } else {
-                    let half = content_rows[2].height / 2;
+                    let half = list_area.height / 2;
                     let user_rows = Layout::vertical([
                         Constraint::Length(half.max(1)),
                         Constraint::Min(0),
                     ])
-                    .split(content_rows[2]);
+                    .split(list_area);
 
                     for (i, user) in ledger_users.iter().enumerate() {
                         if i >= user_rows[0].height as usize {
@@ -557,8 +570,7 @@ impl SettingsPopup {
                                 width: user_rows[1].width,
                                 height: 1,
                             };
-                            let is_cursor =
-                                self.ledger_focus == LedgerFocus::Content && i == self.add_cursor;
+                            let is_cursor = content_focused && i == self.add_cursor;
                             let style = if is_cursor {
                                 Style::default().add_modifier(Modifier::REVERSED)
                             } else {
@@ -576,9 +588,9 @@ impl SettingsPopup {
             }
             LedgerSubTab::Invite => {
                 frame.render_widget(
-                    Paragraph::new("Press Enter to generate an invite URL for this ledger.")
+                    Paragraph::new("Press Enter to generate an invite URL.")
                         .style(Style::default().fg(Color::DarkGray)),
-                    content_rows[2],
+                    list_area,
                 );
             }
         }
@@ -589,7 +601,7 @@ impl SettingsPopup {
                 hint_row,
             );
         } else {
-            let hint = if self.ledger_focus == LedgerFocus::Selector {
+            let hint = if selector_focused {
                 "[j/k] select ledger  [Tab] to content  [Esc] close"
             } else {
                 "[j/k] move  [Enter] confirm  [h/l] sub-tab  [Tab] next tab  [Esc] close"
@@ -708,5 +720,17 @@ impl SettingsPopup {
             },
             _ => PopupOutcome::Pending,
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+fn focused_border_style(focused: bool) -> Style {
+    if focused {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default().fg(Color::DarkGray)
     }
 }
