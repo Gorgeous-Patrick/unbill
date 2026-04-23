@@ -229,9 +229,6 @@ async fn handle_ledger_key(key: KeyEvent, state: &mut AppState, svc: &Arc<Unbill
                 )));
             }
         }
-        KeyCode::Char('u') => {
-            open_settings_popup(TopTab::Ledger, state, svc).await;
-        }
         KeyCode::Char('S') => {
             open_settings_popup(TopTab::Device, state, svc).await;
         }
@@ -284,6 +281,9 @@ async fn handle_bills_key(key: KeyEvent, state: &mut AppState, svc: &Arc<UnbillS
                     Err(e) => state.status_message = Some(e.to_string()),
                 }
             }
+        }
+        KeyCode::Char('u') => {
+            open_settings_popup(TopTab::Ledger, state, svc).await;
         }
         _ => {}
     }

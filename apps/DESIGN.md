@@ -40,6 +40,7 @@ The ledger screen shows the effective bills for the selected ledger and the per-
 - renders effective bill DTOs rather than computing projection locally
 - settlement is shown inline below the bill list: minimum transfers to clear the selected ledger's balances
 - opens bill editing from the selected bill context
+- opens the settings popup on the Ledger Settings tab with the current ledger pre-selected
 - opening the settings popup keeps the ledger screen visible behind the overlay
 - using the back action clears the active ledger selection
 
