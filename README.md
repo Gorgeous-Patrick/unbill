@@ -55,6 +55,25 @@ That structure is deliberate. The core owns the rules. Shells adapt the core to 
 
 The repo is design-first and test-first. Non-trivial changes are expected to update the relevant docs and land with tests close to the code they protect.
 
+## Releasing
+
+Releases are managed with `cargo release`. Run from the workspace root.
+
+```sh
+cargo release patch   # 0.1.0 → 0.1.1
+cargo release minor   # 0.1.0 → 0.2.0
+cargo release major   # 0.1.0 → 1.0.0
+cargo release 1.2.3   # exact version
+```
+
+Each command bumps the version in `Cargo.toml` and `tauri.conf.json`, commits the change, creates a `v{version}` tag, and pushes. The version release CI pipeline triggers automatically on the tag push.
+
+Dry run is the default. Pass `--execute` to actually perform the release:
+
+```sh
+cargo release patch --execute
+```
+
 ## Status
 
 The Rust core, CLI, sync layer, Tauri boundary, and Leptos desktop UI exist today.
