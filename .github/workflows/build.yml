@@ -3,6 +3,9 @@ name: Build
 on:
   workflow_call:
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -115,3 +118,66 @@ jobs:
         with:
           name: binaries-tauri-${{ matrix.suffix }}
           path: unbill-${{ matrix.suffix }}.*
+
+  build-android:
+    name: Build Android
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK and SDK components
+        run: sdkmanager "ndk;26.1.10909125" "build-tools;35.0.0" "platforms;android-36"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: android
+
+      - name: Install Trunk
+        uses: jetli/trunk-action@v0.5.0
+        with:
+          version: latest
+
+      - name: Install tauri-cli
+        run: npm install -g @tauri-apps/cli
+
+      - name: Build APK (arm64 + armv7)
+        run: tauri android build --apk --target aarch64 --target armv7
+        working-directory: crates/unbill-tauri
+
+      - name: Build AAB
+        run: tauri android build --aab
+        working-directory: crates/unbill-tauri
+
+      - name: Stage artifacts
+        run: |
+          cp crates/unbill-tauri/gen/android/app/build/outputs/apk/arm64/release/app-arm64-release-unsigned.apk unbill-android-arm64.apk
+          cp crates/unbill-tauri/gen/android/app/build/outputs/apk/arm/release/app-arm-release-unsigned.apk unbill-android-armv7.apk
+          cp crates/unbill-tauri/gen/android/app/build/outputs/bundle/universalRelease/app-universal-release.aab unbill-android.aab
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries-tauri-android-arm64
+          path: unbill-android-arm64.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries-tauri-android-armv7
+          path: unbill-android-armv7.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries-tauri-android
+          path: unbill-android.aab
