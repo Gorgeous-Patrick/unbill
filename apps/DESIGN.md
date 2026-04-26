@@ -85,6 +85,7 @@ The ledger settings tab manages ledger-scoped users and the device invitation fl
 - shows a ledger selector listing all ledgers available on the device; the active ledger from context is pre-selected on open
 - all actions in this tab apply to the currently selected ledger in the selector
 - renders ledger users from the selected ledger
+- renders the peer devices authorized for the selected ledger, with a sync action for each peer
 - add-user action lets the operator pick from device-local saved users to add to the selected ledger
 - creates invitation URLs for the selected ledger only; keeps invitation output in popup state rather than shared ledger state
 

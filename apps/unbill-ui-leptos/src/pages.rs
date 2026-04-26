@@ -297,13 +297,16 @@ pub fn LedgerSettingsPage(
     invitation_url: Option<String>,
     on_back: Callback<()>,
     on_add_user: Callback<()>,
+    on_sync_device: Callback<String>,
     on_create_invitation: Callback<()>,
     on_copy_invitation: Callback<()>,
 ) -> impl IntoView {
+    let sync_devices = detail.devices.clone();
+
     view! {
         <ScreenFrame
             title="Ledger Settings".to_owned()
-            subtitle="Users and invitation flow".to_owned()
+            subtitle="Users, peer devices, and invitation flow".to_owned()
             leading={view! { <TopBarButton label="Back".to_owned() on_press=Callback::new(move |_| on_back.run(())) /> }.into_any()}
         >
             <div class="stack-gap">
@@ -326,6 +329,50 @@ pub fn LedgerSettingsPage(
                             full_width=true
                             on_press=Callback::new(move |_| on_add_user.run(()))
                         />
+                    </div>
+                </SectionCard>
+
+                <SectionCard
+                    kicker="Sync peers".to_owned()
+                    title="Authorized devices".to_owned()
+                    description="Devices authorized for this ledger can exchange ledger changes.".to_owned()
+                >
+                    <div class="stack-gap">
+                        {if sync_devices.is_empty() {
+                            view! {
+                                <div class="empty-copy">
+                                    "No peer devices are authorized for this ledger yet."
+                                </div>
+                            }
+                                .into_any()
+                        } else {
+                            sync_devices
+                                .into_iter()
+                                .map(|device| {
+                                    let node_id = device.node_id.clone();
+                                    let title = if device.label.trim().is_empty() {
+                                        "Unnamed device".to_owned()
+                                    } else {
+                                        device.label
+                                    };
+                                    view! {
+                                        <div class="sync-device-row">
+                                            <div class="row-copy">
+                                                <p class="row-title">{title}</p>
+                                                <p class="row-meta">{node_id.clone()}</p>
+                                                <p class="row-detail">"Authorized for this ledger"</p>
+                                            </div>
+                                            <ActionButton
+                                                label="Sync".to_owned()
+                                                tone=ButtonTone::Quiet
+                                                on_press=Callback::new(move |_| on_sync_device.run(node_id.clone()))
+                                            />
+                                        </div>
+                                    }
+                                })
+                                .collect_view()
+                                .into_any()
+                        }}
                     </div>
                 </SectionCard>
 
