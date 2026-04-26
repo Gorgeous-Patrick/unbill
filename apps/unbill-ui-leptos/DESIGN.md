@@ -23,3 +23,7 @@ Column one is always the ledgers list. Column two shows the bills view. Column t
 ## Status strip
 
 A fixed strip above all content shows the latest status or error message and a "Working" chip while any async operation is in flight. Hidden when idle.
+
+## Ledger sync actions
+
+Ledger detail data includes the peer devices authorized for that ledger. The Ledger Settings page renders those peers in a ledger-scoped sync section so operators can trigger one-shot sync without leaving the ledger context. The button calls the shared sync action by peer device ID, then refreshes bootstrap state and the selected ledger detail.

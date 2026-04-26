@@ -389,6 +389,7 @@ pub fn App() -> impl IntoView {
                         invitation_url=invitation_url.get()
                         on_back=Callback::new(move |_| ledger_settings_open.set(false))
                         on_add_user=Callback::new(move |_| overlay.set(Some(OverlayKind::AddUser)))
+                        on_sync_device=Callback::new(sync_device)
                         on_create_invitation=Callback::new(move |_| create_invitation())
                         on_copy_invitation=Callback::new(move |_| copy_invitation_url())
                     />
@@ -528,6 +529,7 @@ pub fn App() -> impl IntoView {
                         invitation_url=invitation_url.get()
                         on_back=Callback::new(move |_| ledger_settings_open.set(false))
                         on_add_user=Callback::new(move |_| overlay.set(Some(OverlayKind::AddUser)))
+                        on_sync_device=Callback::new(sync_device)
                         on_create_invitation=Callback::new(move |_| create_invitation())
                         on_copy_invitation=Callback::new(move |_| copy_invitation_url())
                     />
