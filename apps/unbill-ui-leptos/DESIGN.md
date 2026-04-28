@@ -11,8 +11,8 @@ Mode is determined from `window.innerWidth` and updates as the window is resized
 Priority order (first match wins):
 
 1. Detail
-2. Bills
-3. Ledgers
+1. Bills
+1. Ledgers
 
 The settings popup follows the shared model: full-screen overlay in compact mode, floating overlay in ranger mode.
 

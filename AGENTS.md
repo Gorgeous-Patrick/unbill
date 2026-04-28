@@ -5,9 +5,9 @@
 Every non-trivial piece of functionality begins with a design document, not code. The order is:
 
 1. Write or update DESIGN.md (and IMPLEMENTATION.md if needed) before any production code.
-2. Write failing tests before implementing.
-3. Implement until tests pass.
-4. Refactor with tests as a safety net.
+1. Write failing tests before implementing.
+1. Implement until tests pass.
+1. Refactor with tests as a safety net.
 
 No production code ships without a prior failing test. Exceptions are type definitions, `todo!` stubs, and module declarations.
 
@@ -18,11 +18,12 @@ Tests are written before or alongside implementation, never after. Co-locate tes
 **Test names describe behavior, not implementation.** `test_settlement_balances_to_zero` not `test_compute_settlement`.
 
 Priority order for writing tests:
+
 1. Pure functions with no I/O (settlement, projection logic) — easiest to specify and verify.
-2. Storage layer — save/load/compact round-trips with `InMemoryStore`.
-3. CRDT operations — convergence after arbitrary operation interleavings, using `proptest`.
-4. Sync protocol — in-process channels simulating the network; no real Iroh endpoints.
-5. CLI end-to-end — shell scripts in `tests/e2e/` against real temp directories.
+1. Storage layer — save/load/compact round-trips with `InMemoryStore`.
+1. CRDT operations — convergence after arbitrary operation interleavings, using `proptest`.
+1. Sync protocol — in-process channels simulating the network; no real Iroh endpoints.
+1. CLI end-to-end — shell scripts in `tests/e2e/` against real temp directories.
 
 ## Documentation rules
 

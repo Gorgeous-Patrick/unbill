@@ -68,4 +68,3 @@ opt-level = "z"  # Optimize for size.
 [profile.release.package.unbill-cli]
 strip = true  # Automatically strip symbols from the binary.
 opt-level = "z"  # Optimize for size.
-

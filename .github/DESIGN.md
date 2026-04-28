@@ -11,7 +11,7 @@ This document describes the design of the CI/CD pipeline for the unbill project.
 - **Consistent artifact naming.** All release artifacts follow the pattern `unbill-{component}-{platform}` or `unbill-{platform}.{ext}` so that downstream consumers (package managers, release jobs) can predict filenames without inspecting the build output.
 - **Two release tracks.** Nightly builds provide continuous access to the latest development state. Version releases are stable, manually triggered via `cargo release`.
 
----
+______________________________________________________________________
 
 ## Workflows
 
@@ -27,7 +27,7 @@ It runs three independent checks in parallel:
 
 **Test suite.** Runs the full test suite for the core library and CLI packages.
 
----
+______________________________________________________________________
 
 ### Build (`build.yml`)
 
@@ -41,26 +41,28 @@ It runs two independent job groups in parallel:
 
 All artifacts are uploaded to the GitHub Actions artifact store under names beginning with `binaries-`, grouped by platform and component. They are consumed by the release workflow in the same pipeline run.
 
----
+______________________________________________________________________
 
 ### Release (`release.yml`)
 
 A reusable workflow that publishes a release given a set of pre-built artifacts. It is called by both the nightly and version release entry points, which pass different parameters to control which distribution channels are targeted.
 
 **Inputs:**
+
 - `tag` — the git tag name to associate with the release
 - `prerelease` — whether to mark the release as a pre-release on GitHub
 - `body` — the release description text
 - `aur_packages` — a JSON array of AUR package names to publish; an empty array skips AUR distribution entirely
 
 **Secrets:**
+
 - `AUR_SSH_KEY` — the SSH private key used to authenticate with the AUR git server
 
 **GitHub release job.** Downloads all artifacts from the current pipeline run, merges them into a single directory, and creates or updates a GitHub release with the given tag. All files matching `unbill-*` are attached. For version releases, the release is marked as the latest. For nightly releases, it is marked as a pre-release.
 
 **AUR release job.** Runs in parallel with the GitHub release job, conditionally on the `aur_packages` input being populated. Delegates to `release-aur.yml`.
 
----
+______________________________________________________________________
 
 ### Release AUR (`release-aur.yml`)
 
@@ -70,7 +72,7 @@ For each package, it updates the `pkgver` field in the corresponding PKGBUILD (s
 
 The PKGBUILD files live inside the main repository rather than in separate AUR repositories, so version tracking and package definitions stay in sync with the source.
 
----
+______________________________________________________________________
 
 ### Nightly (`nightly.yml`)
 
@@ -84,7 +86,7 @@ It runs three sequential stages:
 
 **Release.** Calls `release.yml` with the generated tag, marked as a pre-release, with all six nightly AUR packages targeted: `unbill-cli-nightly-bin`, `unbill-tui-nightly-bin`, and `unbill-nightly-bin`.
 
----
+______________________________________________________________________
 
 ### Version Release (`version.yml`)
 
@@ -96,7 +98,7 @@ It runs two sequential stages:
 
 **Release.** Calls `release.yml` with the pushed tag, marked as a stable release (not a pre-release, and marked as the latest), targeting the three stable AUR packages: `unbill-cli-bin`, `unbill-tui-bin`, and `unbill-bin`.
 
----
+______________________________________________________________________
 
 ## AUR Packages
 
@@ -110,7 +112,7 @@ The CLI and TUI packages download a raw binary and install it directly. The desk
 
 All PKGBUILDs use a `_tag` variable to reconstruct the original hyphenated tag from the dot-separated `pkgver`, because the download URL on GitHub uses the original tag format while `pkgver` requires dots.
 
----
+______________________________________________________________________
 
 ## Artifact Naming Convention
 
@@ -126,7 +128,7 @@ All release artifacts follow a predictable naming scheme so that package manager
 
 Platform suffixes are `linux-x86_64`, `macos-aarch64`, and `windows-x86_64`.
 
----
+______________________________________________________________________
 
 ## Secrets
 
@@ -134,7 +136,7 @@ Platform suffixes are `linux-x86_64`, `macos-aarch64`, and `windows-x86_64`.
 |---|---|---|
 | `AUR_SSH_KEY` | `release-aur.yml` | SSH private key for the AUR account that owns the AUR packages |
 
----
+______________________________________________________________________
 
 ## Version Management
 
