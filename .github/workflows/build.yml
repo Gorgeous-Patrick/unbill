@@ -152,10 +152,8 @@ jobs:
         with:
           version: latest
 
-      - uses: cargo-bins/cargo-binstall@main
-
       - name: Install tauri-cli
-        run: cargo binstall tauri-cli --locked -y
+        run: cargo install tauri-cli --locked
 
       - name: Initialize Android project
         run: cargo tauri android init
