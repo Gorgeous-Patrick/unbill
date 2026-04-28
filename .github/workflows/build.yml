@@ -170,7 +170,7 @@ jobs:
 
       - name: Stage artifacts
         run: |
-          find crates/unbill-tauri/gen/android/app/build/outputs/apk -name "*.apk" | while read apk; do
+          find crates/unbill-tauri/gen/android/app/build/outputs/apk -name "*.apk" | while read -r apk; do
             flavor=$(echo "$apk" | sed 's|.*/apk/||; s|/.*||')
             cp "$apk" "unbill-android-${flavor}.apk"
           done
