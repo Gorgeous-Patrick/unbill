@@ -23,10 +23,10 @@ After sync, A is superseded. B and C are both effective and in conflict.
 Detection uses a Union-Find over all bill IDs, applied to the full bill list (not just effective bills).
 
 1. Initialize each bill ID as its own component.
-2. For each bill, union it with every ID in its `prev` list.
-3. Collect the effective bill set.
-4. Group effective bills by their Union-Find root.
-5. Every group with two or more members is a `ConflictGroup`.
+1. For each bill, union it with every ID in its `prev` list.
+1. Collect the effective bill set.
+1. Group effective bills by their Union-Find root.
+1. Every group with two or more members is a `ConflictGroup`.
 
 Bills outside any conflict group have exactly one effective bill in their component.
 
