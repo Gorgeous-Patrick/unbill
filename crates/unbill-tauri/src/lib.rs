@@ -5,7 +5,6 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 use unbill_core::model::{NewBill, NewUser, NodeId, Share, Ulid};
-use unbill_core::path::UNBILL_PATH;
 use unbill_core::service::{LocalUser, UnbillService};
 use unbill_core::storage::FsStore;
 
@@ -39,6 +38,7 @@ struct LedgerSummaryDto {
 struct LedgerDetailDto {
     summary: LedgerSummaryDto,
     users: Vec<UserDto>,
+    devices: Vec<SyncDeviceDto>,
     bills: Vec<BillDto>,
     settlement: Vec<TransactionDto>,
 }
@@ -322,10 +322,6 @@ async fn sync_once(
     state.service.sync_once(peer).await.map_err(stringify_error)
 }
 
-fn load_store_root() -> Result<std::path::PathBuf> {
-    UNBILL_PATH.ensure_data_dir()
-}
-
 async fn load_ledgers(service: &Arc<UnbillService>) -> Result<Vec<LedgerSummaryDto>> {
     let metas = service.list_ledgers().await?;
     let mut summaries = Vec::with_capacity(metas.len());
@@ -343,20 +339,20 @@ async fn load_sync_devices(service: &Arc<UnbillService>) -> Result<Vec<SyncDevic
     for meta in service.list_ledgers().await? {
         let ledger_id = meta.ledger_id.to_string();
         let ledger_name = meta.name.clone();
-        for device in service.list_devices(&ledger_id).await? {
-            let node_id = device.node_id.to_string();
-            if node_id == local_node_id {
-                continue;
-            }
-
+        for device in load_sync_devices_for_ledger(
+            service,
+            &ledger_id,
+            &ledger_name,
+            &local_node_id,
+            &device_labels,
+        )
+        .await?
+        {
             let entry = by_node_id
-                .entry(node_id.clone())
+                .entry(device.node_id.clone())
                 .or_insert_with(|| SyncDeviceDto {
-                    node_id,
-                    label: device_labels
-                        .get(&device.node_id.to_string())
-                        .cloned()
-                        .unwrap_or_default(),
+                    node_id: device.node_id,
+                    label: device.label,
                     ledger_names: Vec::new(),
                 });
             if !entry.ledger_names.iter().any(|name| name == &ledger_name) {
@@ -366,6 +362,40 @@ async fn load_sync_devices(service: &Arc<UnbillService>) -> Result<Vec<SyncDevic
     }
 
     let mut devices = by_node_id.into_values().collect::<Vec<_>>();
+    devices.sort_by(|left, right| {
+        left.label
+            .to_lowercase()
+            .cmp(&right.label.to_lowercase())
+            .then_with(|| left.node_id.cmp(&right.node_id))
+    });
+    Ok(devices)
+}
+
+async fn load_sync_devices_for_ledger(
+    service: &Arc<UnbillService>,
+    ledger_id: &str,
+    ledger_name: &str,
+    local_node_id: &str,
+    device_labels: &std::collections::HashMap<String, String>,
+) -> Result<Vec<SyncDeviceDto>> {
+    let mut devices = service
+        .list_devices(ledger_id)
+        .await?
+        .into_iter()
+        .filter_map(|device| {
+            let node_id = device.node_id.to_string();
+            if node_id == local_node_id {
+                return None;
+            }
+
+            Some(SyncDeviceDto {
+                label: device_labels.get(&node_id).cloned().unwrap_or_default(),
+                node_id,
+                ledger_names: vec![ledger_name.to_owned()],
+            })
+        })
+        .collect::<Vec<_>>();
+
     devices.sort_by(|left, right| {
         left.label
             .to_lowercase()
@@ -387,6 +417,16 @@ async fn load_ledger_detail_inner(
         .with_context(|| format!("ledger {ledger_id} not found"))?;
 
     let summary = summarize_ledger(service, meta).await?;
+    let local_node_id = service.device_id().to_string();
+    let device_labels = service.list_device_labels().await?;
+    let devices = load_sync_devices_for_ledger(
+        service,
+        ledger_id,
+        &summary.name,
+        &local_node_id,
+        &device_labels,
+    )
+    .await?;
     let users = service.list_users(ledger_id).await?;
     let bills = service.list_bills(ledger_id).await?;
 
@@ -419,6 +459,7 @@ async fn load_ledger_detail_inner(
     Ok(LedgerDetailDto {
         summary,
         users: user_dtos,
+        devices,
         bills: bill_dtos,
         settlement,
     })
@@ -505,12 +546,17 @@ impl From<unbill_core::model::User> for UserDto {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
-            let root = load_store_root().map_err(|error| -> Box<dyn std::error::Error> {
-                Box::new(std::io::Error::other(error.to_string()))
-            })?;
+            let root =
+                app.path()
+                    .app_data_dir()
+                    .map_err(|error| -> Box<dyn std::error::Error> {
+                        Box::new(std::io::Error::other(error.to_string()))
+                    })?;
+            std::fs::create_dir_all(&root)?;
             let store = Arc::new(FsStore::new(root));
             let service = tauri::async_runtime::block_on(UnbillService::open(store)).map_err(
                 |error| -> Box<dyn std::error::Error> {
@@ -545,7 +591,12 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use serde_json::Value;
+    use unbill_core::model::NewDevice;
+    use unbill_core::service::UnbillService;
+    use unbill_core::storage::InMemoryStore;
 
     fn tauri_config() -> Value {
         serde_json::from_str(include_str!("../tauri.conf.json"))
@@ -587,5 +638,56 @@ mod tests {
 
         assert_eq!(main_window["title"].as_str(), Some("unbill"));
         assert!(main_window["visible"].as_bool().unwrap_or(true));
+    }
+
+    #[tokio::test]
+    async fn ledger_detail_includes_sync_devices_for_selected_ledger() {
+        let host = UnbillService::open(Arc::new(InMemoryStore::default()))
+            .await
+            .unwrap();
+        let kitchen = UnbillService::open(Arc::new(InMemoryStore::default()))
+            .await
+            .unwrap();
+        let travel = UnbillService::open(Arc::new(InMemoryStore::default()))
+            .await
+            .unwrap();
+
+        let groceries = host
+            .create_ledger("Groceries".to_owned(), "USD".to_owned())
+            .await
+            .unwrap();
+        let trip = host
+            .create_ledger("Trip".to_owned(), "USD".to_owned())
+            .await
+            .unwrap();
+
+        host.add_device(
+            &groceries,
+            NewDevice {
+                node_id: kitchen.device_id(),
+            },
+        )
+        .await
+        .unwrap();
+        host.add_device(
+            &trip,
+            NewDevice {
+                node_id: travel.device_id(),
+            },
+        )
+        .await
+        .unwrap();
+        host.set_device_label(kitchen.device_id(), "Kitchen iPad".to_owned())
+            .await
+            .unwrap();
+
+        let detail = super::load_ledger_detail_inner(&host, &groceries)
+            .await
+            .unwrap();
+
+        assert_eq!(detail.devices.len(), 1);
+        assert_eq!(detail.devices[0].node_id, kitchen.device_id().to_string());
+        assert_eq!(detail.devices[0].label, "Kitchen iPad");
+        assert_eq!(detail.devices[0].ledger_names, vec!["Groceries"]);
     }
 }

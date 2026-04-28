@@ -42,6 +42,7 @@ pub struct LedgerSummary {
 pub struct LedgerDetail {
     pub summary: LedgerSummary,
     pub users: Vec<User>,
+    pub devices: Vec<SyncDevice>,
     pub bills: Vec<Bill>,
     pub settlement: Vec<Transaction>,
 }
