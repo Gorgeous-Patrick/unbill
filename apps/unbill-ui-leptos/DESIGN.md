@@ -10,15 +10,15 @@ Mode is determined from `window.innerWidth` and updates as the window is resized
 
 Priority order (first match wins):
 
-1. Detail
-1. Bills
-1. Ledgers
+1. Bill editor
+1. Active ledger
+1. Ledgers list
 
 The settings popup follows the shared model: full-screen overlay in compact mode, floating overlay in ranger mode.
 
 ## Ranger column assignment
 
-Column one is always the ledgers list. Column two shows the bills view. Column three shows the detail view or a placeholder. The settings popup floats as an overlay above all three columns.
+Column one is always the ledgers list. Column two shows the active ledger. Column three shows the bill editor or a placeholder. The settings popup floats as an overlay above all three columns.
 
 ## Status strip
 
