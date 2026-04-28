@@ -80,6 +80,7 @@ in
     pkgs.cargo-release
     pkgs.trunk
     pkgs.llvmPackages.bintools
+    pkgs.prek
   ] ++ lib.optionals pkgs.stdenv.isLinux [
     # GTK/WebKit dependencies only needed on Linux
     # macOS uses native WebKit framework

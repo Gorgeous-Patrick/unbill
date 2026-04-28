@@ -48,8 +48,8 @@ status_message: Option<String>
 The main loop runs in a single tokio task and selects across three concurrent streams:
 
 1. **Terminal events** — crossterm key and resize events via `EventStream`.
-2. **Service events** — `broadcast::Receiver<ServiceEvent>` from `UnbillService::subscribe()`. A `LedgerUpdated` event refreshes bills, users, and settlement.
-3. **Render tick** — a 16 ms interval (~60 fps) that triggers a redraw unconditionally.
+1. **Service events** — `broadcast::Receiver<ServiceEvent>` from `UnbillService::subscribe()`. A `LedgerUpdated` event refreshes bills, users, and settlement.
+1. **Render tick** — a 16 ms interval (~60 fps) that triggers a redraw unconditionally.
 
 Key events are routed first to the active popup (if any), then to the bill editor (if active and Detail pane is focused), then to the focused pane.
 

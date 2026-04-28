@@ -24,7 +24,7 @@ All CI/CD configuration lives under `.github/`:
 │   └── unbill-nightly-bin/PKGBUILD  # Nightly desktop AUR package definition
 ```
 
----
+______________________________________________________________________
 
 ## Workflow Relationships
 
@@ -42,7 +42,7 @@ version.yml ──► build.yml
 
 Build always completes before release. Within the release workflow, the GitHub release job and the AUR job run in parallel.
 
----
+______________________________________________________________________
 
 ## CI Workflow (`ci.yml`)
 
@@ -50,7 +50,7 @@ Triggered on pushes to `main` and pull requests targeting `main`. Three jobs run
 
 The `RUSTFLAGS: "-D warnings"` environment variable is set at the workflow level so that both `clippy` and `test` jobs treat warnings as errors.
 
----
+______________________________________________________________________
 
 ## Build Workflow (`build.yml`)
 
@@ -76,7 +76,7 @@ The `tauri-apps/tauri-action` action is invoked with `projectPath` set to `crate
 
 The action exposes an `artifactPaths` output containing a JSON array of all produced bundle paths. A shell script iterates this array, extracts each file extension, and renames the file to `unbill-{platform}.{ext}`. The `tr -d '\r'` step strips Windows carriage returns from the `jq` output. Renamed artifacts are uploaded as `binaries-tauri-{platform}`.
 
----
+______________________________________________________________________
 
 ## Release Workflow (`release.yml`)
 
@@ -88,7 +88,7 @@ Downloads all artifacts from the current workflow run using `actions/download-ar
 
 Conditionally runs when `aur_packages` is a non-empty JSON array. Calls `release-aur.yml` passing the tag and packages array. Secrets propagate via `secrets: inherit`. The `AUR_SSH_KEY` secret is also explicitly declared in the `workflow_call` secrets block to ensure it propagates through the nested call chain.
 
----
+______________________________________________________________________
 
 ## Release AUR Workflow (`release-aur.yml`)
 
@@ -98,7 +98,7 @@ For each package, the version is derived from the tag in two steps: the `v` pref
 
 The `jbouter/aur-releaser` action is then invoked. It creates a builder user, sets up the SSH key from `secrets.AUR_SSH_KEY`, adds AUR to known hosts using key types `rsa`, `ecdsa`, and `ed25519`, clones the package's AUR git repository, copies the updated PKGBUILD, runs `makepkg --printsrcinfo` to regenerate the `.SRCINFO` file, commits with the provided message, and pushes to AUR.
 
----
+______________________________________________________________________
 
 ## AUR Package Definitions
 
@@ -120,7 +120,7 @@ The desktop packages declare runtime dependencies on the GTK and WebKit librarie
 
 Nightly desktop and CLI/TUI packages declare `provides` and `conflicts` fields so that the nightly and stable variants of each tool are mutually exclusive — only one can be installed at a time.
 
----
+______________________________________________________________________
 
 ## Version Management Implementation
 
@@ -128,7 +128,7 @@ Nightly desktop and CLI/TUI packages declare `provides` and `conflicts` fields s
 
 The workspace version is defined once in `[workspace.package]` in `Cargo.toml`. All member crates inherit it via `version.workspace = true`. The `tauri.conf.json` version is kept in sync by `release-please-config.json`, which specifies it as an extra file with a JSONPath selector pointing to the top-level `version` field.
 
----
+______________________________________________________________________
 
 ## Secrets Reference
 

@@ -1,0 +1,33 @@
+[[repos]]
+repo = "https://github.com/pre-commit/pre-commit-hooks"
+rev = "v6.0.0"
+hooks = [
+  { id = "check-yaml" },
+  { id = "check-toml" },
+  { id = "check-merge-conflict" },
+  { id = "end-of-file-fixer" },
+  { id = "trailing-whitespace" },
+  { id = "mixed-line-ending", args = ["--fix=lf"] },
+]
+
+[[repos]]
+repo = "https://github.com/doublify/pre-commit-rust"
+rev = "v1.0"
+hooks = [
+  { id = "fmt", args = ["--all", "--"] },
+  { id = "clippy", args = ["--all-targets", "--all-features", "--", "-D", "warnings"] },
+]
+
+[[repos]]
+repo = "https://github.com/hukkin/mdformat"
+rev = "0.7.22"
+hooks = [
+  { id = "mdformat" },
+]
+
+[[repos]]
+repo = "https://github.com/rhysd/actionlint"
+rev = "v1.7.7"
+hooks = [
+  { id = "actionlint" },
+]
