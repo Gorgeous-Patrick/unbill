@@ -11,16 +11,19 @@ env:
   RUSTFLAGS: "-D warnings"
 
 jobs:
-  fmt:
-    name: Format
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt
-      - name: cargo fmt --check
-        run: cargo fmt --all -- --check
+          components: rustfmt,clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Install prek
+        run: cargo install prek
+      - name: prek run --all-files
+        run: prek run --all-files
 
   clippy:
     name: Clippy
