@@ -146,23 +146,13 @@ pub enum BillCmd {
 
 #[derive(clap::Subcommand)]
 pub enum UserCmd {
-    /// Create a fresh saved user (new user ID + display name) on this device.
-    Create { display_name: String },
-    /// Import an existing saved user from another device via an unbill://user/... URL.
-    Import { url: String },
-    List {
-        /// When provided, list users in this ledger instead of device-local saved users.
+    /// Create a new user and add them to a ledger.
+    Create {
         #[arg(long)]
-        ledger_id: Option<String>,
+        ledger_id: String,
+        display_name: String,
     },
-    /// Generate an unbill://user/... URL to share a specific saved user with another device.
-    Share {
-        #[arg(long)]
-        user_id: String,
-    },
-    /// Delete a saved user from this device's local storage.
-    Delete { user_id: String },
-    /// Add a user directly to a ledger by user ID and display name.
+    /// Add an existing user (by ID and name) to a ledger.
     Add {
         #[arg(long)]
         ledger_id: String,
@@ -170,6 +160,11 @@ pub enum UserCmd {
         user_id: String,
         #[arg(long)]
         name: String,
+    },
+    /// List users. Without --ledger-id, lists all unique users across every ledger on this device.
+    List {
+        #[arg(long)]
+        ledger_id: Option<String>,
     },
 }
 
@@ -274,21 +269,19 @@ async fn run() -> anyhow::Result<()> {
             }
         },
         Command::User { sub } => match sub {
-            UserCmd::Create { display_name } => {
-                commands::local_user_create(&svc, display_name, json).await
-            }
-            UserCmd::Import { url } => commands::local_user_import(&svc, url).await,
-            UserCmd::List { ledger_id } => match ledger_id {
-                Some(ledger_id) => commands::ledger_user_list(&svc, &ledger_id, json).await,
-                None => commands::local_user_list(&svc, json).await,
-            },
-            UserCmd::Share { user_id } => commands::local_user_share(&svc, &user_id, json).await,
-            UserCmd::Delete { user_id } => commands::local_user_remove(&svc, &user_id).await,
+            UserCmd::Create {
+                ledger_id,
+                display_name,
+            } => commands::user_create(&svc, &ledger_id, display_name, json).await,
             UserCmd::Add {
                 ledger_id,
                 user_id,
                 name,
             } => commands::ledger_user_add(&svc, &ledger_id, &user_id, name).await,
+            UserCmd::List { ledger_id } => match ledger_id {
+                Some(ledger_id) => commands::ledger_user_list(&svc, &ledger_id, json).await,
+                None => commands::all_user_list(&svc, json).await,
+            },
         },
         Command::Sync { sub } => match sub {
             SyncCmd::Once { peer_node_id } => commands::sync_once(&svc, &peer_node_id).await,

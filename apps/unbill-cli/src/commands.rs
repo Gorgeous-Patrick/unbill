@@ -18,7 +18,7 @@ fn parse_ulid(s: &str) -> anyhow::Result<Ulid> {
 }
 
 // ---------------------------------------------------------------------------
-// Init / local users
+// Init
 // ---------------------------------------------------------------------------
 
 pub async fn init(svc: &UnbillService, json: bool) -> anyhow::Result<()> {
@@ -28,56 +28,6 @@ pub async fn init(svc: &UnbillService, json: bool) -> anyhow::Result<()> {
     } else {
         println!("device ID: {id}");
     }
-    Ok(())
-}
-
-pub async fn local_user_create(
-    svc: &UnbillService,
-    display_name: String,
-    json: bool,
-) -> anyhow::Result<()> {
-    let local_user = svc.add_local_user(display_name).await?;
-    if json {
-        print_json(&serde_json::json!({
-            "user_id": local_user.user_id.to_string(),
-            "display_name": local_user.display_name,
-        }))?;
-    } else {
-        println!("user ID:  {}", local_user.user_id);
-        println!("name:     {}", local_user.display_name);
-    }
-    Ok(())
-}
-
-pub async fn local_user_list(svc: &UnbillService, json: bool) -> anyhow::Result<()> {
-    let local_users = svc.list_local_users().await?;
-    if json {
-        let out: Vec<_> = local_users
-            .iter()
-            .map(|local_user| {
-                serde_json::json!({
-                    "user_id": local_user.user_id.to_string(),
-                    "display_name": local_user.display_name,
-                })
-            })
-            .collect();
-        print_json(&out)?;
-    } else {
-        if local_users.is_empty() {
-            println!("no saved users");
-            return Ok(());
-        }
-        for local_user in &local_users {
-            println!("{:26}  {}", local_user.user_id, local_user.display_name);
-        }
-    }
-    Ok(())
-}
-
-pub async fn local_user_remove(svc: &UnbillService, user_id: &str) -> anyhow::Result<()> {
-    let uid = parse_ulid(user_id)?;
-    svc.remove_local_user(uid).await?;
-    println!("removed saved user {user_id}");
     Ok(())
 }
 
@@ -295,6 +245,38 @@ pub async fn bill_amend(
 // Users
 // ---------------------------------------------------------------------------
 
+pub async fn user_create(
+    svc: &UnbillService,
+    ledger_id: &str,
+    display_name: String,
+    json: bool,
+) -> anyhow::Result<()> {
+    let user = svc.create_user(ledger_id, display_name).await?;
+    if json {
+        print_json(&user_out(&user))?;
+    } else {
+        println!("user ID:  {}", user.user_id);
+        println!("name:     {}", user.display_name);
+    }
+    Ok(())
+}
+
+pub async fn all_user_list(svc: &UnbillService, json: bool) -> anyhow::Result<()> {
+    let users = svc.list_all_users().await?;
+    if json {
+        print_json(&users.iter().map(user_out).collect::<Vec<_>>())?;
+    } else {
+        if users.is_empty() {
+            println!("no users");
+            return Ok(());
+        }
+        for user in &users {
+            println!("{:26}  {}", user.user_id, user.display_name);
+        }
+    }
+    Ok(())
+}
+
 pub async fn ledger_user_add(
     svc: &UnbillService,
     ledger_id: &str,
@@ -371,29 +353,6 @@ pub async fn ledger_invite(
     json: bool,
 ) -> anyhow::Result<()> {
     let url = svc.create_invitation(ledger_id).await?;
-    if json {
-        print_json(&serde_json::json!({ "url": url }))?;
-    } else {
-        println!("{url}");
-    }
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// Local user share
-// ---------------------------------------------------------------------------
-
-pub async fn local_user_import(svc: &Arc<UnbillService>, url: String) -> anyhow::Result<()> {
-    svc.fetch_local_user(&url).await?;
-    Ok(())
-}
-
-pub async fn local_user_share(
-    svc: &Arc<UnbillService>,
-    user_id: &str,
-    json: bool,
-) -> anyhow::Result<()> {
-    let url = svc.create_local_user_share(user_id).await?;
     if json {
         print_json(&serde_json::json!({ "url": url }))?;
     } else {

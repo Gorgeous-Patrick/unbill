@@ -476,6 +476,39 @@ fn test_user_add_appears_in_list() {
 }
 
 #[test]
+fn test_user_create_appears_in_ledger() {
+    let env = Env::new();
+    let lid = create_ledger(&env);
+    let v = env.json(&["user", "create", "--ledger-id", &lid, "Alice"]);
+    let user_id = v["user_id"].as_str().unwrap();
+    assert_eq!(user_id.len(), 26, "user ID should be a 26-char ULID");
+    assert_eq!(v["display_name"].as_str().unwrap(), "Alice");
+
+    let users = env.json(&["user", "list", "--ledger-id", &lid]);
+    let arr = users.as_array().unwrap();
+    assert_eq!(arr.len(), 1);
+    assert_eq!(arr[0]["user_id"].as_str().unwrap(), user_id);
+    assert_eq!(arr[0]["display_name"].as_str().unwrap(), "Alice");
+}
+
+#[test]
+fn test_user_list_aggregates_across_ledgers() {
+    let env = Env::new();
+    let lid1 = env.json(&["ledger", "create", "L1", "USD"])["ledger_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let lid2 = env.json(&["ledger", "create", "L2", "USD"])["ledger_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    env.json(&["user", "create", "--ledger-id", &lid1, "Alice"]);
+    env.json(&["user", "create", "--ledger-id", &lid2, "Bob"]);
+    let users = env.json(&["user", "list"]);
+    assert_eq!(users.as_array().unwrap().len(), 2);
+}
+
+#[test]
 fn test_add_bill_rejects_non_user() {
     let env = Env::new();
     let lid = create_ledger(&env);
@@ -601,28 +634,4 @@ fn test_sync_once_propagates_bills() {
         1,
         "joiner should see the host's bill after sync"
     );
-}
-
-/// Host generates a user-share URL; the joiner runs `user import`;
-/// the imported saved user then appears in the joiner's saved-user list.
-#[test]
-fn test_user_import_flow() {
-    let host = Env::new();
-    let joiner = Env::new();
-
-    let local_user = host.json(&["user", "create", "Alice"]);
-    let user_id = local_user["user_id"].as_str().unwrap().to_owned();
-
-    let share = host.json(&["user", "share", "--user-id", &user_id]);
-    let url = share["url"].as_str().unwrap().to_owned();
-
-    let daemon = Daemon::spawn(&host);
-    joiner.ok(&["user", "import", &url]);
-    drop(daemon);
-
-    let local_users = joiner.json(&["user", "list"]);
-    let arr = local_users.as_array().unwrap();
-    assert_eq!(arr.len(), 1, "joiner should have one imported saved user");
-    assert_eq!(arr[0]["user_id"].as_str().unwrap(), user_id);
-    assert_eq!(arr[0]["display_name"].as_str().unwrap(), "Alice");
 }
