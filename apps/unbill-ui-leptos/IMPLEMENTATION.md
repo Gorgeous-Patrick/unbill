@@ -6,6 +6,8 @@ The app keeps backend data in signals: bootstrap state for the device ID, ledger
 
 Settings state is represented as a single popup state with an active tab and selected ledger ID. In ranger mode the popup overlays the three columns. In compact mode the popup fills the viewport while the normal compact page priority remains unchanged behind it.
 
+Responsive mode selection uses a pure width helper: widths below 1200 px render compact mode, and widths at or above 1200 px render ranger mode. `App` stores the current mode in a signal and updates it from a window resize listener. CSS media queries use the same cutoff so overlay and pane styling switch with the Rust render mode.
+
 Device Settings renders the device ID, saved local users, known peer devices across local ledgers, saved-user share/import actions, and ledger join actions. Ledger Settings renders a ledger selector, ledger users, saved-user picker for adding users to the selected ledger, authorized peer devices, and ledger invitation actions. Each peer row triggers the shared one-shot sync bridge command.
 
 The stylesheet implements a native utility shell with system typography, full-height panes, dense rows, compact toolbars, restrained borders, and stable control dimensions.

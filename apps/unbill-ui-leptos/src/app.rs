@@ -8,8 +8,9 @@ use crate::pages::{
 };
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use wasm_bindgen::{JsCast, closure::Closure};
 
-const COMPACT_BREAKPOINT: f64 = 1080.0;
+const RANGER_BREAKPOINT: f64 = 1200.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SurfaceMode {
@@ -161,7 +162,8 @@ pub(crate) struct BillSaveRequest {
 
 #[component]
 pub fn App() -> impl IntoView {
-    let surface_mode = surface_mode_from_window();
+    let surface_mode = RwSignal::new(surface_mode_from_window());
+    install_surface_mode_resize_listener(surface_mode);
     let bootstrap = RwSignal::new(None::<AppBootstrap>);
     let selected_ledger_id = RwSignal::new(None::<String>);
     let ledger_detail = RwSignal::new(None::<LedgerDetail>);
@@ -837,7 +839,7 @@ pub fn App() -> impl IntoView {
 
     view! {
         {move || {
-            if surface_mode == SurfaceMode::Compact {
+            if surface_mode.get() == SurfaceMode::Compact {
                 view! {
                     <main class="app-shell">
                         <StatusStrip
@@ -862,14 +864,44 @@ pub(crate) fn surface_mode_from_window() -> SurfaceMode {
     web_sys::window()
         .and_then(|window| window.inner_width().ok())
         .and_then(|width| width.as_f64())
-        .map(|width| {
-            if width < COMPACT_BREAKPOINT {
-                SurfaceMode::Compact
-            } else {
-                SurfaceMode::Ranger
-            }
-        })
+        .map(surface_mode_from_width)
         .unwrap_or(SurfaceMode::Ranger)
+}
+
+pub(crate) fn surface_mode_from_width(width: f64) -> SurfaceMode {
+    if width < RANGER_BREAKPOINT {
+        SurfaceMode::Compact
+    } else {
+        SurfaceMode::Ranger
+    }
+}
+
+pub(crate) fn surface_mode_after_resize(_current: SurfaceMode, width: f64) -> SurfaceMode {
+    surface_mode_from_width(width)
+}
+
+fn install_surface_mode_resize_listener(surface_mode: RwSignal<SurfaceMode>) {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let listener_window = window.clone();
+    let resize_listener = Closure::<dyn FnMut(web_sys::Event)>::wrap(Box::new(move |_| {
+        if let Ok(width) = listener_window.inner_width()
+            && let Some(width) = width.as_f64()
+        {
+            surface_mode.set(surface_mode_after_resize(
+                surface_mode.get_untracked(),
+                width,
+            ));
+        }
+    }));
+
+    if window
+        .add_event_listener_with_callback("resize", resize_listener.as_ref().unchecked_ref())
+        .is_ok()
+    {
+        resize_listener.forget();
+    }
 }
 
 fn sort_ledgers(ledgers: &mut [LedgerSummary]) {
@@ -1147,5 +1179,36 @@ mod tests {
 
         assert_eq!(page_selection.as_deref(), Some("ledger-a"));
         assert_eq!(popup.selected_ledger_id.as_deref(), Some("ledger-b"));
+    }
+
+    #[test]
+    fn width_below_ranger_breakpoint_uses_compact_mode() {
+        assert_eq!(surface_mode_from_width(1199.0), SurfaceMode::Compact);
+    }
+
+    #[test]
+    fn width_at_ranger_breakpoint_uses_ranger_mode() {
+        assert_eq!(surface_mode_from_width(1200.0), SurfaceMode::Ranger);
+    }
+
+    #[test]
+    fn very_wide_width_uses_ranger_mode() {
+        assert_eq!(surface_mode_from_width(1800.0), SurfaceMode::Ranger);
+    }
+
+    #[test]
+    fn resize_below_breakpoint_switches_from_ranger_to_compact() {
+        assert_eq!(
+            surface_mode_after_resize(SurfaceMode::Ranger, 900.0),
+            SurfaceMode::Compact
+        );
+    }
+
+    #[test]
+    fn resize_at_breakpoint_switches_from_compact_to_ranger() {
+        assert_eq!(
+            surface_mode_after_resize(SurfaceMode::Compact, 1200.0),
+            SurfaceMode::Ranger
+        );
     }
 }

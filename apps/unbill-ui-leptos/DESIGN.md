@@ -8,7 +8,7 @@ The desktop UI uses a native utility style. It favors dense panes, list rows, si
 
 ## Layout mode selection
 
-Mode is determined from `window.innerWidth` and updates as the window is resized. The breakpoint is 1080 px: narrower windows use compact mode, wider windows use ranger mode.
+Mode is determined from `window.innerWidth` on startup and whenever the window is resized. The breakpoint is 1200 px: narrower windows use compact mode, wider windows use ranger mode.
 
 ## Compact navigation stack
 
@@ -22,7 +22,7 @@ The settings popup follows the shared model: full-screen overlay in compact mode
 
 ## Ranger column assignment
 
-Column one is always the ledgers list. Column two shows the bills view. Column three shows the detail view or a placeholder. The settings popup floats as an overlay above all three columns.
+Column one is always the ledgers list. Column two shows the bills view. Column three shows the detail view or a placeholder. Ranger mode is only used when there is enough width for comfortable stable pane minimums. The settings popup floats as an overlay above all three columns.
 
 ## Settings overlay
 
