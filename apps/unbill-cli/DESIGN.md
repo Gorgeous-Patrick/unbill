@@ -6,7 +6,7 @@ Terminal frontend for `UnbillService`. It exists for dogfooding, scripting, and 
 
 - `init` prints or creates the local device identity
 - `device show` reports the device ID and data directory
-- `ledger create | list | show | delete | invite | join` covers the ledger lifecycle and device join flow
+- `ledger create | list | show | delete | invite | join | devices` covers the ledger lifecycle, device join flow, and device membership
 - `bill add | list | amend` manages effective bills in one ledger
 - `user create | import | list | share | delete` manages saved users on this device
 - `user add --ledger-id ...` and `user list --ledger-id ...` manage users inside one ledger

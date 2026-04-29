@@ -521,6 +521,29 @@ fn test_m3_commands_are_not_yet_available() {
 }
 
 // ---------------------------------------------------------------------------
+// Ledger devices
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_ledger_devices_lists_own_device_after_create() {
+    let env = Env::new();
+    let lid = create_ledger(&env);
+    let own_id = env.json(&["init"])["device_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let devices = env.json(&["ledger", "devices", &lid]);
+    let arr = devices.as_array().unwrap();
+    assert_eq!(arr.len(), 1, "creator's device should appear in the list");
+    assert_eq!(arr[0]["node_id"].as_str().unwrap(), own_id);
+    assert!(
+        arr[0]["added_at_ms"].as_i64().unwrap() > 0,
+        "added_at_ms should be a positive unix timestamp"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Two-env peer tests (join, sync, user import)
 // ---------------------------------------------------------------------------
 
