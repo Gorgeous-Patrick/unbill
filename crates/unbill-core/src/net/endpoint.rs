@@ -33,6 +33,8 @@ impl UnbillEndpoint {
                 ALPN_JOIN.to_vec(),
                 ALPN_USER.to_vec(),
             ])
+            .clear_ip_transports()
+            .bind_addr("0.0.0.0:0")?
             .bind()
             .await?;
         Ok(Self { inner })
