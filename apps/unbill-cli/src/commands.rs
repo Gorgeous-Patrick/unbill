@@ -9,8 +9,8 @@ use unbill_core::model::{NewBill, NewUser, NodeId, Share, Ulid};
 use unbill_core::service::UnbillService;
 
 use crate::output::{
-    bill_out, conflict_group_out, fmt_amount, ledger_out, parse_amount, print_json, settlement_out,
-    truncate, user_out,
+    bill_out, conflict_group_out, device_out, fmt_amount, ledger_out, parse_amount, print_json,
+    settlement_out, truncate, user_out,
 };
 
 fn parse_ulid(s: &str) -> anyhow::Result<Ulid> {
@@ -342,6 +342,26 @@ pub async fn ledger_join(
     label: Option<String>,
 ) -> anyhow::Result<()> {
     svc.join_ledger(&url, label.unwrap_or_default()).await?;
+    Ok(())
+}
+
+pub async fn ledger_devices(
+    svc: &UnbillService,
+    ledger_id: &str,
+    json: bool,
+) -> anyhow::Result<()> {
+    let devices = svc.list_devices(ledger_id).await?;
+    if json {
+        print_json(&devices.iter().map(device_out).collect::<Vec<_>>())?;
+    } else {
+        if devices.is_empty() {
+            println!("no devices");
+            return Ok(());
+        }
+        for d in &devices {
+            println!("{}", d.node_id);
+        }
+    }
     Ok(())
 }
 

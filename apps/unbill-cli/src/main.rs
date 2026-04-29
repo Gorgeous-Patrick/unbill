@@ -80,6 +80,10 @@ pub enum LedgerCmd {
     Delete {
         ledger_id: String,
     },
+    /// List all devices authorized to sync this ledger.
+    Devices {
+        ledger_id: String,
+    },
     /// Generate an unbill://join/... URL authorizing a new device to access this ledger.
     Invite {
         ledger_id: String,
@@ -217,6 +221,9 @@ async fn run() -> anyhow::Result<()> {
             LedgerCmd::List => commands::ledger_list(&svc, json).await,
             LedgerCmd::Show { ledger_id } => commands::ledger_show(&svc, &ledger_id, json).await,
             LedgerCmd::Delete { ledger_id } => commands::ledger_delete(&svc, &ledger_id).await,
+            LedgerCmd::Devices { ledger_id } => {
+                commands::ledger_devices(&svc, &ledger_id, json).await
+            }
             LedgerCmd::Invite { ledger_id } => {
                 commands::ledger_invite(&svc, &ledger_id, json).await
             }
