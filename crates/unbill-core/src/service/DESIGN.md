@@ -18,8 +18,8 @@ flowchart LR
 ## Responsibilities
 
 - create, load, and mutate ledgers
-- manage local users and device labels
-- create invitations and consume join or user-share flows
+- manage device labels
+- create invitations and consume join flows
 - coordinate sync and surface service events
 - compute settlement across ledgers for one user
 - detect amendment conflicts in the effective bill set

@@ -136,6 +136,46 @@ impl UnbillService {
         self.load_doc(ledger_id).await?.list_users()
     }
 
+    /// Create a brand-new user, add them to the ledger, and return the created `User`.
+    pub async fn create_user(&self, ledger_id: &str, display_name: String) -> Result<User> {
+        let user_id = Ulid::new();
+        let now = Timestamp::now();
+        let mut doc = self.load_doc(ledger_id).await?;
+        doc.add_user(
+            NewUser {
+                user_id,
+                display_name: display_name.clone(),
+            },
+            now,
+        )?;
+        let bytes = doc.save();
+        self.store.save_ledger_bytes(ledger_id, &bytes).await?;
+        self.touch_meta(ledger_id).await?;
+        Ok(User {
+            user_id,
+            display_name,
+            added_at: now,
+        })
+    }
+
+    /// Return all unique users across every ledger on this device, deduplicated by `user_id`.
+    ///
+    /// Use this to populate the user picker when adding a member to a ledger.
+    pub async fn list_all_users(&self) -> Result<Vec<User>> {
+        let mut seen = std::collections::HashSet::new();
+        let mut result = Vec::new();
+        for meta in self.store.list_ledgers().await? {
+            let id = meta.ledger_id.to_string();
+            let doc = self.load_doc(&id).await?;
+            for user in doc.list_users()? {
+                if seen.insert(user.user_id) {
+                    result.push(user);
+                }
+            }
+        }
+        Ok(result)
+    }
+
     // -----------------------------------------------------------------------
     // Devices
     // -----------------------------------------------------------------------
@@ -261,32 +301,6 @@ impl UnbillService {
         ))
     }
 
-    /// Generate a user-share URL for `user_id` and store the pending token.
-    ///
-    /// URL format: `unbill://user/<host_node_id>/<token_hex>`
-    pub async fn create_local_user_share(&self, user_id: &str) -> Result<String> {
-        let user_ulid = parse_ulid(user_id)?;
-        let local_users = load_local_users(&*self.store).await?;
-        let local_user = local_users
-            .iter()
-            .find(|i| i.user_id == user_ulid)
-            .ok_or_else(|| {
-                UnbillError::Other(anyhow::anyhow!("local user not found: {user_id}"))
-            })?;
-        let display_name = local_user.display_name.clone();
-        let mut token_bytes = [0u8; 32];
-        rand::rngs::SysRng
-            .try_fill_bytes(&mut token_bytes)
-            .expect("system RNG should generate user share tokens");
-        let token_hex: String = token_bytes.iter().map(|b| format!("{b:02x}")).collect();
-        {
-            let mut map = load_pending_user_tokens(&*self.store).await?;
-            map.insert(token_hex.clone(), (user_ulid, display_name));
-            save_pending_user_tokens(&*self.store, &map).await?;
-        }
-        Ok(format!("unbill://user/{}/{}", self.device_id, token_hex))
-    }
-
     /// Accept a join invite URL and join the ledger hosted by the inviting device.
     ///
     /// URL format: `unbill://join/<ledger_id>/<host_node_id>/<token_hex>`
@@ -300,20 +314,6 @@ impl UnbillService {
             .await
             .map_err(UnbillError::Other)?;
         let result = ep.join_ledger_inner(host, local_label, request, self).await;
-        ep.close().await;
-        result.map_err(UnbillError::Other)
-    }
-
-    /// Fetch a saved user from another device using an `unbill://user/...` URL.
-    ///
-    /// URL format: `unbill://user/<host_node_id>/<token_hex>`
-    pub async fn fetch_local_user(self: &Arc<Self>, url: &str) -> Result<()> {
-        use crate::net::UnbillEndpoint;
-        let (host, token) = parse_user_url(url)?;
-        let ep = UnbillEndpoint::bind(self.secret_key.clone())
-            .await
-            .map_err(UnbillError::Other)?;
-        let result = ep.import_user_inner(host, token, self).await;
         ep.close().await;
         result.map_err(UnbillError::Other)
     }
@@ -358,58 +358,6 @@ impl UnbillService {
     }
 
     // -----------------------------------------------------------------------
-    // Local users
-    // -----------------------------------------------------------------------
-
-    /// Return all saved users stored on this device.
-    pub async fn list_local_users(&self) -> Result<Vec<LocalUser>> {
-        load_local_users(&*self.store).await
-    }
-
-    /// Add a new saved user (fresh user ID + display name) to this device.
-    pub async fn add_local_user(&self, display_name: String) -> Result<LocalUser> {
-        let local_user = LocalUser {
-            user_id: Ulid::new(),
-            display_name,
-        };
-        let mut local_users = load_local_users(&*self.store).await?;
-        local_users.push(local_user.clone());
-        save_local_users(&*self.store, &local_users).await?;
-        Ok(local_user)
-    }
-
-    /// Remove a saved user from this device's local storage (does not affect the ledger).
-    pub async fn remove_local_user(&self, user_id: Ulid) -> Result<()> {
-        let mut local_users = load_local_users(&*self.store).await?;
-        let before = local_users.len();
-        local_users.retain(|i| i.user_id != user_id);
-        if local_users.len() == before {
-            return Err(UnbillError::Other(anyhow::anyhow!(
-                "local user {user_id} not found"
-            )));
-        }
-        save_local_users(&*self.store, &local_users).await
-    }
-
-    /// Import an existing saved user onto this device.
-    pub async fn import_local_user(
-        &self,
-        user_id: Ulid,
-        display_name: String,
-    ) -> Result<LocalUser> {
-        let local_user = LocalUser {
-            user_id,
-            display_name,
-        };
-        let mut local_users = load_local_users(&*self.store).await?;
-        if !local_users.iter().any(|i| i.user_id == local_user.user_id) {
-            local_users.push(local_user.clone());
-            save_local_users(&*self.store, &local_users).await?;
-        }
-        Ok(local_user)
-    }
-
-    // -----------------------------------------------------------------------
     // Internals
     // -----------------------------------------------------------------------
 
@@ -436,38 +384,10 @@ impl UnbillService {
 }
 
 // ---------------------------------------------------------------------------
-// Local user type
-// ---------------------------------------------------------------------------
-
-/// A saved user stored on this device.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct LocalUser {
-    pub user_id: Ulid,
-    pub display_name: String,
-}
-
-// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-const LOCAL_USERS_KEY: &str = "users.json";
 pub(crate) const DEVICE_LABELS_KEY: &str = "device_labels.json";
-const PENDING_USER_TOKENS_KEY: &str = "pending_user_tokens.json";
-
-async fn load_local_users(store: &dyn LedgerStore) -> Result<Vec<LocalUser>> {
-    match store.load_device_meta(LOCAL_USERS_KEY).await? {
-        None => Ok(vec![]),
-        Some(bytes) => serde_json::from_slice(&bytes)
-            .map_err(|e| UnbillError::Other(anyhow::anyhow!("users.json: {e}"))),
-    }
-}
-
-async fn save_local_users(store: &dyn LedgerStore, local_users: &[LocalUser]) -> Result<()> {
-    let bytes = serde_json::to_vec(local_users)
-        .map_err(|e| UnbillError::Other(anyhow::anyhow!("serialize users: {e}")))?;
-    store.save_device_meta(LOCAL_USERS_KEY, &bytes).await?;
-    Ok(())
-}
 
 pub(crate) async fn load_device_labels(store: &dyn LedgerStore) -> Result<HashMap<String, String>> {
     match store.load_device_meta(DEVICE_LABELS_KEY).await? {
@@ -487,7 +407,7 @@ pub(crate) async fn save_device_labels(
     Ok(())
 }
 
-pub(crate) const PENDING_INVITATIONS_KEY: &str = "pending_invitations.json";
+const PENDING_INVITATIONS_KEY: &str = "pending_invitations.json";
 
 pub(crate) async fn load_pending_invitations(
     store: &dyn LedgerStore,
@@ -507,28 +427,6 @@ pub(crate) async fn save_pending_invitations(
         .map_err(|e| UnbillError::Other(anyhow::anyhow!("serialize pending_invitations: {e}")))?;
     store
         .save_device_meta(PENDING_INVITATIONS_KEY, &bytes)
-        .await?;
-    Ok(())
-}
-
-pub(crate) async fn load_pending_user_tokens(
-    store: &dyn LedgerStore,
-) -> Result<HashMap<String, (Ulid, String)>> {
-    match store.load_device_meta(PENDING_USER_TOKENS_KEY).await? {
-        None => Ok(HashMap::new()),
-        Some(bytes) => serde_json::from_slice(&bytes)
-            .map_err(|e| UnbillError::Other(anyhow::anyhow!("pending_user_tokens.json: {e}"))),
-    }
-}
-
-pub(crate) async fn save_pending_user_tokens(
-    store: &dyn LedgerStore,
-    map: &HashMap<String, (Ulid, String)>,
-) -> Result<()> {
-    let bytes = serde_json::to_vec(map)
-        .map_err(|e| UnbillError::Other(anyhow::anyhow!("serialize pending_user_tokens: {e}")))?;
-    store
-        .save_device_meta(PENDING_USER_TOKENS_KEY, &bytes)
         .await?;
     Ok(())
 }
@@ -572,24 +470,6 @@ fn parse_join_url(url: &str) -> Result<(String, NodeId, String)> {
         .map_err(|e| UnbillError::Other(anyhow::anyhow!("invalid host node ID in URL: {e}")))?;
     let token = parts[2].to_string();
     Ok((ledger_id, host, token))
-}
-
-/// Parse `unbill://user/<host_node_id>/<token_hex>`.
-fn parse_user_url(url: &str) -> Result<(NodeId, String)> {
-    let path = url
-        .strip_prefix("unbill://user/")
-        .ok_or_else(|| UnbillError::Other(anyhow::anyhow!("invalid user URL: {url:?}")))?;
-    let parts: Vec<&str> = path.splitn(2, '/').collect();
-    if parts.len() != 2 {
-        return Err(UnbillError::Other(anyhow::anyhow!(
-            "invalid user URL (expected host_node_id/token): {url:?}"
-        )));
-    }
-    let host = parts[0]
-        .parse::<NodeId>()
-        .map_err(|e| UnbillError::Other(anyhow::anyhow!("invalid host node ID in URL: {e}")))?;
-    let token = parts[1].to_string();
-    Ok((host, token))
 }
 
 // ---------------------------------------------------------------------------
@@ -862,47 +742,51 @@ mod tests {
         );
     }
 
-    // --- local users ---
+    // --- create_user / list_all_users ---
 
     #[tokio::test]
-    async fn test_add_local_user_appears_in_list() {
+    async fn test_create_user_appears_in_ledger() {
         let svc = open().await;
-        let local_user = svc.add_local_user("Alice".into()).await.unwrap();
-        let list = svc.list_local_users().await.unwrap();
+        let lid = svc
+            .create_ledger("Trip".into(), usd().into())
+            .await
+            .unwrap();
+        let user = svc.create_user(&lid, "Alice".into()).await.unwrap();
+        let list = svc.list_users(&lid).await.unwrap();
         assert_eq!(list.len(), 1);
-        assert_eq!(list[0].user_id, local_user.user_id);
+        assert_eq!(list[0].user_id, user.user_id);
         assert_eq!(list[0].display_name, "Alice");
     }
 
     #[tokio::test]
-    async fn test_multiple_local_users_stored() {
+    async fn test_list_all_users_aggregates_across_ledgers() {
         let svc = open().await;
-        svc.add_local_user("Alice".into()).await.unwrap();
-        svc.add_local_user("Bob".into()).await.unwrap();
-        let list = svc.list_local_users().await.unwrap();
-        assert_eq!(list.len(), 2);
+        let lid1 = svc.create_ledger("L1".into(), usd().into()).await.unwrap();
+        let lid2 = svc.create_ledger("L2".into(), usd().into()).await.unwrap();
+        svc.create_user(&lid1, "Alice".into()).await.unwrap();
+        svc.create_user(&lid2, "Bob".into()).await.unwrap();
+        let all = svc.list_all_users().await.unwrap();
+        assert_eq!(all.len(), 2);
     }
 
     #[tokio::test]
-    async fn test_import_local_user_deduplicates() {
+    async fn test_list_all_users_deduplicates_by_user_id() {
         let svc = open().await;
-        let id = svc.add_local_user("Alice".into()).await.unwrap();
-        svc.import_local_user(id.user_id, "Alice".into())
-            .await
-            .unwrap();
-        assert_eq!(svc.list_local_users().await.unwrap().len(), 1);
-    }
-
-    #[tokio::test]
-    async fn test_local_users_survive_restart() {
-        let store = mem_store();
-        let user_id = {
-            let svc = UnbillService::open(Arc::clone(&store)).await.unwrap();
-            svc.add_local_user("Alice".into()).await.unwrap().user_id
-        };
-        let svc2 = UnbillService::open(Arc::clone(&store)).await.unwrap();
-        let list = svc2.list_local_users().await.unwrap();
-        assert_eq!(list.len(), 1);
-        assert_eq!(list[0].user_id, user_id);
+        let lid1 = svc.create_ledger("L1".into(), usd().into()).await.unwrap();
+        let lid2 = svc.create_ledger("L2".into(), usd().into()).await.unwrap();
+        // Create Alice in L1, then add the same user to L2.
+        let alice = svc.create_user(&lid1, "Alice".into()).await.unwrap();
+        svc.add_user(
+            &lid2,
+            NewUser {
+                user_id: alice.user_id,
+                display_name: "Alice".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let all = svc.list_all_users().await.unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].user_id, alice.user_id);
     }
 }
