@@ -27,10 +27,6 @@ impl InviteResultPopup {
             url,
         }
     }
-
-    pub fn with_title(title: &'static str, url: String) -> Self {
-        Self { title, url }
-    }
 }
 
 impl PopupView for InviteResultPopup {
