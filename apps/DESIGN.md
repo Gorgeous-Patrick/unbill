@@ -67,15 +67,12 @@ The settings popup is a single overlay with two tabs: Device Settings and Ledger
 
 #### Device Settings Tab
 
-The device settings tab owns local-only device concerns such as saved users, known peer devices, and join or import actions.
+The device settings tab owns local-only device concerns such as known peer devices and join actions.
 
 - shows the device ID (read-only)
-- lists saved local users on this device; an add-saved-user action creates a new named user stored only on this device
-- share-user action selects a saved user and generates an `unbill://user/…` URL to hand to another device; the URL is shown in a result overlay
-- import-user action accepts an inbound `unbill://user/…` URL and fetches the user from the originating device, adding them to local saved users
 - sync actions target known peer devices gathered from backend state
 - join-ledger action accepts an inbound `unbill://join/…` URL to import a ledger from a peer device
-- invitation URLs, device labels, and local saved users remain local client concerns
+- invitation URLs and device labels remain local client concerns
 - this tab does not require an active ledger selection
 
 #### Ledger Settings Tab
@@ -86,7 +83,7 @@ The ledger settings tab manages ledger-scoped users and the device invitation fl
 - all actions in this tab apply to the currently selected ledger in the selector
 - renders ledger users from the selected ledger
 - renders the peer devices authorized for the selected ledger, with a sync action for each peer
-- add-user action lets the operator pick from device-local saved users to add to the selected ledger
+- add-user action lets the operator pick from users across all ledgers on this device, or create a brand-new named user, to add to the selected ledger
 - creates invitation URLs for the selected ledger only; keeps invitation output in popup state rather than shared ledger state
 
 ### Cross-Screen Behavior
@@ -94,7 +91,7 @@ The ledger settings tab manages ledger-scoped users and the device invitation fl
 - screens and popups render backend DTOs and send complete commands back through the bridge
 - compact mode swaps the whole active screen, while ranger mode keeps selection visible across columns
 - column one is always the ledgers view; column two is the bills view; column three is the detail view
-- create-ledger, add-local-user, join-ledger, and add-user flows are overlays
+- create-ledger, join-ledger, and add-user flows are overlays
 - the settings popup is an overlay that sits above the column layout
 - status, busy, and error feedback are shared across the app shell
 - mutating actions refresh bootstrap state; ledger-scoped actions also refresh the selected ledger detail

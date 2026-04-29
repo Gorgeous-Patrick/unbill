@@ -6,7 +6,7 @@ Leptos + Tauri implementation of the shared Unbill UI model. See `../DESIGN.md` 
 
 The desktop UI uses a native utility style. It favors dense panes, list rows, simple tables, compact toolbars, restrained color, and system typography. The app shell fills the viewport and avoids decorative backgrounds, oversized cards, nested cards, preview mockups, and ornamental gradients. Interactive controls use stable dimensions so row hover states, status text, and action buttons do not shift layout.
 
-Navigation and utility controls use Lucide icons in square icon-only buttons. These controls include back, more, close, sync, share, copy, row add, and editor save actions. Each icon-only control keeps an accessible label, hover title, and hidden text equivalent. Primary workflow actions remain text-first so actions such as creating ledgers, adding saved users, importing users, joining ledgers, and submitting forms are explicit.
+Navigation and utility controls use Lucide icons in square icon-only buttons. These controls include back, more, close, sync, share, copy, row add, and editor save actions. Each icon-only control keeps an accessible label, hover title, and hidden text equivalent. Primary workflow actions remain text-first so actions such as creating ledgers, adding users, joining ledgers, and submitting forms are explicit.
 
 ## Layout mode selection
 
@@ -38,6 +38,6 @@ A fixed strip above all content shows the latest status or error message and a "
 
 Ledger detail data includes the peer devices authorized for that ledger. The Ledger Settings page renders those peers in a ledger-scoped sync section so operators can trigger one-shot sync without leaving the ledger context. The button calls the shared sync action by peer device ID, then refreshes bootstrap state and the selected ledger detail.
 
-## Saved user actions
+## User actions
 
-Device Settings shows the local device ID, saved users, known sync peers, and import/share actions for device-local saved users. Ledger Settings adds ledger users by selecting from saved local users that are not already in the selected ledger. User share URLs and ledger invitation URLs live in overlay state and are copied through the Tauri clipboard bridge.
+Device Settings shows the local device ID, known sync peers, and join actions. Ledger Settings adds ledger users by presenting the picker of users from all ledgers on the device (excluding those already in the selected ledger) alongside a create-new option. Ledger invitation URLs live in overlay state and are copied through the Tauri clipboard bridge.
