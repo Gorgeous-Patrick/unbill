@@ -40,6 +40,8 @@ flowchart TB
 - Bills are append-only; amendment creates a new bill whose `prev` supersedes earlier bills.
 - Bill participants must already exist in the ledger.
 - Devices authorize sync per ledger and are not bound to specific users.
+- A device enters `ledger.devices` in exactly two ways: the creating device is added automatically when the ledger is created; every subsequent device is added by the host during the join protocol. There is no removal.
+- `add_device` is idempotent: adding the same `NodeId` twice is a no-op.
 - Device labels, pending tokens, and saved users are local metadata rather than shared ledger state.
 
 ## Boundaries
