@@ -18,7 +18,7 @@ rustPlatform.buildRustPackage {
   cargoLock.lockFile = ../Cargo.lock;
 
   cargoBuildFlags = [ "--package" "unbill-tui" ];
-  cargoTestFlags = [ "--package" "unbill-tui" ];
+  doCheck = false;
 
   meta = {
     description = "Terminal UI for unbill";

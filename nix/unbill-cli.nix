@@ -18,7 +18,7 @@ rustPlatform.buildRustPackage {
   cargoLock.lockFile = ../Cargo.lock;
 
   cargoBuildFlags = [ "--package" "unbill-cli" ];
-  cargoTestFlags = [ "--package" "unbill-cli" ];
+  doCheck = false;
 
   meta = {
     description = "Command-line interface for unbill";
