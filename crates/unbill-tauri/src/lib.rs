@@ -15,6 +15,7 @@ struct AppState {
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AppBootstrapDto {
+    device_id: String,
     ledgers: Vec<LedgerSummaryDto>,
     local_users: Vec<LocalUserDto>,
     devices: Vec<SyncDeviceDto>,
@@ -57,7 +58,7 @@ struct LocalUserDto {
     display_name: String,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct UserDto {
     user_id: String,
@@ -110,7 +111,7 @@ struct AddLocalUserInput {
 #[serde(rename_all = "camelCase")]
 struct AddUserInput {
     ledger_id: String,
-    display_name: String,
+    user_id: String,
 }
 
 #[derive(Deserialize)]
@@ -140,24 +141,9 @@ struct SaveBillInput {
 
 #[tauri::command]
 async fn bootstrap_app(state: State<'_, AppState>) -> std::result::Result<AppBootstrapDto, String> {
-    let ledgers = load_ledgers(&state.service)
+    bootstrap_app_inner(&state.service)
         .await
-        .map_err(stringify_error)?;
-    let local_users = state
-        .service
-        .list_local_users()
-        .await
-        .map(|items| items.into_iter().map(LocalUserDto::from).collect())
-        .map_err(stringify_error)?;
-    let devices = load_sync_devices(&state.service)
-        .await
-        .map_err(stringify_error)?;
-
-    Ok(AppBootstrapDto {
-        ledgers,
-        local_users,
-        devices,
-    })
+        .map_err(stringify_error)
 }
 
 #[tauri::command]
@@ -205,31 +191,9 @@ async fn add_user(
     input: AddUserInput,
     state: State<'_, AppState>,
 ) -> std::result::Result<UserDto, String> {
-    let user_id = Ulid::new();
-
-    state
-        .service
-        .add_user(
-            &input.ledger_id,
-            NewUser {
-                user_id,
-                display_name: input.display_name,
-            },
-        )
+    add_user_inner(&state.service, input)
         .await
-        .map_err(stringify_error)?;
-
-    let added_user = state
-        .service
-        .list_users(&input.ledger_id)
-        .await
-        .map_err(stringify_error)?
-        .into_iter()
-        .find(|user| user.user_id == user_id)
-        .context("new user missing after add")
-        .map_err(stringify_error)?;
-
-    Ok(UserDto::from(added_user))
+        .map_err(stringify_error)
 }
 
 #[tauri::command]
@@ -240,6 +204,26 @@ async fn create_invitation(
     state
         .service
         .create_invitation(&ledger_id)
+        .await
+        .map_err(stringify_error)
+}
+
+#[tauri::command]
+async fn create_local_user_share(
+    user_id: String,
+    state: State<'_, AppState>,
+) -> std::result::Result<String, String> {
+    create_local_user_share_inner(&state.service, &user_id)
+        .await
+        .map_err(stringify_error)
+}
+
+#[tauri::command]
+async fn import_local_user(
+    url: String,
+    state: State<'_, AppState>,
+) -> std::result::Result<(), String> {
+    import_local_user_inner(&state.service, &url)
         .await
         .map_err(stringify_error)
 }
@@ -326,6 +310,70 @@ async fn load_ledgers(service: &Arc<UnbillService>) -> Result<Vec<LedgerSummaryD
         summaries.push(summarize_ledger(service, meta).await?);
     }
     Ok(summaries)
+}
+
+async fn bootstrap_app_inner(service: &Arc<UnbillService>) -> Result<AppBootstrapDto> {
+    let ledgers = load_ledgers(service).await?;
+    let local_users = service
+        .list_local_users()
+        .await?
+        .into_iter()
+        .map(LocalUserDto::from)
+        .collect();
+    let devices = load_sync_devices(service).await?;
+
+    Ok(AppBootstrapDto {
+        device_id: service.device_id().to_string(),
+        ledgers,
+        local_users,
+        devices,
+    })
+}
+
+async fn add_user_inner(service: &Arc<UnbillService>, input: AddUserInput) -> Result<UserDto> {
+    let user_id = parse_ulid(&input.user_id)?;
+    let local_user = service
+        .list_local_users()
+        .await?
+        .into_iter()
+        .find(|user| user.user_id == user_id)
+        .with_context(|| format!("saved user not found: {}", input.user_id))?;
+
+    service
+        .add_user(
+            &input.ledger_id,
+            NewUser {
+                user_id,
+                display_name: local_user.display_name,
+            },
+        )
+        .await?;
+
+    let added_user = service
+        .list_users(&input.ledger_id)
+        .await?
+        .into_iter()
+        .find(|user| user.user_id == user_id)
+        .context("new user missing after add")?;
+
+    Ok(UserDto::from(added_user))
+}
+
+async fn create_local_user_share_inner(
+    service: &Arc<UnbillService>,
+    user_id: &str,
+) -> Result<String> {
+    service
+        .create_local_user_share(user_id)
+        .await
+        .map_err(anyhow::Error::from)
+}
+
+async fn import_local_user_inner(service: &Arc<UnbillService>, url: &str) -> Result<()> {
+    service
+        .fetch_local_user(url)
+        .await
+        .map_err(anyhow::Error::from)
 }
 
 async fn load_sync_devices(service: &Arc<UnbillService>) -> Result<Vec<SyncDeviceDto>> {
@@ -578,6 +626,8 @@ pub fn run() {
             add_local_user,
             add_user,
             create_invitation,
+            create_local_user_share,
+            import_local_user,
             join_ledger,
             save_bill,
             sync_once
@@ -591,7 +641,7 @@ mod tests {
     use std::sync::Arc;
 
     use serde_json::Value;
-    use unbill_core::model::NewDevice;
+    use unbill_core::model::{NewDevice, Ulid};
     use unbill_core::service::UnbillService;
     use unbill_core::storage::InMemoryStore;
 
@@ -686,5 +736,92 @@ mod tests {
         assert_eq!(detail.devices[0].node_id, kitchen.device_id().to_string());
         assert_eq!(detail.devices[0].label, "Kitchen iPad");
         assert_eq!(detail.devices[0].ledger_names, vec!["Groceries"]);
+    }
+
+    #[tokio::test]
+    async fn bootstrap_includes_current_device_id() {
+        let service = UnbillService::open(Arc::new(InMemoryStore::default()))
+            .await
+            .unwrap();
+
+        let bootstrap = super::bootstrap_app_inner(&service).await.unwrap();
+
+        assert_eq!(bootstrap.device_id, service.device_id().to_string());
+    }
+
+    #[tokio::test]
+    async fn adding_ledger_user_from_saved_local_user_preserves_identity() {
+        let service = UnbillService::open(Arc::new(InMemoryStore::default()))
+            .await
+            .unwrap();
+        let ledger_id = service
+            .create_ledger("Kitchen".to_owned(), "USD".to_owned())
+            .await
+            .unwrap();
+        let local_user = service.add_local_user("Mio".to_owned()).await.unwrap();
+
+        let added_user = super::add_user_inner(
+            &service,
+            super::AddUserInput {
+                ledger_id: ledger_id.clone(),
+                user_id: local_user.user_id.to_string(),
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(added_user.user_id, local_user.user_id.to_string());
+        assert_eq!(added_user.display_name, "Mio");
+    }
+
+    #[tokio::test]
+    async fn adding_unknown_saved_user_id_fails_clearly() {
+        let service = UnbillService::open(Arc::new(InMemoryStore::default()))
+            .await
+            .unwrap();
+        let ledger_id = service
+            .create_ledger("Kitchen".to_owned(), "USD".to_owned())
+            .await
+            .unwrap();
+
+        let error = super::add_user_inner(
+            &service,
+            super::AddUserInput {
+                ledger_id,
+                user_id: Ulid::new().to_string(),
+            },
+        )
+        .await
+        .unwrap_err();
+
+        assert!(error.to_string().contains("saved user not found"));
+    }
+
+    #[tokio::test]
+    async fn local_user_share_command_creates_user_url() {
+        let service = UnbillService::open(Arc::new(InMemoryStore::default()))
+            .await
+            .unwrap();
+        let local_user = service.add_local_user("Mio".to_owned()).await.unwrap();
+
+        let url = super::create_local_user_share_inner(&service, &local_user.user_id.to_string())
+            .await
+            .unwrap();
+
+        assert!(url.starts_with("unbill://user/"));
+        assert!(url.contains(&service.device_id().to_string()));
+    }
+
+    #[tokio::test]
+    async fn local_user_import_command_exposes_core_errors() {
+        let service = UnbillService::open(Arc::new(InMemoryStore::default()))
+            .await
+            .unwrap();
+
+        let error = super::import_local_user_inner(&service, "not-a-user-url")
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("user"));
     }
 }
