@@ -4,8 +4,8 @@ use crate::app::{
     parse_amount_text, share_lookup_shares,
 };
 use crate::components::{
-    ActionButton, ButtonTone, FieldBlock, ListRow, ModalSheet, ScreenFrame, SectionCard, TagPill,
-    TopBarButton,
+    ActionButton, ButtonTone, FieldBlock, IconButton, IconButtonKind, ListRow, ModalSheet,
+    ScreenFrame, SectionCard, TagPill,
 };
 use leptos::prelude::*;
 
@@ -57,7 +57,7 @@ pub fn LedgersPage(
         <ScreenFrame
             title="Ledgers".to_owned()
             subtitle="This device".to_owned()
-            trailing={view! { <TopBarButton label="More".to_owned() on_press=Callback::new(move |_| on_more.run(())) /> }.into_any()}
+            trailing={view! { <IconButton kind=IconButtonKind::More on_press=Callback::new(move |_| on_more.run(())) /> }.into_any()}
             footer={view! { <ActionButton label="New Ledger".to_owned() full_width=true on_press=Callback::new(move |_| on_new_ledger.run(())) /> }.into_any()}
         >
             <SectionCard
@@ -108,8 +108,8 @@ pub fn LedgerPage(
         <ScreenFrame
             title=page_title
             subtitle=currency.clone()
-            leading={view! { <TopBarButton label="Back".to_owned() on_press=Callback::new(move |_| on_back.run(())) /> }.into_any()}
-            trailing={view! { <TopBarButton label="More".to_owned() on_press=Callback::new(move |_| on_more.run(())) /> }.into_any()}
+            leading={view! { <IconButton kind=IconButtonKind::Back on_press=Callback::new(move |_| on_back.run(())) /> }.into_any()}
+            trailing={view! { <IconButton kind=IconButtonKind::More on_press=Callback::new(move |_| on_more.run(())) /> }.into_any()}
             footer={view! { <ActionButton label="New Bill".to_owned() full_width=true on_press=Callback::new(move |_| on_new_bill.run(())) /> }.into_any()}
         >
             <SectionCard
@@ -217,13 +217,10 @@ pub fn SettingsPopup(
                         <h2 class="settings-title">"Settings"</h2>
                         <p class="settings-subtitle">{device_id.clone()}</p>
                     </div>
-                    <button
-                        type="button"
-                        class="topbar-button"
-                        on:click=move |_| on_close.run(())
-                    >
-                        "Close"
-                    </button>
+                    <IconButton
+                        kind=IconButtonKind::Close
+                        on_press=Callback::new(move |_| on_close.run(()))
+                    />
                 </header>
 
                 <div class="settings-tabs">
@@ -272,8 +269,8 @@ pub fn SettingsPopup(
                                                                 <p class="row-title">{local_user.display_name}</p>
                                                                 <p class="row-meta mono-copy">{user_id.clone()}</p>
                                                             </div>
-                                                            <ActionButton
-                                                                label="Share".to_owned()
+                                                            <IconButton
+                                                                kind=IconButtonKind::Share
                                                                 tone=ButtonTone::Quiet
                                                                 on_press=Callback::new(move |_| on_share_local_user.run(user_id.clone()))
                                                             />
@@ -289,12 +286,13 @@ pub fn SettingsPopup(
                                                 view! {
                                                     <div class="result-panel">
                                                         <pre class="invite-url">{url.clone()}</pre>
-                                                        <ActionButton
-                                                            label="Copy URL".to_owned()
-                                                            tone=ButtonTone::Quiet
-                                                            full_width=true
-                                                            on_press=Callback::new(move |_| on_copy_user_share.run(()))
-                                                        />
+                                                        <div class="result-actions">
+                                                            <IconButton
+                                                                kind=IconButtonKind::CopyUrl
+                                                                tone=ButtonTone::Quiet
+                                                                on_press=Callback::new(move |_| on_copy_user_share.run(()))
+                                                            />
+                                                        </div>
                                                     </div>
                                                 }
                                                     .into_any()
@@ -341,8 +339,8 @@ pub fn SettingsPopup(
                                                                 <p class="row-meta mono-copy">{node_id.clone()}</p>
                                                                 <p class="row-detail">{detail}</p>
                                                             </div>
-                                                            <ActionButton
-                                                                label="Sync".to_owned()
+                                                            <IconButton
+                                                                kind=IconButtonKind::Sync
                                                                 tone=ButtonTone::Quiet
                                                                 on_press=Callback::new(move |_| on_sync_device.run(node_id.clone()))
                                                             />
@@ -448,8 +446,8 @@ pub fn SettingsPopup(
                                                                         <p class="row-title">{title}</p>
                                                                         <p class="row-meta mono-copy">{node_id.clone()}</p>
                                                                     </div>
-                                                                    <ActionButton
-                                                                        label="Sync".to_owned()
+                                                                    <IconButton
+                                                                        kind=IconButtonKind::Sync
                                                                         tone=ButtonTone::Quiet
                                                                         on_press=Callback::new(move |_| on_sync_device.run(node_id.clone()))
                                                                     />
@@ -475,12 +473,13 @@ pub fn SettingsPopup(
                                                         view! {
                                                             <div class="result-panel">
                                                                 <pre class="invite-url">{url.clone()}</pre>
-                                                                <ActionButton
-                                                                    label="Copy URL".to_owned()
-                                                                    tone=ButtonTone::Quiet
-                                                                    full_width=true
-                                                                    on_press=Callback::new(move |_| on_copy_invitation.run(()))
-                                                                />
+                                                                <div class="result-actions">
+                                                                    <IconButton
+                                                                        kind=IconButtonKind::CopyUrl
+                                                                        tone=ButtonTone::Quiet
+                                                                        on_press=Callback::new(move |_| on_copy_invitation.run(()))
+                                                                    />
+                                                                </div>
                                                             </div>
                                                         }
                                                             .into_any()
@@ -606,8 +605,8 @@ pub fn BillEditorPage(
         <ScreenFrame
             title=title
             subtitle="Bill details".to_owned()
-            leading={view! { <TopBarButton label="Back".to_owned() on_press=Callback::new(move |_| on_back.run(())) /> }.into_any()}
-            trailing={view! { <ActionButton label="Save".to_owned() tone=ButtonTone::Secondary on_press=Callback::new(save_click) /> }.into_any()}
+            leading={view! { <IconButton kind=IconButtonKind::Back on_press=Callback::new(move |_| on_back.run(())) /> }.into_any()}
+            trailing={view! { <IconButton kind=IconButtonKind::Save tone=ButtonTone::Secondary on_press=Callback::new(save_click) /> }.into_any()}
         >
             <div class="stack-gap">
                 <SectionCard
@@ -961,8 +960,8 @@ pub fn AddLedgerUserSheet(
                                         <p class="row-title">{local_user.display_name}</p>
                                         <p class="row-meta mono-copy">{user_id.clone()}</p>
                                     </div>
-                                    <ActionButton
-                                        label="Add".to_owned()
+                                    <IconButton
+                                        kind=IconButtonKind::Add
                                         tone=ButtonTone::Secondary
                                         on_press=Callback::new(move |_| on_submit.run(user_id.clone()))
                                     />

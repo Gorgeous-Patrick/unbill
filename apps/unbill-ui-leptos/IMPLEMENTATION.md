@@ -12,4 +12,6 @@ Device Settings renders the device ID, saved local users, known peer devices acr
 
 The stylesheet implements a native utility shell with system typography, full-height panes, dense rows, compact toolbars, restrained borders, and stable control dimensions.
 
+Navigation and utility controls render through a shared icon-button component backed by static Lucide SVG primitives. The component maps app actions to icons, visible hover titles, accessible labels, and hidden text. It is used for topbar navigation, settings and sheet close buttons, per-row sync/share/copy/add utilities, and the bill editor save control. Larger primary workflow actions continue to use text buttons.
+
 Tests live beside the Rust code they cover. Pure UI state helpers are unit-tested in the Leptos crate, while Tauri bridge DTO assembly and command behavior are tested in the Tauri crate.

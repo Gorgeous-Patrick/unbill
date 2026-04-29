@@ -6,6 +6,8 @@ Leptos + Tauri implementation of the shared Unbill UI model. See `../DESIGN.md` 
 
 The desktop UI uses a native utility style. It favors dense panes, list rows, simple tables, compact toolbars, restrained color, and system typography. The app shell fills the viewport and avoids decorative backgrounds, oversized cards, nested cards, preview mockups, and ornamental gradients. Interactive controls use stable dimensions so row hover states, status text, and action buttons do not shift layout.
 
+Navigation and utility controls use Lucide icons in square icon-only buttons. These controls include back, more, close, sync, share, copy, row add, and editor save actions. Each icon-only control keeps an accessible label, hover title, and hidden text equivalent. Primary workflow actions remain text-first so actions such as creating ledgers, adding saved users, importing users, joining ledgers, and submitting forms are explicit.
+
 ## Layout mode selection
 
 Mode is determined from `window.innerWidth` on startup and whenever the window is resized. The breakpoint is 1200 px: narrower windows use compact mode, wider windows use ranger mode.

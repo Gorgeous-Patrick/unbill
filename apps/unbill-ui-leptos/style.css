@@ -153,7 +153,7 @@ button {
   background: var(--bg-subtle);
 }
 
-.topbar-button,
+.icon-button,
 .action-button,
 .tab-button,
 .tag-pill {
@@ -169,14 +169,40 @@ button {
   white-space: nowrap;
 }
 
-.topbar-button {
-  padding: 0 10px;
+.icon-button {
+  width: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
   border-color: var(--line-soft);
   background: var(--bg-surface);
   color: var(--text-body);
 }
 
-.topbar-button:hover,
+.icon-button-svg,
+.icon-button-svg svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
+.icon-button-svg svg {
+  stroke: currentColor;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.icon-button:hover,
 .action-button:hover,
 .tab-button:hover,
 .list-row:hover {
@@ -554,6 +580,11 @@ button {
   border: 1px solid var(--line-soft);
   border-radius: 6px;
   background: var(--bg-subtle);
+}
+
+.result-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .invite-url {
