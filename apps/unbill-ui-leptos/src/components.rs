@@ -1,3 +1,4 @@
+use iso_currency::IntoEnumIterator;
 use leptos::{ev, prelude::*};
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -407,6 +408,73 @@ pub fn TagPill(#[prop(into)] label: String, #[prop(optional)] active: bool) -> i
     };
 
     view! { <span class=class_name>{label}</span> }
+}
+
+#[component]
+pub fn CurrencyCombobox(value: RwSignal<String>) -> impl IntoView {
+    let query = RwSignal::new(String::new());
+    let open = RwSignal::new(false);
+
+    let display = Memo::new(move |_| {
+        let code = value.get();
+        iso_currency::Currency::from_code(&code)
+            .map(|c| format!("{} — {}", c.code(), c.name()))
+            .unwrap_or(code)
+    });
+
+    let filtered = Memo::new(move |_| {
+        let q = query.get().to_lowercase();
+        iso_currency::Currency::iter()
+            .filter(move |c| {
+                q.is_empty()
+                    || c.code().to_lowercase().contains(&q)
+                    || c.name().to_lowercase().contains(&q)
+            })
+            .collect::<Vec<_>>()
+    });
+
+    view! {
+        <div class="combobox">
+            <input
+                class="ui-input"
+                prop:value=move || if open.get() { query.get() } else { display.get() }
+                placeholder=move || if open.get() { display.get() } else { String::new() }
+                on:focus=move |_| {
+                    query.set(String::new());
+                    open.set(true);
+                }
+                on:blur=move |_| open.set(false)
+                on:input=move |event| query.set(event_target_value(&event))
+            />
+            <Show when=move || open.get()>
+                <ul class="combobox-list">
+                    {move || {
+                        filtered
+                            .get()
+                            .into_iter()
+                            .map(|c| {
+                                let code = c.code();
+                                let label = format!("{} — {}", code, c.name());
+                                view! {
+                                    <li
+                                        class="combobox-option"
+                                        on:mousedown=move |event| {
+                                            event.prevent_default();
+                                            value.set(code.to_owned());
+                                            query.set(String::new());
+                                            open.set(false);
+                                        }
+                                    >
+                                        {label}
+                                    </li>
+                                }
+                            })
+                            .collect_view()
+                    }}
+                </ul>
+            </Show>
+        </div>
+    }
 }
 
 #[cfg(test)]
