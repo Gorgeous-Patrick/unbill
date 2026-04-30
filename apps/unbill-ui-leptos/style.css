@@ -652,7 +652,7 @@ button {
   }
 
   .screen-frame {
-    min-height: calc(100vh - 16px);
+    min-height: calc(100vh - max(8px, var(--sat)) - max(8px, var(--sab)));
   }
 
   .settings-overlay {
