@@ -9,6 +9,7 @@ homepage.workspace = true
 
 [dependencies]
 console_error_panic_hook = "0.1"
+iso_currency = { workspace = true, features = ["iterator"] }
 leptos = { version = "0.8.14", features = ["csr"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

@@ -7,6 +7,7 @@ use crate::components::{
     ActionButton, ButtonTone, FieldBlock, IconButton, IconButtonKind, ListRow, ModalSheet,
     ScreenFrame, SectionCard, TagPill,
 };
+use iso_currency::IntoEnumIterator;
 use leptos::prelude::*;
 
 #[component]
@@ -817,9 +818,12 @@ pub fn CreateLedgerSheet(
                         prop:value=move || currency.get()
                         on:change=move |event| currency.set(event_target_value(&event))
                     >
-                        <option value="USD">"USD"</option>
-                        <option value="EUR">"EUR"</option>
-                        <option value="GBP">"GBP"</option>
+                        {iso_currency::Currency::iter()
+                            .map(|c| {
+                                let code = c.code();
+                                view! { <option value=code>{format!("{} — {}", code, c.name())}</option> }
+                            })
+                            .collect_view()}
                     </select>
                 </FieldBlock>
                 <ActionButton
