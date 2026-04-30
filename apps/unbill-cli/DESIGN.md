@@ -8,15 +8,11 @@ Terminal frontend for `UnbillService`. It exists for dogfooding, scripting, and 
 - `device show` reports the device ID and data directory
 - `ledger create | list | show | delete | invite | join | devices` covers the ledger lifecycle, device join flow, and device membership
 - `bill add | list | amend` manages effective bills in one ledger
-- `user create | import | list | share | delete` manages saved users on this device
-- `user add --ledger-id ...` and `user list --ledger-id ...` manage users inside one ledger
+- `user create --ledger-id ...` creates a new user and adds them to a ledger
+- `user add --ledger-id ...` adds an existing user (by ID) to a ledger
+- `user list` lists all unique users across every ledger on this device; `user list --ledger-id ...` lists users in one ledger
 - `sync daemon | once | status` exposes peer-to-peer sync control
 - `settlement <user_id>` prints the net settlement for one user across every ledger they appear in
-
-The CLI has two distinct user concepts and the docs should say so plainly:
-
-- saved users are device-local identities used for convenience and transfer between devices
-- ledger users are shared records inside one ledger and are the identities referenced by bills
 
 ## Rules
 
@@ -29,4 +25,4 @@ The CLI has two distinct user concepts and the docs should say so plainly:
 
 - invalid IDs, invalid amounts, and invalid node IDs fail before calling the service
 - service errors surface as non-zero exits with human-readable stderr
-- join and user-import commands fail if the remote device is offline or the provided URL is invalid
+- join commands fail if the remote device is offline or the provided URL is invalid

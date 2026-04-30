@@ -600,30 +600,14 @@ async fn execute_action(action: PopupAction, state: &mut AppState, svc: &Arc<Unb
             Err(e) => state.status_message = Some(format!("add user: {e}")),
         },
 
-        PopupAction::AddLocalUser { display_name } => {
-            match svc.add_local_user(display_name).await {
-                Ok(_) => {}
-                Err(e) => state.status_message = Some(format!("add local user: {e}")),
-            }
-        }
-
-        PopupAction::ShareLocalUser { user_id } => {
-            match svc.create_local_user_share(&user_id).await {
-                Ok(url) => {
-                    state.popup = Some(Box::new(InviteResultPopup::with_title(
-                        "User Share URL",
-                        url,
-                    )));
-                }
-                Err(e) => state.status_message = Some(format!("share user: {e}")),
-            }
-        }
-
-        PopupAction::ImportLocalUser { url } => match svc.fetch_local_user(&url).await {
+        PopupAction::CreateUser {
+            ledger_id,
+            display_name,
+        } => match svc.create_user(&ledger_id, display_name).await {
             Ok(_) => {
-                state.status_message = Some("User imported".to_string());
+                refresh_users(svc, state).await;
             }
-            Err(e) => state.status_message = Some(format!("import user: {e}")),
+            Err(e) => state.status_message = Some(format!("create user: {e}")),
         },
 
         PopupAction::GenerateInvite { ledger_id } => {
@@ -669,7 +653,7 @@ async fn execute_action(action: PopupAction, state: &mut AppState, svc: &Arc<Unb
 
 async fn open_settings_popup(tab: TopTab, state: &mut AppState, svc: &Arc<UnbillService>) {
     let device_id = svc.device_id().to_string();
-    let saved_users = match svc.list_local_users().await {
+    let all_users = match svc.list_all_users().await {
         Ok(u) => u,
         Err(e) => {
             state.status_message = Some(e.to_string());
@@ -685,14 +669,12 @@ async fn open_settings_popup(tab: TopTab, state: &mut AppState, svc: &Arc<Unbill
             .unwrap_or_default();
         ledger_users_map.push(users);
     }
-    let all_local_users = saved_users.clone();
     state.popup = Some(Box::new(SettingsPopup::new(
         tab,
         device_id,
-        saved_users,
+        all_users,
         ledgers,
         ledger_users_map,
-        all_local_users,
         state.ledger_cursor,
     )));
 }

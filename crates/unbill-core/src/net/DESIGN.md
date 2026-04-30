@@ -6,7 +6,6 @@ Peer-to-peer transport for existing peers, device join, and saved-user transfer.
 
 - `unbill/sync/v1` — authorized peers exchange ledger lists and Automerge sync messages
 - `unbill/join/v1` — an invite token authorizes a new device, appends its `NodeId` to the ledger, and returns a full snapshot
-- `unbill/user/v1` — one device transfers a saved user record to another device
 
 ## Flows
 
@@ -40,18 +39,6 @@ sequenceDiagram
     H-->>N: JoinResponse(ledger_bytes)
 ```
 
-### Saved-user transfer
-
-```mermaid
-sequenceDiagram
-    participant N as New device
-    participant E as Existing device
-
-    N->>E: UserRequest(token)
-    E->>E: Validate token and load saved user
-    E-->>N: UserResponse(user_id, display_name)
-```
-
 ## Rules
 
 - discovery comes from known `NodeId` values in ledgers or invite URLs
@@ -61,8 +48,8 @@ sequenceDiagram
 - sync is user-initiated; there is no background polling or automatic reconciliation loop
 - after remote changes are applied, the touched ledger is saved and the service emits `LedgerUpdated`
 - join authorizes devices only; adding a named ledger user is a separate step
-- device labels and pending tokens stay in local metadata, not shared ledger state
+- device labels and pending invitations stay in local metadata, not shared ledger state
 
 ## Failure model
 
-Unauthorized ledgers are rejected, invalid tokens fail join or user transfer, and transport errors surface to the service layer without creating a second source of truth.
+Unauthorized ledgers are rejected, invalid tokens fail join, and transport errors surface to the service layer without creating a second source of truth.
