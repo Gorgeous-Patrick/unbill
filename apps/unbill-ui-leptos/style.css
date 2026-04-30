@@ -645,6 +645,9 @@ button {
 
 @media (max-width: 1199px) {
   .app-shell {
+    height: 100dvh;
+    min-height: unset;
+    overflow: hidden;
     padding: max(8px, var(--sat))
              max(8px, var(--sar))
              max(8px, var(--sab))
@@ -652,7 +655,9 @@ button {
   }
 
   .screen-frame {
-    min-height: calc(100vh - max(8px, var(--sat)) - max(8px, var(--sab)));
+    flex: 1;
+    min-height: 0;
+    height: auto;
   }
 
   .settings-overlay {
