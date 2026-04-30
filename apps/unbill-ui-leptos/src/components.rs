@@ -414,6 +414,8 @@ pub fn TagPill(#[prop(into)] label: String, #[prop(optional)] active: bool) -> i
 pub fn CurrencyCombobox(value: RwSignal<String>) -> impl IntoView {
     let query = RwSignal::new(String::new());
     let open = RwSignal::new(false);
+    let dropdown_style = RwSignal::new(String::new());
+    let input_ref = NodeRef::<leptos::html::Input>::new();
 
     let display = Memo::new(move |_| {
         let code = value.get();
@@ -436,10 +438,20 @@ pub fn CurrencyCombobox(value: RwSignal<String>) -> impl IntoView {
     view! {
         <div class="combobox">
             <input
+                node_ref=input_ref
                 class="ui-input"
                 prop:value=move || if open.get() { query.get() } else { display.get() }
                 placeholder=move || if open.get() { display.get() } else { String::new() }
                 on:focus=move |_| {
+                    if let Some(el) = input_ref.get() {
+                        let rect = el.get_bounding_client_rect();
+                        dropdown_style.set(format!(
+                            "top:{}px;left:{}px;width:{}px",
+                            rect.bottom() + 4.0,
+                            rect.left(),
+                            rect.width(),
+                        ));
+                    }
                     query.set(String::new());
                     open.set(true);
                 }
@@ -447,7 +459,7 @@ pub fn CurrencyCombobox(value: RwSignal<String>) -> impl IntoView {
                 on:input=move |event| query.set(event_target_value(&event))
             />
             <Show when=move || open.get()>
-                <ul class="combobox-list">
+                <ul class="combobox-list" style=move || dropdown_style.get()>
                     {move || {
                         filtered
                             .get()
