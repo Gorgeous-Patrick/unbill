@@ -406,6 +406,36 @@ button {
   resize: vertical;
 }
 
+.combobox {
+  position: relative;
+}
+
+.combobox-list {
+  position: fixed;
+  z-index: 200;
+  max-height: 240px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-overlay);
+}
+
+.combobox-option {
+  padding: 8px 10px;
+  font-size: 0.88rem;
+  cursor: pointer;
+  color: var(--text-body);
+}
+
+.combobox-option:hover {
+  background: var(--bg-muted);
+  color: var(--text-strong);
+}
+
 .chip-row,
 .button-row {
   display: flex;

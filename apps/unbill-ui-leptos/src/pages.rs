@@ -4,8 +4,8 @@ use crate::app::{
     parse_amount_text, share_lookup_shares,
 };
 use crate::components::{
-    ActionButton, ButtonTone, FieldBlock, IconButton, IconButtonKind, ListRow, ModalSheet,
-    ScreenFrame, SectionCard, TagPill,
+    ActionButton, ButtonTone, CurrencyCombobox, FieldBlock, IconButton, IconButtonKind, ListRow,
+    ModalSheet, ScreenFrame, SectionCard, TagPill,
 };
 use leptos::prelude::*;
 
@@ -812,15 +812,7 @@ pub fn CreateLedgerSheet(
                     />
                 </FieldBlock>
                 <FieldBlock label="Currency".to_owned()>
-                    <select
-                        class="ui-select"
-                        prop:value=move || currency.get()
-                        on:change=move |event| currency.set(event_target_value(&event))
-                    >
-                        <option value="USD">"USD"</option>
-                        <option value="EUR">"EUR"</option>
-                        <option value="GBP">"GBP"</option>
-                    </select>
+                    <CurrencyCombobox value=currency />
                 </FieldBlock>
                 <ActionButton
                     label="Create Ledger".to_owned()
