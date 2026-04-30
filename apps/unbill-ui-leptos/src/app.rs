@@ -1,10 +1,10 @@
 use crate::api::{
-    self, AddLocalUserInput, AddUserInput, AppBootstrap, Bill, BillShareInput, JoinLedgerInput,
-    LedgerDetail, LedgerSummary, SaveBillInput, User,
+    self, AddUserInput, AppBootstrap, Bill, BillShareInput, JoinLedgerInput, LedgerDetail,
+    LedgerSummary, SaveBillInput, User,
 };
 use crate::pages::{
-    AddLedgerUserSheet, AddLocalUserSheet, BillEditorPage, CreateLedgerSheet, EmptyColumn,
-    ImportLocalUserSheet, JoinLedgerSheet, LedgerPage, LedgersPage, SettingsPopup, StatusStrip,
+    AddLedgerUserSheet, BillEditorPage, CreateLedgerSheet, EmptyColumn, JoinLedgerSheet,
+    LedgerPage, LedgersPage, SettingsPopup, StatusStrip,
 };
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -120,9 +120,7 @@ pub(crate) fn compact_composition(
 #[derive(Clone, PartialEq)]
 pub(crate) enum OverlayKind {
     CreateLedger,
-    AddLocalUser,
     JoinLedger { url: String },
-    ImportLocalUser { url: String },
     AddUser,
 }
 
@@ -170,7 +168,6 @@ pub fn App() -> impl IntoView {
     let settings_popup = RwSignal::new(None::<SettingsPopupState>);
     let settings_ledger_detail = RwSignal::new(None::<LedgerDetail>);
     let invitation_url = RwSignal::new(None::<String>);
-    let user_share_url = RwSignal::new(None::<String>);
     let overlay = RwSignal::new(None::<OverlayKind>);
     let bill_editor = RwSignal::new(None::<BillEditorSeed>);
     let status_message = RwSignal::new(None::<String>);
@@ -292,7 +289,6 @@ pub fn App() -> impl IntoView {
         settings_popup.set(None);
         settings_ledger_detail.set(None);
         invitation_url.set(None);
-        user_share_url.set(None);
         bill_editor.set(None);
         load_selected_ledger(ledger_id);
     };
@@ -381,35 +377,6 @@ pub fn App() -> impl IntoView {
         }
     };
 
-    let share_local_user = move |user_id: String| {
-        busy.set(true);
-        spawn_local(async move {
-            match api::create_local_user_share(&user_id).await {
-                Ok(url) => {
-                    user_share_url.set(Some(url));
-                    status_message.set(Some("User share URL generated.".to_owned()));
-                    error_message.set(None);
-                }
-                Err(error) => error_message.set(Some(error)),
-            }
-            busy.set(false);
-        });
-    };
-
-    let copy_user_share_url = move || {
-        if let Some(url) = user_share_url.get() {
-            spawn_local(async move {
-                match api::write_clipboard_text(&url).await {
-                    Ok(()) => {
-                        status_message.set(Some("User share URL copied.".to_owned()));
-                        error_message.set(None);
-                    }
-                    Err(error) => error_message.set(Some(error)),
-                }
-            });
-        }
-    };
-
     let open_join_from_clipboard = move || {
         spawn_local(async move {
             match api::read_clipboard_text().await {
@@ -423,24 +390,10 @@ pub fn App() -> impl IntoView {
         });
     };
 
-    let open_local_user_import_from_clipboard = move || {
-        spawn_local(async move {
-            match api::read_clipboard_text().await {
-                Ok(url) if !url.trim().is_empty() => {
-                    overlay.set(Some(OverlayKind::ImportLocalUser { url }));
-                    error_message.set(None);
-                }
-                Ok(_) => overlay.set(Some(OverlayKind::ImportLocalUser { url: String::new() })),
-                Err(_) => overlay.set(Some(OverlayKind::ImportLocalUser { url: String::new() })),
-            }
-        });
-    };
-
     let open_device_settings = move || {
         settings_popup.set(Some(SettingsPopupState::open_device()));
         settings_ledger_detail.set(None);
         invitation_url.set(None);
-        user_share_url.set(None);
     };
 
     let open_ledger_settings = move || {
@@ -534,29 +487,6 @@ pub fn App() -> impl IntoView {
                 }
                     .into_any()
             }
-            OverlayKind::AddLocalUser => {
-                view! {
-                    <AddLocalUserSheet
-                        on_cancel=Callback::new(move |_| overlay.set(None))
-                        on_submit=Callback::new(move |display_name: String| {
-                            busy.set(true);
-                            spawn_local(async move {
-                                match api::add_local_user(AddLocalUserInput { display_name }).await {
-                                    Ok(_) => {
-                                        overlay.set(None);
-                                        reload_bootstrap();
-                                        status_message.set(Some("Saved user added on this device.".to_owned()));
-                                        error_message.set(None);
-                                    }
-                                    Err(error) => error_message.set(Some(error)),
-                                }
-                                busy.set(false);
-                            });
-                        })
-                    />
-                }
-                    .into_any()
-            }
             OverlayKind::JoinLedger { url } => {
                 view! {
                     <JoinLedgerSheet
@@ -581,34 +511,10 @@ pub fn App() -> impl IntoView {
                 }
                     .into_any()
             }
-            OverlayKind::ImportLocalUser { url } => {
-                view! {
-                    <ImportLocalUserSheet
-                        initial_url=url
-                        on_cancel=Callback::new(move |_| overlay.set(None))
-                        on_submit=Callback::new(move |url: String| {
-                            busy.set(true);
-                            spawn_local(async move {
-                                match api::import_local_user(&url).await {
-                                    Ok(()) => {
-                                        overlay.set(None);
-                                        reload_bootstrap();
-                                        status_message.set(Some("Saved user imported.".to_owned()));
-                                        error_message.set(None);
-                                    }
-                                    Err(error) => error_message.set(Some(error)),
-                                }
-                                busy.set(false);
-                            });
-                        })
-                    />
-                }
-                    .into_any()
-            }
             OverlayKind::AddUser => {
                 view! {
                     <AddLedgerUserSheet
-                        local_users=bootstrap.get().map(|data| data.local_users).unwrap_or_default()
+                        all_users=bootstrap.get().map(|data| data.all_users).unwrap_or_default()
                         ledger_users=settings_ledger_detail.get().map(|detail| detail.users).unwrap_or_default()
                         on_cancel=Callback::new(move |_| overlay.set(None))
                         on_submit=Callback::new(move |user_id: String| {
@@ -712,10 +618,6 @@ pub fn App() -> impl IntoView {
                         .get()
                         .map(|data| data.ledgers)
                         .unwrap_or_default()
-                    local_users=bootstrap
-                        .get()
-                        .map(|data| data.local_users)
-                        .unwrap_or_default()
                     devices=bootstrap
                         .get()
                         .map(|data| data.devices)
@@ -724,18 +626,13 @@ pub fn App() -> impl IntoView {
                     selected_ledger_id=popup.selected_ledger_id
                     ledger_detail=settings_ledger_detail.get()
                     invitation_url=invitation_url.get()
-                    user_share_url=user_share_url.get()
                     on_close=Callback::new(move |_| {
                         settings_popup.set(None);
                         settings_ledger_detail.set(None);
                     })
                     on_select_tab=Callback::new(select_settings_tab)
                     on_select_ledger=Callback::new(select_settings_ledger)
-                    on_add_local_user=Callback::new(move |_| overlay.set(Some(OverlayKind::AddLocalUser)))
-                    on_import_local_user=Callback::new(move |_| open_local_user_import_from_clipboard())
                     on_join_ledger=Callback::new(move |_| open_join_from_clipboard())
-                    on_share_local_user=Callback::new(share_local_user)
-                    on_copy_user_share=Callback::new(move |_| copy_user_share_url())
                     on_add_ledger_user=Callback::new(move |_| overlay.set(Some(OverlayKind::AddUser)))
                     on_sync_device=Callback::new(sync_device)
                     on_create_invitation=Callback::new(move |_| create_invitation())
