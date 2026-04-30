@@ -2,7 +2,7 @@
 repo = "https://github.com/pre-commit/pre-commit-hooks"
 rev = "v6.0.0"
 hooks = [
-  { id = "check-yaml" },
+  { id = "check-yaml", exclude = "^crates/unbill-tauri/ios/" },
   { id = "check-toml" },
   { id = "check-merge-conflict" },
   { id = "end-of-file-fixer" },
