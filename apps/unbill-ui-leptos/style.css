@@ -1,4 +1,8 @@
 :root {
+  --sat: 0px;
+  --sar: 0px;
+  --sab: 0px;
+  --sal: 0px;
   color-scheme: light;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -57,7 +61,10 @@ button {
   gap: 8px;
   width: 100%;
   min-height: 100vh;
-  padding: 10px;
+  padding: max(10px, var(--sat))
+           max(10px, var(--sar))
+           max(10px, var(--sab))
+           max(10px, var(--sal));
 }
 
 .ranger-app-grid {
@@ -638,11 +645,14 @@ button {
 
 @media (max-width: 1199px) {
   .app-shell {
-    padding: 8px;
+    padding: max(8px, var(--sat))
+             max(8px, var(--sar))
+             max(8px, var(--sab))
+             max(8px, var(--sal));
   }
 
   .screen-frame {
-    min-height: calc(100vh - 16px);
+    min-height: calc(100vh - max(8px, var(--sat)) - max(8px, var(--sab)));
   }
 
   .settings-overlay {
