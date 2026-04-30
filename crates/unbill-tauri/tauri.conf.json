@@ -5,13 +5,13 @@
   "build": {
     "beforeDevCommand": {
       "cwd": "../../apps/unbill-ui-leptos",
-      "script": "trunk serve --config Trunk.toml",
+      "script": "NO_COLOR=false trunk serve --config Trunk.toml --address 0.0.0.0",
       "wait": false
     },
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": {
       "cwd": "../../apps/unbill-ui-leptos",
-      "script": "trunk build --config Trunk.toml --release"
+      "script": "NO_COLOR=false trunk build --config Trunk.toml --release"
     },
     "frontendDist": "../../apps/unbill-ui-leptos/dist"
   },
@@ -31,6 +31,11 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "iOS": {
+      "developmentTeam": "BB577FKUK4",
+      "frameworks": ["SystemConfiguration"],
+      "template": "ios/project.yml"
+    },
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.icns", "icons/icon.ico"]
   }
 }
