@@ -5,13 +5,13 @@
   "build": {
     "beforeDevCommand": {
       "cwd": "../../apps/unbill-ui-leptos",
-      "script": "NO_COLOR=false trunk serve --config Trunk.toml --address 0.0.0.0",
+      "script": "trunk serve --config Trunk.toml --address 0.0.0.0",
       "wait": false
     },
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": {
       "cwd": "../../apps/unbill-ui-leptos",
-      "script": "NO_COLOR=false trunk build --config Trunk.toml --release"
+      "script": "trunk build --config Trunk.toml --release"
     },
     "frontendDist": "../../apps/unbill-ui-leptos/dist"
   },
