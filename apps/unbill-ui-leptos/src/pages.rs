@@ -1,4 +1,4 @@
-use crate::api::{self, LedgerDetail, LedgerSummary, LocalUser, SyncDevice, User};
+use crate::api::{self, LedgerDetail, LedgerSummary, SyncDevice, User};
 use crate::app::{
     BillEditorSeed, BillSaveRequest, SettingsTab, ShareMode, derived_share_preview,
     parse_amount_text, share_lookup_shares,
@@ -176,21 +176,15 @@ pub fn LedgerPage(
 pub fn SettingsPopup(
     device_id: String,
     ledgers: Vec<LedgerSummary>,
-    local_users: Vec<LocalUser>,
     devices: Vec<SyncDevice>,
     active_tab: SettingsTab,
     selected_ledger_id: Option<String>,
     ledger_detail: Option<LedgerDetail>,
     invitation_url: Option<String>,
-    user_share_url: Option<String>,
     on_close: Callback<()>,
     on_select_tab: Callback<SettingsTab>,
     on_select_ledger: Callback<String>,
-    on_add_local_user: Callback<()>,
-    on_import_local_user: Callback<()>,
     on_join_ledger: Callback<()>,
-    on_share_local_user: Callback<String>,
-    on_copy_user_share: Callback<()>,
     on_add_ledger_user: Callback<()>,
     on_sync_device: Callback<String>,
     on_create_invitation: Callback<()>,
@@ -249,66 +243,6 @@ pub fn SettingsPopup(
                                         <div class="row-copy">
                                             <p class="row-title">"Device ID"</p>
                                             <p class="row-meta mono-copy">{device_id}</p>
-                                        </div>
-                                    </div>
-                                </SectionCard>
-
-                                <SectionCard title="Saved users".to_owned()>
-                                    <div class="stack-gap">
-                                        {if local_users.is_empty() {
-                                            view! { <div class="empty-copy">"No saved users."</div> }.into_any()
-                                        } else {
-                                            local_users
-                                                .clone()
-                                                .into_iter()
-                                                .map(|local_user| {
-                                                    let user_id = local_user.user_id.clone();
-                                                    view! {
-                                                        <div class="data-row split-row">
-                                                            <div class="row-copy">
-                                                                <p class="row-title">{local_user.display_name}</p>
-                                                                <p class="row-meta mono-copy">{user_id.clone()}</p>
-                                                            </div>
-                                                            <IconButton
-                                                                kind=IconButtonKind::Share
-                                                                tone=ButtonTone::Quiet
-                                                                on_press=Callback::new(move |_| on_share_local_user.run(user_id.clone()))
-                                                            />
-                                                        </div>
-                                                    }
-                                                })
-                                                .collect_view()
-                                                .into_any()
-                                        }}
-
-                                        {user_share_url
-                                            .map(|url| {
-                                                view! {
-                                                    <div class="result-panel">
-                                                        <pre class="invite-url">{url.clone()}</pre>
-                                                        <div class="result-actions">
-                                                            <IconButton
-                                                                kind=IconButtonKind::CopyUrl
-                                                                tone=ButtonTone::Quiet
-                                                                on_press=Callback::new(move |_| on_copy_user_share.run(()))
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                }
-                                                    .into_any()
-                                            })}
-
-                                        <div class="button-row">
-                                            <ActionButton
-                                                label="Add Saved User".to_owned()
-                                                tone=ButtonTone::Secondary
-                                                on_press=Callback::new(move |_| on_add_local_user.run(()))
-                                            />
-                                            <ActionButton
-                                                label="Import User".to_owned()
-                                                tone=ButtonTone::Quiet
-                                                on_press=Callback::new(move |_| on_import_local_user.run(()))
-                                            />
                                         </div>
                                     </div>
                                 </SectionCard>
@@ -899,45 +833,18 @@ pub fn CreateLedgerSheet(
 }
 
 #[component]
-pub fn AddLocalUserSheet(on_cancel: Callback<()>, on_submit: Callback<String>) -> impl IntoView {
-    let display_name = RwSignal::new(String::new());
-
-    view! {
-        <ModalSheet
-            title="Add Saved User".to_owned()
-            on_close=Callback::new(move |_| on_cancel.run(()))
-        >
-            <div class="stack-gap">
-                <FieldBlock label="User name".to_owned()>
-                    <input
-                        class="ui-input"
-                        prop:value=move || display_name.get()
-                        on:input=move |event| display_name.set(event_target_value(&event))
-                    />
-                </FieldBlock>
-                <ActionButton
-                    label="Save User".to_owned()
-                    full_width=true
-                    on_press=Callback::new(move |_| on_submit.run(display_name.get()))
-                />
-            </div>
-        </ModalSheet>
-    }
-}
-
-#[component]
 pub fn AddLedgerUserSheet(
-    local_users: Vec<LocalUser>,
+    all_users: Vec<User>,
     ledger_users: Vec<User>,
     on_cancel: Callback<()>,
     on_submit: Callback<String>,
 ) -> impl IntoView {
-    let available_users = local_users
+    let available_users = all_users
         .into_iter()
-        .filter(|local_user| {
+        .filter(|user| {
             !ledger_users
                 .iter()
-                .any(|ledger_user| ledger_user.user_id == local_user.user_id)
+                .any(|ledger_user| ledger_user.user_id == user.user_id)
         })
         .collect::<Vec<_>>();
 
@@ -948,16 +855,16 @@ pub fn AddLedgerUserSheet(
         >
             <div class="stack-gap">
                 {if available_users.is_empty() {
-                    view! { <div class="empty-copy">"No saved users available."</div> }.into_any()
+                    view! { <div class="empty-copy">"No users from other ledgers available."</div> }.into_any()
                 } else {
                     available_users
                         .into_iter()
-                        .map(|local_user| {
-                            let user_id = local_user.user_id.clone();
+                        .map(|user| {
+                            let user_id = user.user_id.clone();
                             view! {
                                 <div class="data-row split-row">
                                     <div class="row-copy">
-                                        <p class="row-title">{local_user.display_name}</p>
+                                        <p class="row-title">{user.display_name}</p>
                                         <p class="row-meta mono-copy">{user_id.clone()}</p>
                                     </div>
                                     <IconButton
@@ -971,37 +878,6 @@ pub fn AddLedgerUserSheet(
                         .collect_view()
                         .into_any()
                 }}
-            </div>
-        </ModalSheet>
-    }
-}
-
-#[component]
-pub fn ImportLocalUserSheet(
-    initial_url: String,
-    on_cancel: Callback<()>,
-    on_submit: Callback<String>,
-) -> impl IntoView {
-    let url = RwSignal::new(initial_url);
-
-    view! {
-        <ModalSheet
-            title="Import User".to_owned()
-            on_close=Callback::new(move |_| on_cancel.run(()))
-        >
-            <div class="stack-gap">
-                <FieldBlock label="User URL".to_owned()>
-                    <textarea
-                        class="ui-textarea"
-                        prop:value=move || url.get()
-                        on:input=move |event| url.set(event_target_value(&event))
-                    />
-                </FieldBlock>
-                <ActionButton
-                    label="Import User".to_owned()
-                    full_width=true
-                    on_press=Callback::new(move |_| on_submit.run(url.get()))
-                />
             </div>
         </ModalSheet>
     }

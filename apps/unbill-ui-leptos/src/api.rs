@@ -21,7 +21,7 @@ extern "C" {
 pub struct AppBootstrap {
     pub device_id: String,
     pub ledgers: Vec<LedgerSummary>,
-    pub local_users: Vec<LocalUser>,
+    pub all_users: Vec<User>,
     pub devices: Vec<SyncDevice>,
 }
 
@@ -53,13 +53,6 @@ pub struct Transaction {
     pub from_name: String,
     pub to_name: String,
     pub amount_cents: i64,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct LocalUser {
-    pub user_id: String,
-    pub display_name: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -107,7 +100,8 @@ pub struct CreateLedgerInput {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AddLocalUserInput {
+pub struct CreateUserInput {
+    pub ledger_id: String,
     pub display_name: String,
 }
 
@@ -159,24 +153,12 @@ pub async fn load_ledger_detail(ledger_id: &str) -> Result<LedgerDetail, String>
     .await
 }
 
-pub async fn add_local_user(input: AddLocalUserInput) -> Result<LocalUser, String> {
-    invoke("add_local_user", &serde_json::json!({ "input": input })).await
+pub async fn create_user(input: CreateUserInput) -> Result<User, String> {
+    invoke("create_user", &serde_json::json!({ "input": input })).await
 }
 
 pub async fn add_user(input: AddUserInput) -> Result<User, String> {
     invoke("add_user", &serde_json::json!({ "input": input })).await
-}
-
-pub async fn create_local_user_share(user_id: &str) -> Result<String, String> {
-    invoke(
-        "create_local_user_share",
-        &serde_json::json!({ "userId": user_id }),
-    )
-    .await
-}
-
-pub async fn import_local_user(url: &str) -> Result<(), String> {
-    invoke("import_local_user", &serde_json::json!({ "url": url })).await
 }
 
 pub async fn create_invitation(ledger_id: &str) -> Result<String, String> {
