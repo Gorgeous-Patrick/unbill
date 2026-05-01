@@ -10,6 +10,7 @@ homepage.workspace = true
 [dependencies]
 unbill-model = { path = "../unbill-model" }
 unbill-event = { path = "../unbill-event" }
+unbill-storage = { path = "../unbill-storage" }
 automerge.workspace = true
 autosurgeon.workspace = true
 iroh.workspace = true
@@ -26,11 +27,10 @@ thiserror.workspace = true
 tracing.workspace = true
 dashmap.workspace = true
 directories.workspace = true
-reqwest.workspace = true
 
 [dev-dependencies]
 unbill-model = { path = "../unbill-model", features = ["test-helpers"] }
+unbill-store-memory = { path = "../unbill-store-memory" }
 proptest.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = "3"
-wiremock.workspace = true

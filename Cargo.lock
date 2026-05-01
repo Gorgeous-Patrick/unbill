@@ -7660,7 +7660,6 @@ dependencies = [
  "iso_currency",
  "proptest",
  "rand 0.10.1",
- "reqwest 0.12.28",
  "serde",
  "serde_json",
  "tempfile",
@@ -7670,7 +7669,8 @@ dependencies = [
  "ulid",
  "unbill-event",
  "unbill-model",
- "wiremock",
+ "unbill-storage",
+ "unbill-store-memory",
 ]
 
 [[package]]
@@ -7681,11 +7681,13 @@ version = "0.0.1"
 name = "unbill-model"
 version = "0.0.1"
 dependencies = [
+ "anyhow",
  "automerge",
  "autosurgeon",
  "iso_currency",
  "rand 0.10.1",
  "serde",
+ "thiserror 2.0.18",
  "ulid",
 ]
 
@@ -7706,6 +7708,57 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "unbill-core",
+]
+
+[[package]]
+name = "unbill-storage"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "automerge",
+ "autosurgeon",
+ "tokio",
+ "unbill-model",
+]
+
+[[package]]
+name = "unbill-store-fs"
+version = "0.0.1"
+dependencies = [
+ "async-trait",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "unbill-model",
+ "unbill-storage",
+]
+
+[[package]]
+name = "unbill-store-http"
+version = "0.0.1"
+dependencies = [
+ "async-trait",
+ "automerge",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "unbill-model",
+ "unbill-storage",
+ "wiremock",
+]
+
+[[package]]
+name = "unbill-store-memory"
+version = "0.0.1"
+dependencies = [
+ "async-trait",
+ "unbill-model",
+ "unbill-storage",
 ]
 
 [[package]]

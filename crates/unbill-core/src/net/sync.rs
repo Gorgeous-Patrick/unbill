@@ -230,8 +230,9 @@ mod tests {
 
     use crate::doc::LedgerDoc;
     use crate::model::{Currency, NewBill, NewDevice, NodeId, Share, Timestamp, Ulid};
-    use crate::storage::{InMemoryStore, LedgerStore};
+    use crate::storage::LedgerStore;
     use unbill_event::ServiceEvent;
+    use unbill_store_memory::InMemoryStore;
 
     use super::run_sync_session;
 

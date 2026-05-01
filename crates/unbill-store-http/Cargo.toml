@@ -1,0 +1,23 @@
+[package]
+name = "unbill-store-http"
+description = "HTTP-backed LedgerStore implementation for unbill."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+unbill-storage = { path = "../unbill-storage" }
+unbill-model = { path = "../unbill-model" }
+async-trait.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json = "1"
+tokio.workspace = true
+automerge.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+wiremock.workspace = true
+tokio = { workspace = true, features = ["test-util"] }

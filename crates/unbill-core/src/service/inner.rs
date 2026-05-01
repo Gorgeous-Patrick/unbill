@@ -462,7 +462,7 @@ fn parse_join_url(url: &str) -> Result<(String, NodeId, String)> {
 mod tests {
     use super::*;
     use crate::model::Share;
-    use crate::storage::InMemoryStore;
+    use unbill_store_memory::InMemoryStore;
 
     fn mem_store() -> Arc<dyn LedgerStore> {
         Arc::new(InMemoryStore::default())

@@ -1,5 +1,8 @@
 // Domain types. See DESIGN.md §4 for the schema and invariants.
 
+pub mod error;
+pub use error::{StorageError, UnbillError};
+
 mod amendment;
 mod bill;
 mod currency;

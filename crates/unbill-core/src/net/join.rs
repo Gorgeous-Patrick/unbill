@@ -186,8 +186,8 @@ mod tests {
         Currency, Invitation, InviteToken, LedgerMeta, NewDevice, NodeId, Timestamp, Ulid,
     };
     use crate::service::save_pending_invitations;
-    use crate::storage::InMemoryStore;
     use unbill_event::ServiceEvent;
+    use unbill_store_memory::InMemoryStore;
 
     use super::super::protocol::JoinRequest;
     use super::{run_join_host, run_join_requester};
