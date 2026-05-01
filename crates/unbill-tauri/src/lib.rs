@@ -616,13 +616,19 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
+            #[cfg(mobile)]
             let root =
                 app.path()
                     .app_data_dir()
                     .map_err(|error| -> Box<dyn std::error::Error> {
                         Box::new(std::io::Error::other(error.to_string()))
                     })?;
-            std::fs::create_dir_all(&root)?;
+            #[cfg(not(mobile))]
+            let root = unbill_core::path::UNBILL_PATH.ensure_data_dir().map_err(
+                |error| -> Box<dyn std::error::Error> {
+                    Box::new(std::io::Error::other(error.to_string()))
+                },
+            )?;
             let store = Arc::new(FsStore::new(root));
             let service = tauri::async_runtime::block_on(UnbillService::open(store)).map_err(
                 |error| -> Box<dyn std::error::Error> {
