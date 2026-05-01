@@ -34,9 +34,9 @@ impl FromStr for NodeId {
     }
 }
 
-/// Construct a deterministic `NodeId` from a single seed byte.  Only available
-/// in test builds — derives a valid Ed25519 key from `[seed; 32]`.
-#[cfg(test)]
+/// Construct a deterministic `NodeId` from a single seed byte.
+/// Derives a valid Ed25519 key from `[seed; 32]`.
+#[cfg(any(test, feature = "test-helpers"))]
 impl NodeId {
     pub fn from_seed(seed: u8) -> Self {
         let secret = iroh::SecretKey::from([seed; 32]);

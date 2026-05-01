@@ -4,7 +4,7 @@
 pub mod conflict;
 pub mod doc;
 pub mod error;
-pub mod model;
+pub use unbill_model as model;
 pub mod net;
 pub mod path;
 pub mod service;

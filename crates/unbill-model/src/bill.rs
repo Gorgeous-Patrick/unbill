@@ -1,8 +1,8 @@
 use autosurgeon::{Hydrate, Reconcile};
 
-use super::id::Ulid;
-use super::node_id::NodeId;
-use super::timestamp::Timestamp;
+use crate::id::Ulid;
+use crate::node_id::NodeId;
+use crate::timestamp::Timestamp;
 
 #[derive(Clone, Debug, Reconcile, Hydrate)]
 pub struct Bill {

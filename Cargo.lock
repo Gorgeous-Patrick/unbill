@@ -7668,7 +7668,21 @@ dependencies = [
  "tokio",
  "tracing",
  "ulid",
+ "unbill-model",
  "wiremock",
+]
+
+[[package]]
+name = "unbill-model"
+version = "0.0.1"
+dependencies = [
+ "automerge",
+ "autosurgeon",
+ "iroh",
+ "iso_currency",
+ "rand 0.10.1",
+ "serde",
+ "ulid",
 ]
 
 [[package]]

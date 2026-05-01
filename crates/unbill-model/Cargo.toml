@@ -1,0 +1,20 @@
+[package]
+name = "unbill-model"
+description = "Domain model types for unbill — the shared vocabulary used across all layers."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[features]
+test-helpers = []
+
+[dependencies]
+automerge.workspace = true
+autosurgeon.workspace = true
+iroh.workspace = true
+ulid.workspace = true
+iso_currency.workspace = true
+rand.workspace = true
+serde.workspace = true

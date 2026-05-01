@@ -8,6 +8,7 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
+unbill-model = { path = "../unbill-model" }
 automerge.workspace = true
 autosurgeon.workspace = true
 iroh.workspace = true
@@ -27,6 +28,7 @@ directories.workspace = true
 reqwest.workspace = true
 
 [dev-dependencies]
+unbill-model = { path = "../unbill-model", features = ["test-helpers"] }
 proptest.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = "3"
