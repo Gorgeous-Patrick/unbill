@@ -7480,8 +7480,10 @@ dependencies = [
 name = "unbill-ui-components"
 version = "0.0.1"
 dependencies = [
+ "iso_currency",
  "leptos",
  "serde",
+ "web-sys",
 ]
 
 [[package]]
@@ -7489,11 +7491,11 @@ name = "unbill-ui-leptos"
 version = "0.0.1"
 dependencies = [
  "console_error_panic_hook",
- "iso_currency",
  "js-sys",
  "leptos",
  "serde",
  "serde_json",
+ "unbill-ui-components",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",

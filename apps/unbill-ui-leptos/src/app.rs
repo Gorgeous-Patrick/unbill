@@ -2,9 +2,10 @@ use crate::api::{
     self, AddUserInput, AppBootstrap, Bill, BillShareInput, CreateUserInput, JoinLedgerInput,
     LedgerDetail, LedgerSummary, SaveBillInput, User,
 };
+use crate::components::StatusStrip;
 use crate::pages::{
     AddLedgerUserSheet, BillEditorPage, CreateLedgerSheet, EmptyColumn, JoinLedgerSheet,
-    LedgerPage, LedgersPage, SettingsPopup, StatusStrip,
+    LedgerPage, LedgersPage, SettingsPopup,
 };
 use leptos::prelude::*;
 use leptos::task::spawn_local;
