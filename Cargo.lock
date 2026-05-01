@@ -7678,7 +7678,6 @@ version = "0.0.1"
 dependencies = [
  "automerge",
  "autosurgeon",
- "iroh",
  "iso_currency",
  "rand 0.10.1",
  "serde",

@@ -13,7 +13,6 @@ test-helpers = []
 [dependencies]
 automerge.workspace = true
 autosurgeon.workspace = true
-iroh.workspace = true
 ulid.workspace = true
 iso_currency.workspace = true
 rand.workspace = true
