@@ -241,15 +241,17 @@ impl UnbillService {
         let mut results = Vec::new();
         for (currency, balances) in by_currency {
             let full = settlement::compute_from_balances(currency, balances);
-            let transactions = full
+            let transactions: Vec<_> = full
                 .transactions
                 .into_iter()
                 .filter(|t| t.from_user_id == user_ulid || t.to_user_id == user_ulid)
                 .collect();
-            results.push(settlement::Settlement {
-                currency,
-                transactions,
-            });
+            if !transactions.is_empty() {
+                results.push(settlement::Settlement {
+                    currency,
+                    transactions,
+                });
+            }
         }
         Ok(results)
     }
