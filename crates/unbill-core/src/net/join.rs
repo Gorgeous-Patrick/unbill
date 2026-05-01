@@ -88,8 +88,8 @@ where
         return Ok(());
     }
 
-    let bytes = store.load_ledger_bytes(&req.ledger_id).await?;
-    if bytes.is_empty() {
+    let doc = store.load_ledger(&req.ledger_id).await?;
+    let Some(mut doc) = doc else {
         write_msg(
             &mut writer,
             &JoinReply::Err(JoinError {
@@ -98,26 +98,26 @@ where
         )
         .await?;
         return Ok(());
-    }
+    };
 
-    let mut doc =
-        LedgerDoc::from_bytes(&bytes).map_err(|e| anyhow::anyhow!("failed to load ledger: {e}"))?;
     doc.add_device(
         NewDevice {
             node_id: peer_node_id,
         },
         Timestamp::now(),
     )?;
-    let ledger_bytes = doc.save();
-
-    store
-        .save_ledger_bytes(&req.ledger_id, &ledger_bytes)
-        .await?;
+    store.save_ledger(&req.ledger_id, &mut doc).await?;
     let _ = events.send(ServiceEvent::LedgerUpdated {
         ledger_id: req.ledger_id,
     });
 
-    write_msg(&mut writer, &JoinReply::Ok(JoinResponse { ledger_bytes })).await?;
+    write_msg(
+        &mut writer,
+        &JoinReply::Ok(JoinResponse {
+            ledger_bytes: doc.save(),
+        }),
+    )
+    .await?;
     Ok(())
 }
 
@@ -144,7 +144,7 @@ where
     let reply: JoinReply = read_msg(&mut reader).await?;
     match reply {
         JoinReply::Ok(response) => {
-            let doc = LedgerDoc::from_bytes(&response.ledger_bytes)?;
+            let mut doc = LedgerDoc::from_bytes(&response.ledger_bytes)?;
             let ledger = doc.get_ledger()?;
             let ledger_id = ledger.ledger_id.to_string();
             let meta = LedgerMeta {
@@ -155,9 +155,7 @@ where
                 updated_at: Timestamp::now(),
             };
             store.save_ledger_meta(&meta).await?;
-            store
-                .save_ledger_bytes(&ledger_id, &response.ledger_bytes)
-                .await?;
+            store.save_ledger(&ledger_id, &mut doc).await?;
             if let Some(label) = local_label {
                 let mut device_labels = load_device_labels(&**store).await?;
                 device_labels.insert(host_node_id.to_string(), label);
@@ -240,7 +238,7 @@ mod tests {
         };
         host_store.save_ledger_meta(&meta).await.unwrap();
         host_store
-            .save_ledger_bytes(&ledger_id_str, &doc.save())
+            .save_ledger(&ledger_id_str, &mut doc)
             .await
             .unwrap();
 
@@ -299,14 +297,9 @@ mod tests {
         task_joiner.await.unwrap();
 
         // Joiner has the ledger in its store.
-        let joiner_bytes = joiner_store
-            .load_ledger_bytes(&ledger_id_str)
-            .await
-            .unwrap();
-        assert!(!joiner_bytes.is_empty(), "joiner should have the ledger");
-
-        // The ledger on the joiner's side should have joiner's device authorized.
-        let joiner_doc = LedgerDoc::from_bytes(&joiner_bytes).unwrap();
+        let joiner_doc = joiner_store.load_ledger(&ledger_id_str).await.unwrap();
+        assert!(joiner_doc.is_some(), "joiner should have the ledger");
+        let joiner_doc = joiner_doc.unwrap();
         let devices = joiner_doc.list_devices().unwrap();
         assert!(
             devices.iter().any(|d| d.node_id == joiner_node),
@@ -347,7 +340,7 @@ mod tests {
         // No invitations saved to store.
         let host_store: Arc<dyn crate::storage::LedgerStore> = make_store();
         host_store
-            .save_ledger_bytes(&ledger_id_str, &doc.save())
+            .save_ledger(&ledger_id_str, &mut doc)
             .await
             .unwrap();
 
@@ -397,10 +390,7 @@ mod tests {
         task_joiner.await.unwrap();
 
         // Joiner got nothing.
-        let joiner_bytes = joiner_store
-            .load_ledger_bytes(&ledger_id_str)
-            .await
-            .unwrap();
-        assert!(joiner_bytes.is_empty(), "joiner should have no ledgers");
+        let joiner_doc = joiner_store.load_ledger(&ledger_id_str).await.unwrap();
+        assert!(joiner_doc.is_none(), "joiner should have no ledgers");
     }
 }

@@ -1,0 +1,35 @@
+[package]
+name = "unbill-server"
+description = "HTTP storage server for unbill — implements the HttpStore REST API."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[[bin]]
+name = "unbill-server"
+path = "src/main.rs"
+
+[lib]
+name = "unbill_server"
+path = "src/lib.rs"
+
+[dependencies]
+unbill-core = { path = "../../crates/unbill-core" }
+tokio.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+axum.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+automerge.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+tower = { workspace = true, features = ["util"] }
+http-body-util = "0.1"
+tempfile = "3"

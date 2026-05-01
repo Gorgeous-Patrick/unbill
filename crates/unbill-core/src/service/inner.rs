@@ -77,7 +77,6 @@ impl UnbillService {
             },
             now,
         )?;
-        let bytes = doc.save();
 
         let meta = LedgerMeta {
             ledger_id,
@@ -88,7 +87,7 @@ impl UnbillService {
         };
         let id = ledger_id.to_string();
         self.store.save_ledger_meta(&meta).await?;
-        self.store.save_ledger_bytes(&id, &bytes).await?;
+        self.store.save_ledger(&id, &mut doc).await?;
 
         Ok(id)
     }
@@ -109,8 +108,7 @@ impl UnbillService {
     pub async fn add_bill(&self, ledger_id: &str, input: NewBill) -> Result<String> {
         let mut doc = self.load_doc(ledger_id).await?;
         let bill_id = doc.add_bill(input, self.device_id, Timestamp::now())?;
-        let bytes = doc.save();
-        self.store.save_ledger_bytes(ledger_id, &bytes).await?;
+        self.store.save_ledger(ledger_id, &mut doc).await?;
         self.touch_meta(ledger_id).await?;
         Ok(bill_id.to_string())
     }
@@ -126,8 +124,7 @@ impl UnbillService {
     pub async fn add_user(&self, ledger_id: &str, input: NewUser) -> Result<()> {
         let mut doc = self.load_doc(ledger_id).await?;
         doc.add_user(input, Timestamp::now())?;
-        let bytes = doc.save();
-        self.store.save_ledger_bytes(ledger_id, &bytes).await?;
+        self.store.save_ledger(ledger_id, &mut doc).await?;
         self.touch_meta(ledger_id).await?;
         Ok(())
     }
@@ -148,8 +145,7 @@ impl UnbillService {
             },
             now,
         )?;
-        let bytes = doc.save();
-        self.store.save_ledger_bytes(ledger_id, &bytes).await?;
+        self.store.save_ledger(ledger_id, &mut doc).await?;
         self.touch_meta(ledger_id).await?;
         Ok(User {
             user_id,
@@ -183,8 +179,7 @@ impl UnbillService {
     pub async fn add_device(&self, ledger_id: &str, input: NewDevice) -> Result<()> {
         let mut doc = self.load_doc(ledger_id).await?;
         doc.add_device(input, Timestamp::now())?;
-        let bytes = doc.save();
-        self.store.save_ledger_bytes(ledger_id, &bytes).await?;
+        self.store.save_ledger(ledger_id, &mut doc).await?;
         self.touch_meta(ledger_id).await?;
         Ok(())
     }
@@ -368,11 +363,10 @@ impl UnbillService {
     // -----------------------------------------------------------------------
 
     async fn load_doc(&self, ledger_id: &str) -> Result<LedgerDoc> {
-        let bytes = self.store.load_ledger_bytes(ledger_id).await?;
-        if bytes.is_empty() {
-            return Err(UnbillError::LedgerNotFound(ledger_id.to_string()));
-        }
-        LedgerDoc::from_bytes(&bytes).map_err(UnbillError::Other)
+        self.store
+            .load_ledger(ledger_id)
+            .await?
+            .ok_or_else(|| UnbillError::LedgerNotFound(ledger_id.to_string()))
     }
 
     /// Update `updated_at` in the stored metadata for a ledger.
