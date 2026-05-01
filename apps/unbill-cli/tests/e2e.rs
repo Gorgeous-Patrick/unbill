@@ -350,9 +350,9 @@ fn test_amend_bill_supersedes_original() {
 fn test_settlement_empty_when_no_bills() {
     let env = Env::new();
     create_ledger_with_users(&env);
-    // Alice is a user but there are no bills — no transactions.
+    // Alice is a user but there are no bills — no currency groups.
     let v = env.json(&["settlement", ALICE]);
-    assert!(v["transactions"].as_array().unwrap().is_empty());
+    assert!(v.as_array().unwrap().is_empty());
 }
 
 #[test]
@@ -363,7 +363,10 @@ fn test_settlement_correct_after_one_bill() {
     add_bill(&env, &lid, ALICE, "90", "Dinner", &[ALICE, BOB]);
 
     let v = env.json(&["settlement", ALICE]);
-    let txns = v["transactions"].as_array().unwrap();
+    let groups = v.as_array().unwrap();
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0]["currency"].as_str().unwrap(), "USD");
+    let txns = groups[0]["transactions"].as_array().unwrap();
     assert_eq!(txns.len(), 1);
     assert_eq!(txns[0]["from_user_id"].as_str().unwrap(), BOB);
     assert_eq!(txns[0]["to_user_id"].as_str().unwrap(), ALICE);
@@ -380,7 +383,9 @@ fn test_settlement_net_of_multiple_bills() {
     add_bill(&env, &lid, BOB, "30", "Utilities", &[ALICE, BOB]);
 
     let v = env.json(&["settlement", ALICE]);
-    let txns = v["transactions"].as_array().unwrap();
+    let groups = v.as_array().unwrap();
+    assert_eq!(groups.len(), 1);
+    let txns = groups[0]["transactions"].as_array().unwrap();
     assert_eq!(txns.len(), 1);
     assert_eq!(txns[0]["amount_cents"].as_i64().unwrap(), 1500);
 }
@@ -398,7 +403,9 @@ fn test_settlement_aggregates_across_ledgers() {
     add_bill(&env, &lid2, BOB, "20", "Utilities", &[ALICE, BOB]);
 
     let v = env.json(&["settlement", ALICE]);
-    let txns = v["transactions"].as_array().unwrap();
+    let groups = v.as_array().unwrap();
+    assert_eq!(groups.len(), 1);
+    let txns = groups[0]["transactions"].as_array().unwrap();
     assert_eq!(txns.len(), 1);
     assert_eq!(txns[0]["from_user_id"].as_str().unwrap(), BOB);
     assert_eq!(txns[0]["to_user_id"].as_str().unwrap(), ALICE);

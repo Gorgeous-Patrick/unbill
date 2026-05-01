@@ -58,6 +58,7 @@ pub struct ConflictGroupOut {
 
 #[derive(serde::Serialize)]
 pub struct SettlementOut {
+    pub currency: String,
     pub transactions: Vec<TransactionOut>,
 }
 
@@ -121,6 +122,7 @@ pub fn conflict_group_out(g: &ConflictGroup) -> ConflictGroupOut {
 
 pub fn settlement_out(s: &Settlement) -> SettlementOut {
     SettlementOut {
+        currency: s.currency.code().to_owned(),
         transactions: s
             .transactions
             .iter()

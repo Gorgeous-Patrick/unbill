@@ -425,21 +425,26 @@ pub async fn bill_conflicts(
 // ---------------------------------------------------------------------------
 
 pub async fn settlement(svc: &UnbillService, user_id: &str, json: bool) -> anyhow::Result<()> {
-    let s = svc.compute_settlement_for_user(user_id).await?;
+    let settlements = svc.compute_settlement_for_user(user_id).await?;
     if json {
-        print_json(&settlement_out(&s))?;
+        let out: Vec<_> = settlements.iter().map(settlement_out).collect();
+        print_json(&out)?;
     } else {
-        if s.transactions.is_empty() {
+        let all_empty = settlements.iter().all(|s| s.transactions.is_empty());
+        if all_empty {
             println!("all settled up");
             return Ok(());
         }
-        for t in &s.transactions {
-            println!(
-                "{}  →  {}    {}",
-                t.from_user_id,
-                t.to_user_id,
-                fmt_amount(t.amount_cents)
-            );
+        for s in &settlements {
+            for t in &s.transactions {
+                println!(
+                    "{}  →  {}    {} {}",
+                    t.from_user_id,
+                    t.to_user_id,
+                    s.currency.code(),
+                    fmt_amount(t.amount_cents)
+                );
+            }
         }
     }
     Ok(())
