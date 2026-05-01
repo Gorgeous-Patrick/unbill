@@ -306,7 +306,12 @@ mod tests {
         let mut doc_a =
             LedgerDoc::new(Ulid::new(), "Test".to_string(), usd(), Timestamp::now()).unwrap();
         doc_a
-            .add_device(NewDevice { node_id: node_b }, Timestamp::now())
+            .add_device(
+                NewDevice {
+                    node_id: node_b.clone(),
+                },
+                Timestamp::now(),
+            )
             .unwrap();
         save_doc(&*store_a, &mut doc_a).await;
 
@@ -322,10 +327,20 @@ mod tests {
         // Build a base ledger that both A and B start with.
         let mut base =
             LedgerDoc::new(Ulid::new(), "Trip".to_string(), usd(), Timestamp::now()).unwrap();
-        base.add_device(NewDevice { node_id: node_a }, Timestamp::now())
-            .unwrap();
-        base.add_device(NewDevice { node_id: node_b }, Timestamp::now())
-            .unwrap();
+        base.add_device(
+            NewDevice {
+                node_id: node_a.clone(),
+            },
+            Timestamp::now(),
+        )
+        .unwrap();
+        base.add_device(
+            NewDevice {
+                node_id: node_b.clone(),
+            },
+            Timestamp::now(),
+        )
+        .unwrap();
         let payer = Ulid::from_u128(99);
         base.add_user(
             crate::model::NewUser {
@@ -357,7 +372,7 @@ mod tests {
                     }],
                     prev: vec![],
                 },
-                node_a,
+                node_a.clone(),
                 Timestamp::now(),
             )
             .unwrap();
@@ -377,7 +392,7 @@ mod tests {
                     }],
                     prev: vec![],
                 },
-                node_b,
+                node_b.clone(),
                 Timestamp::now(),
             )
             .unwrap();

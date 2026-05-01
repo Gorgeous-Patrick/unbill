@@ -221,8 +221,13 @@ mod tests {
 
         let mut doc =
             LedgerDoc::new(Ulid::new(), "Trip".to_string(), usd(), Timestamp::now()).unwrap();
-        doc.add_device(NewDevice { node_id: host_node }, Timestamp::now())
-            .unwrap();
+        doc.add_device(
+            NewDevice {
+                node_id: host_node.clone(),
+            },
+            Timestamp::now(),
+        )
+        .unwrap();
         let ledger_id = doc.get_ledger().unwrap().ledger_id;
         let ledger_id_str = ledger_id.to_string();
 
@@ -244,7 +249,7 @@ mod tests {
 
         // Save the invitation to the store.
         let token = InviteToken::generate();
-        let invitation = make_invitation(ledger_id, host_node, &token);
+        let invitation = make_invitation(ledger_id, host_node.clone(), &token);
         save_pending_invitations(
             &*host_store,
             &HashMap::from([(token.to_string(), invitation)]),
@@ -268,29 +273,35 @@ mod tests {
             ledger_id: ledger_id_str.clone(),
         };
 
-        let task_host = tokio::spawn(async move {
-            run_join_host(
-                joiner_node,
-                &host_store2,
-                &events_host,
-                host_read,
-                host_write,
-            )
-            .await
-            .unwrap();
+        let task_host = tokio::spawn({
+            let joiner_node = joiner_node.clone();
+            async move {
+                run_join_host(
+                    joiner_node,
+                    &host_store2,
+                    &events_host,
+                    host_read,
+                    host_write,
+                )
+                .await
+                .unwrap();
+            }
         });
-        let task_joiner = tokio::spawn(async move {
-            run_join_requester(
-                host_node,
-                Some("host laptop".to_string()),
-                request,
-                &joiner_store2,
-                &events_joiner,
-                joiner_read,
-                joiner_write,
-            )
-            .await
-            .unwrap();
+        let task_joiner = tokio::spawn({
+            let host_node = host_node.clone();
+            async move {
+                run_join_requester(
+                    host_node,
+                    Some("host laptop".to_string()),
+                    request,
+                    &joiner_store2,
+                    &events_joiner,
+                    joiner_read,
+                    joiner_write,
+                )
+                .await
+                .unwrap();
+            }
         });
 
         task_host.await.unwrap();

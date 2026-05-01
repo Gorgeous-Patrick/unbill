@@ -13,6 +13,7 @@ use crate::model::{
     Currency, Device, EffectiveBills, Invitation, InviteToken, LedgerMeta, NewBill, NewDevice,
     NewUser, NodeId, Timestamp, Ulid, User,
 };
+use crate::net::EndpointIdExt;
 use crate::settlement;
 use crate::storage::LedgerStore;
 
@@ -73,7 +74,7 @@ impl UnbillService {
         let mut doc = LedgerDoc::new(ledger_id, name.clone(), currency, now)?;
         doc.add_device(
             NewDevice {
-                node_id: self.device_id,
+                node_id: self.device_id.clone(),
             },
             now,
         )?;
@@ -107,7 +108,7 @@ impl UnbillService {
 
     pub async fn add_bill(&self, ledger_id: &str, input: NewBill) -> Result<String> {
         let mut doc = self.load_doc(ledger_id).await?;
-        let bill_id = doc.add_bill(input, self.device_id, Timestamp::now())?;
+        let bill_id = doc.add_bill(input, self.device_id.clone(), Timestamp::now())?;
         self.store.save_ledger(ledger_id, &mut doc).await?;
         self.touch_meta(ledger_id).await?;
         Ok(bill_id.to_string())
@@ -287,7 +288,7 @@ impl UnbillService {
         let invitation = Invitation {
             token: token.clone(),
             ledger_id: ledger_ulid,
-            created_by_device: self.device_id,
+            created_by_device: self.device_id.clone(),
             created_at: now,
             expires_at: Timestamp::from_millis(now.as_millis() + 24 * 3600 * 1000),
         };
@@ -351,7 +352,7 @@ impl UnbillService {
     // -----------------------------------------------------------------------
 
     pub fn device_id(&self) -> NodeId {
-        self.device_id
+        self.device_id.clone()
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<ServiceEvent> {
@@ -437,7 +438,7 @@ async fn load_or_create_device_key(store: &dyn LedgerStore) -> Result<(NodeId, i
             .try_into()
             .map_err(|_| UnbillError::Other(anyhow::anyhow!("device_key.bin: wrong length")))?;
         let secret = iroh::SecretKey::from(arr);
-        Ok((NodeId::from_node_id(secret.public()), secret))
+        Ok((secret.public().to_node_id(), secret))
     } else {
         let mut arr = [0u8; 32];
         rand::rngs::SysRng
@@ -445,7 +446,7 @@ async fn load_or_create_device_key(store: &dyn LedgerStore) -> Result<(NodeId, i
             .expect("system RNG should generate device keys");
         let secret = iroh::SecretKey::from(arr);
         store.save_device_meta("device_key.bin", &arr).await?;
-        Ok((NodeId::from_node_id(secret.public()), secret))
+        Ok((secret.public().to_node_id(), secret))
     }
 }
 
@@ -773,7 +774,7 @@ mod tests {
         let peer = NodeId::from_seed(9);
         {
             let svc = UnbillService::open(Arc::clone(&store)).await.unwrap();
-            svc.set_device_label(peer, "Kitchen iPad".into())
+            svc.set_device_label(peer.clone(), "Kitchen iPad".into())
                 .await
                 .unwrap();
         }

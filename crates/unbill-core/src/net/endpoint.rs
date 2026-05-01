@@ -14,6 +14,7 @@ use crate::model::NodeId;
 use crate::service::UnbillService;
 
 use super::join::{run_join_host, run_join_requester};
+use super::node_id_ext::{EndpointIdExt, NodeIdExt};
 use super::protocol::{ALPN_JOIN, ALPN_SYNC, JoinRequest};
 use super::sync::run_sync_session;
 
@@ -35,7 +36,7 @@ impl UnbillEndpoint {
 
     /// This device's `NodeId` as known to the network.
     pub fn node_id(&self) -> NodeId {
-        NodeId::from_node_id(self.inner.id())
+        self.inner.id().to_node_id()
     }
 
     /// Wait until the endpoint has a relay connection — the relay is the
@@ -59,9 +60,9 @@ impl UnbillEndpoint {
         peer: NodeId,
         svc: &UnbillService,
     ) -> anyhow::Result<()> {
-        let addr = iroh::EndpointAddr::new(peer.as_node_id());
+        let addr = iroh::EndpointAddr::new(peer.to_endpoint_id()?);
         let conn = self.inner.connect(addr, ALPN_SYNC).await?;
-        let peer_node_id = NodeId::from_node_id(conn.remote_id());
+        let peer_node_id = conn.remote_id().to_node_id();
         let (send, recv) = conn.open_bi().await?;
         run_sync_session(true, peer_node_id, &svc.store, &svc.events, recv, send).await?;
         conn.close(0u32.into(), b"done");
@@ -79,7 +80,7 @@ impl UnbillEndpoint {
         request: JoinRequest,
         svc: &UnbillService,
     ) -> anyhow::Result<()> {
-        let addr = iroh::EndpointAddr::new(host.as_node_id());
+        let addr = iroh::EndpointAddr::new(host.to_endpoint_id()?);
         let conn = self.inner.connect(addr, ALPN_JOIN).await?;
         let (send, recv) = conn.open_bi().await?;
         run_join_requester(
@@ -135,7 +136,7 @@ impl UnbillEndpoint {
                 }
             };
 
-            let peer = NodeId::from_node_id(conn.remote_id());
+            let peer = conn.remote_id().to_node_id();
 
             let svc = Arc::clone(&svc);
 
