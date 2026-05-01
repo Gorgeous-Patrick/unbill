@@ -10,19 +10,6 @@ use crate::components::{
 use leptos::prelude::*;
 
 #[component]
-pub fn EmptyColumn(title: String, detail: String) -> impl IntoView {
-    view! {
-        <ScreenFrame title=title subtitle=detail>
-            <SectionCard
-                title="No selection".to_owned()
-            >
-                <div class="empty-copy">"Nothing open."</div>
-            </SectionCard>
-        </ScreenFrame>
-    }
-}
-
-#[component]
 pub fn LedgersPage(
     ledgers: Vec<LedgerSummary>,
     selected_ledger_id: Option<String>,

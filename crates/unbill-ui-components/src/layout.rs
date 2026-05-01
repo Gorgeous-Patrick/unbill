@@ -3,6 +3,17 @@ use leptos::{ev, prelude::*};
 use crate::button::{IconButton, IconButtonKind};
 
 #[component]
+pub fn EmptyColumn(title: String, detail: String) -> impl IntoView {
+    view! {
+        <ScreenFrame title=title subtitle=detail>
+            <SectionCard title="No selection".to_owned()>
+                <div class="empty-copy">"Nothing open."</div>
+            </SectionCard>
+        </ScreenFrame>
+    }
+}
+
+#[component]
 pub fn Page(children: Children) -> impl IntoView {
     view! {
         <div class="page">
