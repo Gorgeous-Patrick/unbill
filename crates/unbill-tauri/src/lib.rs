@@ -133,6 +133,29 @@ struct SaveBillInput {
     prev_bill_id: Option<String>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PreviewBillSplitInput {
+    bill_id: String,
+    amount_cents: i64,
+    payers: Vec<BillShareInput>,
+    payees: Vec<BillShareInput>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UserAmountDto {
+    user_id: String,
+    amount_cents: i64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BillSplitPreviewDto {
+    payer_amounts: Vec<UserAmountDto>,
+    payee_amounts: Vec<UserAmountDto>,
+}
+
 #[tauri::command]
 async fn bootstrap_app(state: State<'_, AppState>) -> std::result::Result<AppBootstrapDto, String> {
     bootstrap_app_inner(&state.service)
@@ -266,6 +289,56 @@ async fn save_bill(
         .map_err(stringify_error)?;
 
     Ok(bill_id)
+}
+
+#[tauri::command]
+fn preview_bill_split(
+    input: PreviewBillSplitInput,
+) -> std::result::Result<BillSplitPreviewDto, String> {
+    let bill_id = parse_ulid(&input.bill_id).map_err(stringify_error)?;
+    let payers = input
+        .payers
+        .into_iter()
+        .map(|item| {
+            Ok(Share {
+                user_id: parse_ulid(&item.user_id)?,
+                shares: item.shares,
+            })
+        })
+        .collect::<Result<Vec<_>>>()
+        .map_err(stringify_error)?;
+    let payees = input
+        .payees
+        .into_iter()
+        .map(|item| {
+            Ok(Share {
+                user_id: parse_ulid(&item.user_id)?,
+                shares: item.shares,
+            })
+        })
+        .collect::<Result<Vec<_>>>()
+        .map_err(stringify_error)?;
+
+    let split =
+        unbill_core::settlement::compute_bill_split(&payers, &payees, input.amount_cents, bill_id);
+    Ok(BillSplitPreviewDto {
+        payer_amounts: split
+            .payer_amounts
+            .into_iter()
+            .map(|(id, amount_cents)| UserAmountDto {
+                user_id: id.to_string(),
+                amount_cents,
+            })
+            .collect(),
+        payee_amounts: split
+            .payee_amounts
+            .into_iter()
+            .map(|(id, amount_cents)| UserAmountDto {
+                user_id: id.to_string(),
+                amount_cents,
+            })
+            .collect(),
+    })
 }
 
 #[tauri::command]
@@ -576,7 +649,8 @@ pub fn run() {
             create_invitation,
             join_ledger,
             save_bill,
-            sync_once
+            sync_once,
+            preview_bill_split
         ])
         .run(tauri::generate_context!())
         .expect("error while running unbill");
