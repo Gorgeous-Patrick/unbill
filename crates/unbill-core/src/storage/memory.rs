@@ -5,6 +5,8 @@ use std::sync::Mutex;
 
 use async_trait::async_trait;
 
+use crate::doc::LedgerDoc;
+use crate::error::StorageError;
 use crate::model::LedgerMeta;
 
 use super::traits::{LedgerStore, Result};
@@ -46,20 +48,34 @@ impl LedgerStore for InMemoryStore {
         Ok(inner.ledgers.values().map(|s| s.meta.clone()).collect())
     }
 
-    async fn load_ledger_bytes(&self, ledger_id: &str) -> Result<Vec<u8>> {
+    async fn load_ledger(&self, ledger_id: &str) -> Result<Option<LedgerDoc>> {
         let inner = self.inner.lock().unwrap();
-        Ok(inner
-            .ledgers
-            .get(ledger_id)
-            .map(|s| s.bytes.clone())
-            .unwrap_or_default())
+        match inner.ledgers.get(ledger_id) {
+            None => Ok(None),
+            Some(s) if s.bytes.is_empty() => Ok(None),
+            Some(s) => LedgerDoc::from_bytes(&s.bytes)
+                .map(Some)
+                .map_err(|e| StorageError::Serialization(e.to_string())),
+        }
     }
 
-    async fn save_ledger_bytes(&self, ledger_id: &str, bytes: &[u8]) -> Result<()> {
+    async fn save_ledger(&self, ledger_id: &str, doc: &mut LedgerDoc) -> Result<()> {
         let mut inner = self.inner.lock().unwrap();
-        if let Some(s) = inner.ledgers.get_mut(ledger_id) {
-            s.bytes = bytes.to_vec();
-        }
+        let bytes = doc.save();
+        inner
+            .ledgers
+            .entry(ledger_id.to_owned())
+            .and_modify(|s| s.bytes = bytes.clone())
+            .or_insert_with(|| StoredLedger {
+                meta: LedgerMeta {
+                    ledger_id: crate::model::Ulid::from_u128(0),
+                    name: String::new(),
+                    currency: crate::model::Currency::from_code("USD").unwrap(),
+                    created_at: crate::model::Timestamp::from_millis(0),
+                    updated_at: crate::model::Timestamp::from_millis(0),
+                },
+                bytes,
+            });
         Ok(())
     }
 

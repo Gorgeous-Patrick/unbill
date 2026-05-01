@@ -71,20 +71,17 @@ where
         let mut accepted = Vec::new();
         let mut rejected = Vec::new();
         for id in &hello.ledger_ids {
-            let bytes = store.load_ledger_bytes(id).await.unwrap_or_default();
-            if bytes.is_empty() {
-                rejected.push(id.clone());
-                continue;
-            }
-            match LedgerDoc::from_bytes(&bytes) {
-                Ok(doc) => {
-                    if doc.is_device_authorized(&peer_node_id).unwrap_or(false) {
-                        accepted.push(id.clone());
-                    } else {
-                        rejected.push(id.clone());
-                    }
+            let doc = match store.load_ledger(id).await {
+                Ok(Some(doc)) => doc,
+                _ => {
+                    rejected.push(id.clone());
+                    continue;
                 }
-                Err(_) => rejected.push(id.clone()),
+            };
+            if doc.is_device_authorized(&peer_node_id).unwrap_or(false) {
+                accepted.push(id.clone());
+            } else {
+                rejected.push(id.clone());
             }
         }
         write_msg(
@@ -108,9 +105,10 @@ where
 
     let mut docs: HashMap<String, LedgerDoc> = HashMap::new();
     for id in &accepted {
-        let bytes = store.load_ledger_bytes(id).await?;
-        let doc = LedgerDoc::from_bytes(&bytes)
-            .map_err(|e| anyhow::anyhow!("failed to load ledger {id}: {e}"))?;
+        let doc = store
+            .load_ledger(id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("ledger {id} disappeared"))?;
         docs.insert(id.clone(), doc);
     }
 
@@ -210,8 +208,7 @@ where
 
     for id in &ledgers_with_remote_changes {
         if let Some(doc) = docs.get_mut(id) {
-            let bytes = doc.save();
-            store.save_ledger_bytes(id, &bytes).await?;
+            store.save_ledger(id, doc).await?;
             let _ = events.send(ServiceEvent::LedgerUpdated {
                 ledger_id: id.clone(),
             });
@@ -262,7 +259,7 @@ mod tests {
             updated_at: Timestamp::now(),
         };
         store.save_ledger_meta(&meta).await.unwrap();
-        store.save_ledger_bytes(&id, &doc.save()).await.unwrap();
+        store.save_ledger(&id, doc).await.unwrap();
     }
 
     /// Run sync between two stores over an in-process duplex channel.
@@ -393,10 +390,8 @@ mod tests {
         sync_pair(Arc::clone(&store_a), Arc::clone(&store_b), node_a, node_b).await;
 
         // Load final state from stores.
-        let bytes_a = store_a.load_ledger_bytes(&ledger_id).await.unwrap();
-        let bytes_b = store_b.load_ledger_bytes(&ledger_id).await.unwrap();
-        let doc_a_final = LedgerDoc::from_bytes(&bytes_a).unwrap();
-        let doc_b_final = LedgerDoc::from_bytes(&bytes_b).unwrap();
+        let doc_a_final = store_a.load_ledger(&ledger_id).await.unwrap().unwrap();
+        let doc_b_final = store_b.load_ledger(&ledger_id).await.unwrap().unwrap();
 
         let bills_a = doc_a_final.list_bills().unwrap();
         let bills_b = doc_b_final.list_bills().unwrap();
@@ -429,7 +424,7 @@ mod tests {
         let mut doc_b =
             LedgerDoc::new(Ulid::new(), "Same id?".to_string(), usd(), Timestamp::now()).unwrap();
         // Manually set the same ID by saving with A's id key.
-        store_b.save_ledger_bytes(&id, &doc_b.save()).await.unwrap();
+        store_b.save_ledger(&id, &mut doc_b).await.unwrap();
 
         sync_pair(store_a, store_b, node_a, node_b).await;
         // No panic — A just rejects the ledger.

@@ -43,6 +43,23 @@ impl LedgerDoc {
         Ok(Self { doc, changes: tx })
     }
 
+    /// Create a blank document for use as the starting point of a sync-based
+    /// load (e.g. `HttpStore`). The document has no ledger data until sync
+    /// messages are applied via `receive_sync_message`.
+    pub fn empty() -> Self {
+        let (tx, _) = broadcast::channel(64);
+        Self {
+            doc: automerge::AutoCommit::new(),
+            changes: tx,
+        }
+    }
+
+    /// Returns `true` if no changes have been applied to this document.
+    pub fn is_empty(&mut self) -> bool {
+        use automerge::ReadDoc as _;
+        self.doc.get_heads().is_empty()
+    }
+
     /// Serialize the full document to bytes for storage.
     pub fn save(&mut self) -> Vec<u8> {
         self.doc.save()

@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
+use crate::doc::LedgerDoc;
 use crate::error::StorageError;
 use crate::model::{Currency, LedgerMeta, Timestamp, Ulid};
 
@@ -116,18 +117,20 @@ impl LedgerStore for FsStore {
         Ok(metas)
     }
 
-    async fn load_ledger_bytes(&self, ledger_id: &str) -> Result<Vec<u8>> {
+    async fn load_ledger(&self, ledger_id: &str) -> Result<Option<LedgerDoc>> {
         match tokio::fs::read(self.ledger_dir(ledger_id).join("ledger.bin")).await {
-            Ok(b) => Ok(b),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(vec![]),
+            Ok(bytes) => LedgerDoc::from_bytes(&bytes)
+                .map(Some)
+                .map_err(|e| StorageError::Serialization(e.to_string())),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(e.into()),
         }
     }
 
-    async fn save_ledger_bytes(&self, ledger_id: &str, bytes: &[u8]) -> Result<()> {
+    async fn save_ledger(&self, ledger_id: &str, doc: &mut LedgerDoc) -> Result<()> {
         let dir = self.ledger_dir(ledger_id);
         tokio::fs::create_dir_all(&dir).await?;
-        atomic_write(dir.join("ledger.bin"), bytes).await
+        atomic_write(dir.join("ledger.bin"), &doc.save()).await
     }
 
     async fn delete_ledger(&self, ledger_id: &str) -> Result<()> {
@@ -171,6 +174,7 @@ async fn atomic_write(path: PathBuf, bytes: &[u8]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::doc::LedgerDoc;
     use crate::model::Timestamp;
 
     fn make_meta(name: &str) -> LedgerMeta {
@@ -181,6 +185,16 @@ mod tests {
             created_at: Timestamp::from_millis(1_000),
             updated_at: Timestamp::from_millis(2_000),
         }
+    }
+
+    fn make_doc(name: &str) -> LedgerDoc {
+        LedgerDoc::new(
+            Ulid::from_u128(1),
+            name.to_owned(),
+            Currency::from_code("USD").unwrap(),
+            Timestamp::from_millis(1_000),
+        )
+        .unwrap()
     }
 
     #[tokio::test]
@@ -202,34 +216,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_save_and_load_ledger_bytes_round_trip() {
+    async fn test_save_and_load_ledger_round_trip() {
         let dir = tempfile::tempdir().unwrap();
         let store = FsStore::new(dir.path().to_path_buf());
+        let id = Ulid::from_u128(1).to_string();
 
-        let meta = make_meta("Test");
-        store.save_ledger_meta(&meta).await.unwrap();
-        let id = meta.ledger_id.to_string();
+        assert!(store.load_ledger(&id).await.unwrap().is_none());
 
-        assert!(store.load_ledger_bytes(&id).await.unwrap().is_empty());
+        let mut doc = make_doc("Test");
+        store.save_ledger(&id, &mut doc).await.unwrap();
 
-        store
-            .save_ledger_bytes(&id, b"snapshot data")
-            .await
-            .unwrap();
-        assert_eq!(
-            store.load_ledger_bytes(&id).await.unwrap(),
-            b"snapshot data"
-        );
+        let loaded = store.load_ledger(&id).await.unwrap().unwrap();
+        assert_eq!(loaded.get_ledger().unwrap().name, "Test");
 
-        // Overwrite
-        store
-            .save_ledger_bytes(&id, b"updated snapshot")
-            .await
-            .unwrap();
-        assert_eq!(
-            store.load_ledger_bytes(&id).await.unwrap(),
-            b"updated snapshot"
-        );
+        // Overwrite with updated doc
+        let mut doc2 = make_doc("Updated");
+        store.save_ledger(&id, &mut doc2).await.unwrap();
+        let loaded2 = store.load_ledger(&id).await.unwrap().unwrap();
+        assert_eq!(loaded2.get_ledger().unwrap().name, "Updated");
     }
 
     #[tokio::test]
@@ -240,10 +244,13 @@ mod tests {
         let meta = make_meta("ToDelete");
         store.save_ledger_meta(&meta).await.unwrap();
         let id = meta.ledger_id.to_string();
+        let mut doc = make_doc("ToDelete");
+        store.save_ledger(&id, &mut doc).await.unwrap();
 
         assert_eq!(store.list_ledgers().await.unwrap().len(), 1);
         store.delete_ledger(&id).await.unwrap();
         assert!(store.list_ledgers().await.unwrap().is_empty());
+        assert!(store.load_ledger(&id).await.unwrap().is_none());
 
         // Idempotent
         store.delete_ledger(&id).await.unwrap();

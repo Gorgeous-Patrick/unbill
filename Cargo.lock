@@ -7676,6 +7676,7 @@ name = "unbill-server"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "automerge",
  "axum",
  "http-body-util",
  "serde",

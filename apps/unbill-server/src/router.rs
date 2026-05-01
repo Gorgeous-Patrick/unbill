@@ -7,11 +7,12 @@ use axum::{
     http::{HeaderMap, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{delete, get, put},
+    routing::{delete, get, post, put},
 };
 use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 
+use unbill_core::doc::LedgerDoc;
 use unbill_core::storage::{FsStore, LedgerStore};
 
 // ---------------------------------------------------------------------------
@@ -44,10 +45,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     let protected = Router::new()
         .route("/ledgers", get(list_ledgers))
         .route("/ledgers/{id}/meta", put(save_ledger_meta))
-        .route(
-            "/ledgers/{id}/snapshot",
-            get(load_ledger_snapshot).put(save_ledger_snapshot),
-        )
+        .route("/ledgers/{id}/sync", post(sync_ledger))
         .route("/ledgers/{id}", delete(delete_ledger))
         .route("/device/{key}", get(load_device_meta).put(save_device_meta))
         .layer(middleware::from_fn_with_state(state.clone(), auth))
@@ -154,30 +152,49 @@ async fn save_ledger_meta(
     }
 }
 
-async fn load_ledger_snapshot(
-    State(state): State<Arc<AppState>>,
-    Path(id): Path<String>,
-) -> Response {
-    match state.store.load_ledger_bytes(&id).await {
-        Ok(bytes) if bytes.is_empty() => StatusCode::NOT_FOUND.into_response(),
-        Ok(bytes) => (
-            StatusCode::OK,
-            [("content-type", "application/octet-stream")],
-            bytes,
-        )
-            .into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
-    }
-}
-
-async fn save_ledger_snapshot(
+/// `POST /ledgers/{id}/sync` — Automerge delta sync endpoint.
+///
+/// Receives one binary-encoded `automerge::sync::Message` from the client,
+/// applies it to the server-side document, generates a response message, and
+/// returns it (200) or 204 if the server has nothing to send.
+async fn sync_ledger(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
     body: Bytes,
 ) -> Response {
-    match state.store.save_ledger_bytes(&id, &body).await {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    let client_msg = match automerge::sync::Message::decode(&body) {
+        Ok(m) => m,
+        Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    };
+
+    let mut doc = match state.store.load_ledger(&id).await {
+        Ok(Some(doc)) => doc,
+        Ok(None) => {
+            // Ledger does not exist on the server; treat first sync as a create.
+            LedgerDoc::empty()
+        }
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    };
+
+    let mut sync_state = automerge::sync::State::new();
+    if let Err(e) = doc.receive_sync_message(&mut sync_state, client_msg) {
+        return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+    }
+
+    if !doc.is_empty() {
+        if let Err(e) = state.store.save_ledger(&id, &mut doc).await {
+            return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+        }
+    }
+
+    match doc.generate_sync_message(&mut sync_state) {
+        Some(msg) => (
+            StatusCode::OK,
+            [("content-type", "application/octet-stream")],
+            msg.encode(),
+        )
+            .into_response(),
+        None => StatusCode::NO_CONTENT.into_response(),
     }
 }
 
@@ -345,59 +362,86 @@ mod tests {
         assert_eq!(list[0]["name"], "Groceries");
     }
 
-    // --- snapshot -----------------------------------------------------------
+    // --- sync ---------------------------------------------------------------
 
-    #[tokio::test]
-    async fn test_snapshot_404_before_save() {
-        let dir = tempfile::tempdir().unwrap();
-        let app = make_app(dir.path());
-
-        // Need meta first so FsStore has the ledger dir
-        let meta = serde_json::json!({
-            "ledger_id": "00000000000000000000000001",
-            "name": "Test", "currency": "USD",
-            "created_at_ms": 0, "updated_at_ms": 0
-        });
-        app.clone()
-            .oneshot(auth_put(
-                "/ledgers/00000000000000000000000001/meta",
-                "application/json",
-                serde_json::to_vec(&meta).unwrap(),
-            ))
-            .await
-            .unwrap();
-
-        let resp = app
-            .oneshot(auth_get("/ledgers/00000000000000000000000001/snapshot"))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    fn auth_post(uri: &str, content_type: &str, body: Vec<u8>) -> Request<Body> {
+        Request::builder()
+            .method(Method::POST)
+            .uri(uri)
+            .header("Authorization", format!("Bearer {API_KEY}"))
+            .header("content-type", content_type)
+            .body(Body::from(body))
+            .unwrap()
     }
 
     #[tokio::test]
-    async fn test_snapshot_save_and_load_round_trip() {
+    async fn test_sync_invalid_body_returns_400() {
         let dir = tempfile::tempdir().unwrap();
         let app = make_app(dir.path());
-
-        // Need to create the dir via save_ledger_bytes (FsStore creates it)
         let resp = app
-            .clone()
-            .oneshot(auth_put(
-                "/ledgers/00000000000000000000000001/snapshot",
+            .oneshot(auth_post(
+                "/ledgers/00000000000000000000000001/sync",
                 "application/octet-stream",
-                b"automerge bytes".to_vec(),
+                b"not a sync message".to_vec(),
             ))
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
 
-        let resp = app
-            .oneshot(auth_get("/ledgers/00000000000000000000000001/snapshot"))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-        let body = body_bytes(resp).await;
-        assert_eq!(body, b"automerge bytes");
+    #[tokio::test]
+    async fn test_sync_converges_with_server() {
+        use unbill_core::doc::LedgerDoc;
+        use unbill_core::model::{Currency, Timestamp, Ulid};
+
+        let dir = tempfile::tempdir().unwrap();
+        let app = make_app(dir.path());
+
+        // Pre-populate the server's store with a ledger.
+        let ledger_id = Ulid::from_u128(1);
+        let id_str = ledger_id.to_string();
+        let mut server_doc = LedgerDoc::new(
+            ledger_id,
+            "Groceries".to_string(),
+            Currency::from_code("USD").unwrap(),
+            Timestamp::from_millis(1000),
+        )
+        .unwrap();
+        {
+            use unbill_core::storage::{FsStore, LedgerStore as _};
+            let store = FsStore::new(dir.path().to_path_buf());
+            store.save_ledger(&id_str, &mut server_doc).await.unwrap();
+        }
+
+        // Run the client sync loop against the app.
+        let mut client_doc = LedgerDoc::empty();
+        let mut sync_state = automerge::sync::State::new();
+        loop {
+            let msg = match client_doc.generate_sync_message(&mut sync_state) {
+                Some(m) => m,
+                None => break,
+            };
+            let resp = app
+                .clone()
+                .oneshot(auth_post(
+                    &format!("/ledgers/{id_str}/sync"),
+                    "application/octet-stream",
+                    msg.encode(),
+                ))
+                .await
+                .unwrap();
+            if resp.status() == StatusCode::NO_CONTENT {
+                continue;
+            }
+            assert_eq!(resp.status(), StatusCode::OK);
+            let bytes = body_bytes(resp).await;
+            let server_msg = automerge::sync::Message::decode(&bytes).unwrap();
+            client_doc
+                .receive_sync_message(&mut sync_state, server_msg)
+                .unwrap();
+        }
+
+        assert_eq!(client_doc.get_ledger().unwrap().name, "Groceries");
     }
 
     // --- delete ledger ------------------------------------------------------

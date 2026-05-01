@@ -5,13 +5,14 @@ use async_trait::async_trait;
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 
+use crate::doc::LedgerDoc;
 use crate::error::StorageError;
 use crate::model::{Currency, LedgerMeta, Timestamp, Ulid};
 
 use super::traits::{LedgerStore, Result};
 
 // ---------------------------------------------------------------------------
-// JSON shape — kept in sync with FsStore's MetaJson
+// JSON shape for ledger metadata — kept in sync with FsStore's MetaJson
 // ---------------------------------------------------------------------------
 
 #[derive(Serialize, Deserialize)]
@@ -70,6 +71,53 @@ impl HttpStore {
     fn auth(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
         req.bearer_auth(&self.api_key)
     }
+
+    /// Run the Automerge sync loop for one ledger over HTTP.
+    ///
+    /// Each iteration is one `POST /ledgers/{id}/sync` call carrying one
+    /// binary-encoded `automerge::sync::Message`. The server receives the
+    /// message, applies any incoming changes, generates its own response
+    /// message, and returns it (or 204 if it has nothing to send).
+    ///
+    /// Returns `false` if the server responded 404 on the very first message
+    /// (ledger does not exist on the server).
+    async fn run_sync_loop(&self, ledger_id: &str, doc: &mut LedgerDoc) -> Result<bool> {
+        let url = format!("{}/ledgers/{}/sync", self.base_url, ledger_id);
+        let mut sync_state = automerge::sync::State::new();
+        let mut first = true;
+
+        loop {
+            let msg = doc.generate_sync_message(&mut sync_state);
+            let Some(msg) = msg else {
+                break;
+            };
+
+            let resp = self
+                .auth(self.client.post(&url))
+                .header("Content-Type", "application/octet-stream")
+                .body(msg.encode())
+                .send()
+                .await?;
+
+            if first && resp.status() == StatusCode::NOT_FOUND {
+                return Ok(false);
+            }
+            first = false;
+
+            if resp.status() == StatusCode::NO_CONTENT {
+                continue;
+            }
+
+            let resp = check(resp).await?;
+            let bytes = resp.bytes().await?;
+            let server_msg = automerge::sync::Message::decode(&bytes)
+                .map_err(|e| StorageError::Serialization(format!("sync decode: {e}")))?;
+            doc.receive_sync_message(&mut sync_state, server_msg)
+                .map_err(|e| StorageError::Serialization(e.to_string()))?;
+        }
+
+        Ok(true)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -123,25 +171,17 @@ impl LedgerStore for HttpStore {
         Ok(metas)
     }
 
-    async fn load_ledger_bytes(&self, ledger_id: &str) -> Result<Vec<u8>> {
-        let url = format!("{}/ledgers/{}/snapshot", self.base_url, ledger_id);
-        let resp = self.auth(self.client.get(&url)).send().await?;
-        if resp.status() == StatusCode::NOT_FOUND {
-            return Ok(vec![]);
+    async fn load_ledger(&self, ledger_id: &str) -> Result<Option<LedgerDoc>> {
+        let mut doc = LedgerDoc::empty();
+        let found = self.run_sync_loop(ledger_id, &mut doc).await?;
+        if !found || doc.is_empty() {
+            return Ok(None);
         }
-        let resp = check(resp).await?;
-        Ok(resp.bytes().await?.to_vec())
+        Ok(Some(doc))
     }
 
-    async fn save_ledger_bytes(&self, ledger_id: &str, bytes: &[u8]) -> Result<()> {
-        let url = format!("{}/ledgers/{}/snapshot", self.base_url, ledger_id);
-        let resp = self
-            .auth(self.client.put(&url))
-            .header("Content-Type", "application/octet-stream")
-            .body(bytes.to_vec())
-            .send()
-            .await?;
-        check(resp).await?;
+    async fn save_ledger(&self, ledger_id: &str, doc: &mut LedgerDoc) -> Result<()> {
+        self.run_sync_loop(ledger_id, doc).await?;
         Ok(())
     }
 
@@ -185,7 +225,7 @@ impl LedgerStore for HttpStore {
 #[cfg(test)]
 mod tests {
     use wiremock::matchers::{bearer_token, header, method, path};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
     use super::*;
     use crate::model::Timestamp;
@@ -200,6 +240,16 @@ mod tests {
             created_at: Timestamp::from_millis(1_000),
             updated_at: Timestamp::from_millis(2_000),
         }
+    }
+
+    fn make_doc(name: &str) -> LedgerDoc {
+        LedgerDoc::new(
+            Ulid::from_u128(1),
+            name.to_owned(),
+            Currency::from_code("USD").unwrap(),
+            Timestamp::from_millis(1_000),
+        )
+        .unwrap()
     }
 
     fn store(server: &MockServer) -> HttpStore {
@@ -273,59 +323,66 @@ mod tests {
         assert!(metas.is_empty());
     }
 
-    // --- load_ledger_bytes --------------------------------------------------
+    // --- load_ledger / save_ledger ------------------------------------------
 
     #[tokio::test]
-    async fn test_load_ledger_bytes_returns_bytes_on_200() {
+    async fn test_load_ledger_returns_none_when_server_responds_404() {
         let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/ledgers/00000000000000000000000001/snapshot"))
+        Mock::given(method("POST"))
+            .and(path("/ledgers/00000000000000000000000001/sync"))
             .and(bearer_token(API_KEY))
-            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"snapshot".as_ref()))
-            .mount(&server)
-            .await;
-
-        let bytes = store(&server)
-            .load_ledger_bytes("00000000000000000000000001")
-            .await
-            .unwrap();
-        assert_eq!(bytes, b"snapshot");
-    }
-
-    #[tokio::test]
-    async fn test_load_ledger_bytes_returns_empty_on_404() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/ledgers/00000000000000000000000001/snapshot"))
             .respond_with(ResponseTemplate::new(404))
             .mount(&server)
             .await;
 
-        let bytes = store(&server)
-            .load_ledger_bytes("00000000000000000000000001")
+        let result = store(&server)
+            .load_ledger("00000000000000000000000001")
             .await
             .unwrap();
-        assert!(bytes.is_empty());
+        assert!(result.is_none());
     }
 
-    // --- save_ledger_bytes --------------------------------------------------
-
     #[tokio::test]
-    async fn test_save_ledger_bytes_sends_put_with_octet_stream() {
+    async fn test_save_and_load_converge_via_sync_loop() {
+        // Simulate a server holding a real Automerge doc and running the sync
+        // protocol in-process. The mock handler drives a server-side doc.
+        // Pre-populate the "server" doc with initial state.
+        let server_doc = std::sync::Arc::new(std::sync::Mutex::new(
+            LedgerDoc::from_bytes(&make_doc("Groceries").save()).unwrap(),
+        ));
+
         let server = MockServer::start().await;
-        Mock::given(method("PUT"))
-            .and(path("/ledgers/00000000000000000000000001/snapshot"))
+
+        struct SyncResponder(std::sync::Arc<std::sync::Mutex<LedgerDoc>>);
+        impl Respond for SyncResponder {
+            fn respond(&self, req: &Request) -> ResponseTemplate {
+                let mut doc = self.0.lock().unwrap();
+                let mut state = automerge::sync::State::new();
+                let client_msg = automerge::sync::Message::decode(&req.body).unwrap();
+                doc.receive_sync_message(&mut state, client_msg).unwrap();
+                match doc.generate_sync_message(&mut state).map(|m| m.encode()) {
+                    Some(bytes) => ResponseTemplate::new(200)
+                        .append_header("content-type", "application/octet-stream")
+                        .set_body_bytes(bytes),
+                    None => ResponseTemplate::new(204),
+                }
+            }
+        }
+
+        Mock::given(method("POST"))
+            .and(path("/ledgers/00000000000000000000000001/sync"))
             .and(bearer_token(API_KEY))
-            .and(header("content-type", "application/octet-stream"))
-            .respond_with(ResponseTemplate::new(204))
-            .expect(1)
+            .respond_with(SyncResponder(server_doc))
             .mount(&server)
             .await;
 
-        store(&server)
-            .save_ledger_bytes("00000000000000000000000001", b"data")
+        let loaded = store(&server)
+            .load_ledger("00000000000000000000000001")
             .await
             .unwrap();
+        assert!(loaded.is_some());
+        let loaded = loaded.unwrap();
+        assert_eq!(loaded.get_ledger().unwrap().name, "Groceries");
     }
 
     // --- delete_ledger ------------------------------------------------------
