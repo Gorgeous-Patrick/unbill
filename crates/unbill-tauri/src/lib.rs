@@ -437,9 +437,11 @@ async fn load_ledger_detail_inner(
         .map(|u| (u.user_id, u.display_name.clone()))
         .collect();
 
+    let currency = unbill_core::model::Currency::from_code(&summary.currency)
+        .with_context(|| format!("invalid currency in ledger: {}", summary.currency))?;
     let mut balances = std::collections::HashMap::new();
     unbill_core::settlement::accumulate_balances(&users, &bills, &mut balances);
-    let settlement = unbill_core::settlement::compute_from_balances(balances)
+    let settlement = unbill_core::settlement::compute_from_balances(currency, balances)
         .transactions
         .into_iter()
         .map(|t| TransactionDto {

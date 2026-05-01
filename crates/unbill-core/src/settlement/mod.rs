@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use crate::model::{EffectiveBills, Ulid, User};
+use crate::model::{Currency, EffectiveBills, Ulid, User};
 
 /// A single suggested settlement transaction.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -14,8 +14,9 @@ pub struct Transaction {
 }
 
 /// The result of computing settlement.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Settlement {
+    pub currency: Currency,
     pub transactions: Vec<Transaction>,
 }
 
@@ -43,7 +44,7 @@ pub fn accumulate_balances(
 }
 
 /// Compute minimum-cash-flow settlement from a pre-built balance map.
-pub fn compute_from_balances(balances: HashMap<Ulid, i64>) -> Settlement {
+pub fn compute_from_balances(currency: Currency, balances: HashMap<Ulid, i64>) -> Settlement {
     let mut creditors: Vec<(Ulid, i64)> = balances
         .iter()
         .filter(|&(_, &b)| b > 0)
@@ -84,7 +85,10 @@ pub fn compute_from_balances(balances: HashMap<Ulid, i64>) -> Settlement {
         }
     }
 
-    Settlement { transactions }
+    Settlement {
+        currency,
+        transactions,
+    }
 }
 
 /// Compute the per-user cent amounts from a share list and a total.
@@ -124,7 +128,7 @@ mod tests {
     fn compute(users: &[User], bills: &EffectiveBills) -> Settlement {
         let mut balances = HashMap::new();
         accumulate_balances(users, bills, &mut balances);
-        compute_from_balances(balances)
+        compute_from_balances(Currency::from_code("USD").unwrap(), balances)
     }
 
     fn device() -> NodeId {

@@ -213,18 +213,17 @@ impl UnbillService {
     // Settlement
     // -----------------------------------------------------------------------
 
-    /// Compute net settlement for a user across all ledgers they participate in.
-    ///
-    /// Balances are accumulated from every ledger where the user appears as a
-    /// user or in a bill, then minimum-cash-flow is applied to the combined
-    /// map. The result is filtered to transactions that involve the given user.
+    /// Compute net settlement for a user across all ledgers they participate in,
+    /// grouped by currency. Returns one `Settlement` per currency.
     pub async fn compute_settlement_for_user(
         &self,
         user_id: &str,
-    ) -> Result<settlement::Settlement> {
+    ) -> Result<Vec<settlement::Settlement>> {
         let user_ulid = parse_ulid(user_id)?;
-        let mut balances: std::collections::HashMap<crate::model::Ulid, i64> =
-            std::collections::HashMap::new();
+        let mut by_currency: std::collections::HashMap<
+            Currency,
+            std::collections::HashMap<crate::model::Ulid, i64>,
+        > = std::collections::HashMap::new();
 
         for meta in self.store.list_ledgers().await? {
             let id = meta.ledger_id.to_string();
@@ -232,19 +231,27 @@ impl UnbillService {
             let users = doc.list_users()?;
             // Only aggregate ledgers where this user is active.
             if users.iter().any(|user| user.user_id == user_ulid) {
+                let currency = doc.get_ledger()?.currency;
                 let bills = doc.list_bills()?;
-                settlement::accumulate_balances(&users, &bills, &mut balances);
+                let balances = by_currency.entry(currency).or_default();
+                settlement::accumulate_balances(&users, &bills, balances);
             }
         }
 
-        let full = settlement::compute_from_balances(balances);
-        // Keep only transactions involving this user.
-        let transactions = full
-            .transactions
-            .into_iter()
-            .filter(|t| t.from_user_id == user_ulid || t.to_user_id == user_ulid)
-            .collect();
-        Ok(settlement::Settlement { transactions })
+        let mut results = Vec::new();
+        for (currency, balances) in by_currency {
+            let full = settlement::compute_from_balances(currency, balances);
+            let transactions = full
+                .transactions
+                .into_iter()
+                .filter(|t| t.from_user_id == user_ulid || t.to_user_id == user_ulid)
+                .collect();
+            results.push(settlement::Settlement {
+                currency,
+                transactions,
+            });
+        }
+        Ok(results)
     }
 
     /// Compute settlement for a single ledger.
@@ -253,11 +260,12 @@ impl UnbillService {
         ledger_id: &str,
     ) -> crate::error::Result<settlement::Settlement> {
         let doc = self.load_doc(ledger_id).await?;
+        let currency = doc.get_ledger()?.currency;
         let users = doc.list_users()?;
         let bills = doc.list_bills()?;
         let mut balances = std::collections::HashMap::new();
         settlement::accumulate_balances(&users, &bills, &mut balances);
-        Ok(settlement::compute_from_balances(balances))
+        Ok(settlement::compute_from_balances(currency, balances))
     }
 
     // -----------------------------------------------------------------------
@@ -647,7 +655,7 @@ mod tests {
         seed_users(&svc, &lid).await;
         let alice = Ulid::from_u128(1).to_string();
         let s = svc.compute_settlement_for_user(&alice).await.unwrap();
-        assert!(s.transactions.is_empty());
+        assert!(s.iter().all(|g| g.transactions.is_empty()));
     }
 
     #[tokio::test]
@@ -684,13 +692,56 @@ mod tests {
         };
         svc.add_bill(&lid2, bob_pays).await.unwrap();
 
-        // Net: Bob owes Alice $30 - $10 = $20.
+        // Net: Bob owes Alice $30 - $10 = $20. Both ledgers are USD → one group.
         let alice = Ulid::from_u128(1).to_string();
-        let s = svc.compute_settlement_for_user(&alice).await.unwrap();
+        let settlements = svc.compute_settlement_for_user(&alice).await.unwrap();
+        assert_eq!(settlements.len(), 1);
+        let s = &settlements[0];
+        assert_eq!(s.currency.code(), "USD");
         assert_eq!(s.transactions.len(), 1);
         assert_eq!(s.transactions[0].amount_cents, 2000);
         assert_eq!(s.transactions[0].from_user_id, Ulid::from_u128(2));
         assert_eq!(s.transactions[0].to_user_id, Ulid::from_u128(1));
+    }
+
+    #[tokio::test]
+    async fn test_settlement_groups_separate_currencies() {
+        let svc = open().await;
+
+        // USD ledger: Alice pays $60, Alice+Bob split → Bob owes Alice $30.
+        let lid_usd = svc
+            .create_ledger("USD ledger".into(), "USD".into())
+            .await
+            .unwrap();
+        seed_users(&svc, &lid_usd).await;
+        let (_, usd_bill) = two_way_bill("Rent", 6000, &lid_usd);
+        svc.add_bill(&lid_usd, usd_bill).await.unwrap();
+
+        // EUR ledger: Alice pays €40, Alice+Bob split → Bob owes Alice €20.
+        let lid_eur = svc
+            .create_ledger("EUR ledger".into(), "EUR".into())
+            .await
+            .unwrap();
+        seed_users(&svc, &lid_eur).await;
+        let (_, eur_bill) = two_way_bill("Hotel", 4000, &lid_eur);
+        svc.add_bill(&lid_eur, eur_bill).await.unwrap();
+
+        let alice = Ulid::from_u128(1).to_string();
+        let mut settlements = svc.compute_settlement_for_user(&alice).await.unwrap();
+
+        // Must produce two separate groups — one USD, one EUR — not a single merged total.
+        assert_eq!(settlements.len(), 2);
+        settlements.sort_by_key(|s| s.currency.code());
+
+        let eur = &settlements[0];
+        assert_eq!(eur.currency.code(), "EUR");
+        assert_eq!(eur.transactions.len(), 1);
+        assert_eq!(eur.transactions[0].amount_cents, 2000);
+
+        let usd = &settlements[1];
+        assert_eq!(usd.currency.code(), "USD");
+        assert_eq!(usd.transactions.len(), 1);
+        assert_eq!(usd.transactions[0].amount_cents, 3000);
     }
 
     // --- persistence round-trip ---
