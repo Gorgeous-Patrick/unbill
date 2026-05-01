@@ -1,6 +1,6 @@
 use crate::api::{
-    self, AddUserInput, AppBootstrap, Bill, BillShareInput, JoinLedgerInput, LedgerDetail,
-    LedgerSummary, SaveBillInput, User,
+    self, AddUserInput, AppBootstrap, Bill, BillShareInput, CreateUserInput, JoinLedgerInput,
+    LedgerDetail, LedgerSummary, SaveBillInput, User,
 };
 use crate::pages::{
     AddLedgerUserSheet, BillEditorPage, CreateLedgerSheet, EmptyColumn, JoinLedgerSheet,
@@ -538,6 +538,35 @@ pub fn App() -> impl IntoView {
                                             load_settings_ledger(ledger_id);
                                             reload_bootstrap();
                                             status_message.set(Some("User added to ledger.".to_owned()));
+                                            error_message.set(None);
+                                        }
+                                        Err(error) => error_message.set(Some(error)),
+                                    }
+                                    busy.set(false);
+                                });
+                            }
+                        })
+                        on_create_user=Callback::new(move |display_name: String| {
+                            if let Some(ledger_id) = settings_popup
+                                .get()
+                                .and_then(|popup| popup.selected_ledger_id)
+                            {
+                                busy.set(true);
+                                spawn_local(async move {
+                                    match api::create_user(CreateUserInput { ledger_id: ledger_id.clone(), display_name }).await {
+                                        Ok(_) => {
+                                            overlay.set(None);
+                                            if selected_ledger_id
+                                                .get_untracked()
+                                                .as_ref()
+                                                .map(|selected| selected == &ledger_id)
+                                                .unwrap_or(false)
+                                            {
+                                                load_selected_ledger(ledger_id.clone());
+                                            }
+                                            load_settings_ledger(ledger_id);
+                                            reload_bootstrap();
+                                            status_message.set(Some("User created.".to_owned()));
                                             error_message.set(None);
                                         }
                                         Err(error) => error_message.set(Some(error)),
