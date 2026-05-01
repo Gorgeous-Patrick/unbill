@@ -694,7 +694,7 @@ mod tests {
         );
         assert_eq!(
             before_dev["script"].as_str(),
-            Some("trunk serve --config Trunk.toml")
+            Some("trunk serve --config Trunk.toml --address 0.0.0.0")
         );
     }
 
