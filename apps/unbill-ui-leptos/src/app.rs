@@ -727,8 +727,8 @@ pub fn App() -> impl IntoView {
                     {column_three}
                 </section>
 
-                {render_overlay()}
                 {render_settings_popup()}
+                {render_overlay()}
             </main>
         }
         .into_any()
@@ -745,8 +745,8 @@ pub fn App() -> impl IntoView {
                             busy=busy.get()
                         />
                         {render_compact_page()}
-                        {render_overlay()}
                         {render_settings_popup()}
+                        {render_overlay()}
                     </main>
                 }
                     .into_any()
