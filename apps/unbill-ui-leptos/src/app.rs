@@ -710,25 +710,27 @@ pub fn App() -> impl IntoView {
                     busy=busy.get()
                 />
 
-                <section class="ranger-app-grid">
-                    <LedgersPage
-                        ledgers=ledgers
-                        selected_ledger_id=selected_ledger
-                        on_more=Callback::new(move |_| {
-                            open_device_settings();
-                            bill_editor.set(None);
-                        })
-                        on_select_ledger=Callback::new(open_ledger)
-                        on_new_ledger=Callback::new(move |_| overlay.set(Some(OverlayKind::CreateLedger)))
-                    />
+                <div class="safe-content-area">
+                    <section class="ranger-app-grid">
+                        <LedgersPage
+                            ledgers=ledgers
+                            selected_ledger_id=selected_ledger
+                            on_more=Callback::new(move |_| {
+                                open_device_settings();
+                                bill_editor.set(None);
+                            })
+                            on_select_ledger=Callback::new(open_ledger)
+                            on_new_ledger=Callback::new(move |_| overlay.set(Some(OverlayKind::CreateLedger)))
+                        />
 
-                    {column_two}
+                        {column_two}
 
-                    {column_three}
-                </section>
+                        {column_three}
+                    </section>
 
-                {render_settings_popup()}
-                {render_overlay()}
+                    {render_settings_popup()}
+                    {render_overlay()}
+                </div>
             </main>
         }
         .into_any()
@@ -744,9 +746,11 @@ pub fn App() -> impl IntoView {
                             error=error_message.get()
                             busy=busy.get()
                         />
-                        {render_compact_page()}
-                        {render_settings_popup()}
-                        {render_overlay()}
+                        <div class="safe-content-area">
+                            {render_compact_page()}
+                            {render_settings_popup()}
+                            {render_overlay()}
+                        </div>
                     </main>
                 }
                     .into_any()
