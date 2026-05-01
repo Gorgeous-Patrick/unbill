@@ -4,7 +4,8 @@ use ratatui::{
     style::{Color, Modifier, Style},
     widgets::{Block, Paragraph},
 };
-use unbill_core::model::{Ulid, User};
+use unbill_core::model::{Share, Ulid, User};
+use unbill_core::settlement::compute_bill_split;
 
 use crate::app::AppState;
 use crate::pane::Pane;
@@ -30,6 +31,7 @@ pub enum EditorSection {
 pub struct BillEditor {
     pub ledger_id: String,
     pub prev_id: Option<Ulid>,
+    pub bill_id: Ulid,
     pub description: String,
     pub amount_str: String,
     pub payers: Vec<ParticipantRow>,
@@ -99,11 +101,13 @@ fn render_view(frame: &mut Frame, area: Rect, block: Block, state: &AppState) {
         let available = rows[3].height as usize;
         let mut line_idx = 0usize;
 
-        for share in &bill.payers {
+        let split = compute_bill_split(&bill.payers, &bill.payees, bill.amount_cents, bill.id);
+
+        for (user_id, cents) in &split.payer_amounts {
             if line_idx >= available {
                 break;
             }
-            let name = resolve_user_name(&share.user_id, &state.users);
+            let name = resolve_user_name(user_id, &state.users);
             let row = Rect {
                 x: rows[3].x,
                 y: rows[3].y + line_idx as u16,
@@ -111,17 +115,22 @@ fn render_view(frame: &mut Frame, area: Rect, block: Block, state: &AppState) {
                 height: 1,
             };
             frame.render_widget(
-                Paragraph::new(format!("  pays: {} (×{})", name, share.shares))
-                    .style(Style::default().fg(Color::DarkGray)),
+                Paragraph::new(format!(
+                    "  pays: {}  ${}.{:02}",
+                    name,
+                    cents / 100,
+                    cents.abs() % 100
+                ))
+                .style(Style::default().fg(Color::DarkGray)),
                 row,
             );
             line_idx += 1;
         }
-        for share in &bill.payees {
+        for (user_id, cents) in &split.payee_amounts {
             if line_idx >= available {
                 break;
             }
-            let name = resolve_user_name(&share.user_id, &state.users);
+            let name = resolve_user_name(user_id, &state.users);
             let row = Rect {
                 x: rows[3].x,
                 y: rows[3].y + line_idx as u16,
@@ -129,8 +138,13 @@ fn render_view(frame: &mut Frame, area: Rect, block: Block, state: &AppState) {
                 height: 1,
             };
             frame.render_widget(
-                Paragraph::new(format!("  owes: {} (×{})", name, share.shares))
-                    .style(Style::default().fg(Color::DarkGray)),
+                Paragraph::new(format!(
+                    "  owes: {}  ${}.{:02}",
+                    name,
+                    cents / 100,
+                    cents.abs() % 100
+                ))
+                .style(Style::default().fg(Color::DarkGray)),
                 row,
             );
             line_idx += 1;
@@ -311,25 +325,39 @@ fn build_preview(editor: &BillEditor) -> String {
         Some(v) if v >= 0 => v,
         _ => return String::new(),
     };
-    let selected_payees: Vec<&ParticipantRow> =
-        editor.payees.iter().filter(|r| r.selected).collect();
-    if selected_payees.is_empty() {
-        return String::new();
-    }
-    let total_weight: u32 = selected_payees.iter().map(|r| r.weight).sum();
-    if total_weight == 0 {
-        return String::new();
-    }
-    let parts: Vec<String> = selected_payees
+    let payer_shares: Vec<Share> = editor
+        .payers
         .iter()
-        .map(|r| {
-            let share = (amount_cents * r.weight as i64) / total_weight as i64;
-            format!(
-                "{}: ${}.{:02}",
-                r.user.display_name,
-                share / 100,
-                share.abs() % 100
-            )
+        .filter(|r| r.selected)
+        .map(|r| Share {
+            user_id: r.user.user_id,
+            shares: r.weight,
+        })
+        .collect();
+    let payee_shares: Vec<Share> = editor
+        .payees
+        .iter()
+        .filter(|r| r.selected)
+        .map(|r| Share {
+            user_id: r.user.user_id,
+            shares: r.weight,
+        })
+        .collect();
+    if payee_shares.is_empty() {
+        return String::new();
+    }
+    let split = compute_bill_split(&payer_shares, &payee_shares, amount_cents, editor.bill_id);
+    let parts: Vec<String> = split
+        .payee_amounts
+        .iter()
+        .map(|(uid, cents)| {
+            let name = editor
+                .payees
+                .iter()
+                .find(|r| r.user.user_id == *uid)
+                .map(|r| r.user.display_name.as_str())
+                .unwrap_or("?");
+            format!("{}: ${}.{:02}", name, cents / 100, cents.abs() % 100)
         })
         .collect();
     parts.join("  ")

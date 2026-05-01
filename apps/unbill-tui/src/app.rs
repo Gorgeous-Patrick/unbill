@@ -4,7 +4,7 @@ use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyModifiers};
 use futures::StreamExt as _;
 use ratatui::{Terminal, backend::CrosstermBackend};
 use tokio::time::{Duration, interval};
-use unbill_core::model::{Bill, LedgerMeta, NewBill, NodeId, Share, User};
+use unbill_core::model::{Bill, LedgerMeta, NewBill, NodeId, Share, Ulid, User};
 use unbill_core::service::{ServiceEvent, SettlementTransaction, UnbillService};
 
 use crate::pane::Pane;
@@ -763,6 +763,7 @@ fn build_new_editor(ledger_id: String, users: Vec<User>) -> BillEditor {
     BillEditor {
         ledger_id,
         prev_id: None,
+        bill_id: Ulid::new(),
         description: String::new(),
         amount_str: String::new(),
         payers,
@@ -808,6 +809,7 @@ fn build_amend_editor(ledger_id: String, bill: &Bill, users: Vec<User>) -> BillE
     BillEditor {
         ledger_id,
         prev_id: Some(bill.id),
+        bill_id: Ulid::new(),
         description: bill.description.clone(),
         amount_str,
         payers,

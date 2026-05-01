@@ -20,6 +20,31 @@ pub struct Settlement {
     pub transactions: Vec<Transaction>,
 }
 
+/// The per-user cent amounts for both sides of a single bill.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BillSplit {
+    /// How much each payer is credited.
+    pub payer_amounts: Vec<(Ulid, i64)>,
+    /// How much each payee owes.
+    pub payee_amounts: Vec<(Ulid, i64)>,
+}
+
+/// Compute the exact cent amounts for each payer and payee of a bill.
+///
+/// Uses the bill's own ID as the rounding seed, so the result is identical
+/// to what `compute_settlement` would derive for the same bill.
+pub fn compute_bill_split(
+    payers: &[crate::model::Share],
+    payees: &[crate::model::Share],
+    total_cents: i64,
+    bill_id: Ulid,
+) -> BillSplit {
+    BillSplit {
+        payer_amounts: split_shares(payers, total_cents, bill_id),
+        payee_amounts: split_shares(payees, total_cents, bill_id),
+    }
+}
+
 /// Compute settlement for a single ledger.
 ///
 /// Derives effective bills from `ledger.bills`, accumulates per-user balances,

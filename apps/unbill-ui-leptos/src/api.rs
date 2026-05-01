@@ -177,6 +177,33 @@ pub async fn save_bill(input: SaveBillInput) -> Result<String, String> {
     invoke("save_bill", &serde_json::json!({ "input": input })).await
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewBillSplitInput {
+    pub bill_id: String,
+    pub amount_cents: i64,
+    pub payers: Vec<BillShareInput>,
+    pub payees: Vec<BillShareInput>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UserAmount {
+    pub user_id: String,
+    pub amount_cents: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BillSplitPreview {
+    pub payer_amounts: Vec<UserAmount>,
+    pub payee_amounts: Vec<UserAmount>,
+}
+
+pub async fn preview_bill_split(input: PreviewBillSplitInput) -> Result<BillSplitPreview, String> {
+    invoke("preview_bill_split", &serde_json::json!({ "input": input })).await
+}
+
 pub async fn sync_once(peer_node_id: &str) -> Result<(), String> {
     invoke(
         "sync_once",
