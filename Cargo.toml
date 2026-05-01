@@ -6,6 +6,7 @@ members = [
     "apps/unbill-ui-leptos",
     "crates/unbill-core",
     "crates/unbill-tauri",
+    "crates/unbill-ui-components",
 ]
 
 [workspace.package]

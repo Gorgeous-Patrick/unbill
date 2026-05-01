@@ -7477,6 +7477,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "unbill-ui-components"
+version = "0.0.1"
+dependencies = [
+ "leptos",
+ "serde",
+]
+
+[[package]]
 name = "unbill-ui-leptos"
 version = "0.0.1"
 dependencies = [
