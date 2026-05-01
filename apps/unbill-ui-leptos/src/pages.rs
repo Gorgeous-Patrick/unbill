@@ -830,6 +830,7 @@ pub fn AddLedgerUserSheet(
     ledger_users: Vec<User>,
     on_cancel: Callback<()>,
     on_submit: Callback<String>,
+    on_create_user: Callback<String>,
 ) -> impl IntoView {
     let available_users = all_users
         .into_iter()
@@ -840,35 +841,63 @@ pub fn AddLedgerUserSheet(
         })
         .collect::<Vec<_>>();
 
+    let new_name = RwSignal::new(String::new());
+
     view! {
         <ModalSheet
             title="Add User".to_owned()
             on_close=Callback::new(move |_| on_cancel.run(()))
         >
             <div class="stack-gap">
+                <SectionCard title="Create new user".to_owned()>
+                    <div class="stack-gap">
+                        <FieldBlock label="Display name".to_owned()>
+                            <input
+                                class="ui-input"
+                                prop:value=move || new_name.get()
+                                on:input=move |event| new_name.set(event_target_value(&event))
+                            />
+                        </FieldBlock>
+                        <ActionButton
+                            label="Create".to_owned()
+                            tone=ButtonTone::Secondary
+                            on_press=Callback::new(move |_| {
+                                let name = new_name.get();
+                                if !name.trim().is_empty() {
+                                    on_create_user.run(name);
+                                }
+                            })
+                        />
+                    </div>
+                </SectionCard>
+
                 {if available_users.is_empty() {
-                    view! { <div class="empty-copy">"No users from other ledgers available."</div> }.into_any()
+                    view! { <div class="empty-copy">"No users from other ledgers to add."</div> }.into_any()
                 } else {
-                    available_users
-                        .into_iter()
-                        .map(|user| {
-                            let user_id = user.user_id.clone();
-                            view! {
-                                <div class="data-row split-row">
-                                    <div class="row-copy">
-                                        <p class="row-title">{user.display_name}</p>
-                                        <p class="row-meta mono-copy">{user_id.clone()}</p>
-                                    </div>
-                                    <IconButton
-                                        kind=IconButtonKind::Add
-                                        tone=ButtonTone::Secondary
-                                        on_press=Callback::new(move |_| on_submit.run(user_id.clone()))
-                                    />
-                                </div>
-                            }
-                        })
-                        .collect_view()
-                        .into_any()
+                    view! {
+                        <SectionCard title="Add existing user".to_owned()>
+                            {available_users
+                                .into_iter()
+                                .map(|user| {
+                                    let user_id = user.user_id.clone();
+                                    view! {
+                                        <div class="data-row split-row">
+                                            <div class="row-copy">
+                                                <p class="row-title">{user.display_name}</p>
+                                                <p class="row-meta mono-copy">{user_id.clone()}</p>
+                                            </div>
+                                            <IconButton
+                                                kind=IconButtonKind::Add
+                                                tone=ButtonTone::Secondary
+                                                on_press=Callback::new(move |_| on_submit.run(user_id.clone()))
+                                            />
+                                        </div>
+                                    }
+                                })
+                                .collect_view()}
+                        </SectionCard>
+                    }
+                    .into_any()
                 }}
             </div>
         </ModalSheet>
