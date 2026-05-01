@@ -260,12 +260,8 @@ impl UnbillService {
         ledger_id: &str,
     ) -> crate::error::Result<settlement::Settlement> {
         let doc = self.load_doc(ledger_id).await?;
-        let currency = doc.get_ledger()?.currency;
-        let users = doc.list_users()?;
-        let bills = doc.list_bills()?;
-        let mut balances = std::collections::HashMap::new();
-        settlement::accumulate_balances(&users, &bills, &mut balances);
-        Ok(settlement::compute_from_balances(currency, balances))
+        let ledger = doc.get_ledger()?;
+        Ok(settlement::compute_settlement(&ledger))
     }
 
     // -----------------------------------------------------------------------
