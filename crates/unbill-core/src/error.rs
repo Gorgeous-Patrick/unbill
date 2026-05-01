@@ -37,6 +37,15 @@ pub enum StorageError {
 
     #[error("serialization error: {0}")]
     Serialization(String),
+
+    #[error("http error: {0}")]
+    Http(#[from] reqwest::Error),
+
+    #[error("unauthorized")]
+    Unauthorized,
+
+    #[error("http status {0}: {1}")]
+    HttpStatus(u16, String),
 }
 
 pub type Result<T> = std::result::Result<T, UnbillError>;

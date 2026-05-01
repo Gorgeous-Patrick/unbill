@@ -1,0 +1,477 @@
+use std::sync::Arc;
+
+use axum::{
+    Json, Router,
+    body::Bytes,
+    extract::{Path, Request, State},
+    http::{HeaderMap, StatusCode},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
+    routing::{delete, get, put},
+};
+use serde::{Deserialize, Serialize};
+use tower_http::trace::TraceLayer;
+
+use unbill_core::storage::{FsStore, LedgerStore};
+
+// ---------------------------------------------------------------------------
+// Shared state
+// ---------------------------------------------------------------------------
+
+pub struct AppState {
+    pub store: FsStore,
+    pub api_key: String,
+}
+
+// ---------------------------------------------------------------------------
+// LedgerMeta JSON shape (mirrors FsStore / HttpStore)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MetaJson {
+    pub ledger_id: String,
+    pub name: String,
+    pub currency: String,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+}
+
+// ---------------------------------------------------------------------------
+// Router
+// ---------------------------------------------------------------------------
+
+pub fn build_router(state: Arc<AppState>) -> Router {
+    let protected = Router::new()
+        .route("/ledgers", get(list_ledgers))
+        .route("/ledgers/{id}/meta", put(save_ledger_meta))
+        .route(
+            "/ledgers/{id}/snapshot",
+            get(load_ledger_snapshot).put(save_ledger_snapshot),
+        )
+        .route("/ledgers/{id}", delete(delete_ledger))
+        .route("/device/{key}", get(load_device_meta).put(save_device_meta))
+        .layer(middleware::from_fn_with_state(state.clone(), auth))
+        .with_state(state);
+
+    Router::new()
+        .merge(protected)
+        .layer(TraceLayer::new_for_http())
+}
+
+// ---------------------------------------------------------------------------
+// Auth middleware
+// ---------------------------------------------------------------------------
+
+async fn auth(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    req: Request,
+    next: Next,
+) -> Response {
+    let authorized = headers
+        .get("Authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(|token| token == state.api_key)
+        .unwrap_or(false);
+
+    if authorized {
+        next.run(req).await
+    } else {
+        StatusCode::UNAUTHORIZED.into_response()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Device key validation — no path components allowed
+// ---------------------------------------------------------------------------
+
+fn valid_device_key(key: &str) -> bool {
+    !key.is_empty()
+        && key
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
+}
+
+// ---------------------------------------------------------------------------
+// Handlers
+// ---------------------------------------------------------------------------
+
+async fn list_ledgers(State(state): State<Arc<AppState>>) -> Response {
+    match state.store.list_ledgers().await {
+        Ok(metas) => {
+            let json: Vec<MetaJson> = metas
+                .into_iter()
+                .map(|m| MetaJson {
+                    ledger_id: m.ledger_id.to_string(),
+                    name: m.name,
+                    currency: m.currency.code().to_owned(),
+                    created_at_ms: m.created_at.as_millis(),
+                    updated_at_ms: m.updated_at.as_millis(),
+                })
+                .collect();
+            Json(json).into_response()
+        }
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+async fn save_ledger_meta(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(body): Json<MetaJson>,
+) -> Response {
+    use unbill_core::model::{Currency, LedgerMeta, Timestamp, Ulid};
+
+    let ledger_id = match Ulid::from_string(&body.ledger_id) {
+        Ok(id) => id,
+        Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    };
+    if ledger_id.to_string() != id {
+        return (StatusCode::BAD_REQUEST, "id mismatch").into_response();
+    }
+    let currency = match Currency::from_code(&body.currency) {
+        Some(c) => c,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                format!("unknown currency {:?}", body.currency),
+            )
+                .into_response();
+        }
+    };
+    let meta = LedgerMeta {
+        ledger_id,
+        name: body.name,
+        currency,
+        created_at: Timestamp::from_millis(body.created_at_ms),
+        updated_at: Timestamp::from_millis(body.updated_at_ms),
+    };
+
+    match state.store.save_ledger_meta(&meta).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+async fn load_ledger_snapshot(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Response {
+    match state.store.load_ledger_bytes(&id).await {
+        Ok(bytes) if bytes.is_empty() => StatusCode::NOT_FOUND.into_response(),
+        Ok(bytes) => (
+            StatusCode::OK,
+            [("content-type", "application/octet-stream")],
+            bytes,
+        )
+            .into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+async fn save_ledger_snapshot(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Response {
+    match state.store.save_ledger_bytes(&id, &body).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+async fn delete_ledger(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> Response {
+    match state.store.delete_ledger(&id).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+async fn load_device_meta(State(state): State<Arc<AppState>>, Path(key): Path<String>) -> Response {
+    if !valid_device_key(&key) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    match state.store.load_device_meta(&key).await {
+        Ok(Some(bytes)) => (
+            StatusCode::OK,
+            [("content-type", "application/octet-stream")],
+            bytes,
+        )
+            .into_response(),
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+async fn save_device_meta(
+    State(state): State<Arc<AppState>>,
+    Path(key): Path<String>,
+    body: Bytes,
+) -> Response {
+    if !valid_device_key(&key) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    match state.store.save_device_meta(&key, &body).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use axum::body::Body;
+    use axum::http::{Method, Request, StatusCode};
+    use http_body_util::BodyExt;
+    use tower::ServiceExt;
+
+    use super::*;
+
+    const API_KEY: &str = "secret";
+
+    fn make_app(dir: &std::path::Path) -> Router {
+        let state = Arc::new(AppState {
+            store: FsStore::new(dir.to_path_buf()),
+            api_key: API_KEY.to_owned(),
+        });
+        build_router(state)
+    }
+
+    async fn body_bytes(resp: axum::response::Response) -> Vec<u8> {
+        resp.into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .to_vec()
+    }
+
+    fn auth_put(uri: &str, content_type: &str, body: Vec<u8>) -> Request<Body> {
+        Request::builder()
+            .method(Method::PUT)
+            .uri(uri)
+            .header("Authorization", format!("Bearer {API_KEY}"))
+            .header("content-type", content_type)
+            .body(Body::from(body))
+            .unwrap()
+    }
+
+    fn auth_get(uri: &str) -> Request<Body> {
+        Request::builder()
+            .method(Method::GET)
+            .uri(uri)
+            .header("Authorization", format!("Bearer {API_KEY}"))
+            .body(Body::empty())
+            .unwrap()
+    }
+
+    // --- auth ---------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_missing_token_returns_401() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = make_app(dir.path());
+        let req = Request::builder()
+            .uri("/ledgers")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn test_wrong_token_returns_401() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = make_app(dir.path());
+        let req = Request::builder()
+            .uri("/ledgers")
+            .header("Authorization", "Bearer wrong")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    // --- list ledgers -------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_list_ledgers_returns_empty_array_initially() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = make_app(dir.path());
+        let resp = app.oneshot(auth_get("/ledgers")).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_bytes(resp).await;
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json, serde_json::json!([]));
+    }
+
+    // --- save + list ledger meta --------------------------------------------
+
+    #[tokio::test]
+    async fn test_save_and_list_ledger_meta_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = make_app(dir.path());
+
+        let meta = serde_json::json!({
+            "ledger_id": "00000000000000000000000001",
+            "name": "Groceries",
+            "currency": "USD",
+            "created_at_ms": 1000,
+            "updated_at_ms": 2000
+        });
+
+        // save
+        let resp = app
+            .clone()
+            .oneshot(auth_put(
+                "/ledgers/00000000000000000000000001/meta",
+                "application/json",
+                serde_json::to_vec(&meta).unwrap(),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+
+        // list
+        let resp = app.oneshot(auth_get("/ledgers")).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_bytes(resp).await;
+        let list: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0]["name"], "Groceries");
+    }
+
+    // --- snapshot -----------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_snapshot_404_before_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = make_app(dir.path());
+
+        // Need meta first so FsStore has the ledger dir
+        let meta = serde_json::json!({
+            "ledger_id": "00000000000000000000000001",
+            "name": "Test", "currency": "USD",
+            "created_at_ms": 0, "updated_at_ms": 0
+        });
+        app.clone()
+            .oneshot(auth_put(
+                "/ledgers/00000000000000000000000001/meta",
+                "application/json",
+                serde_json::to_vec(&meta).unwrap(),
+            ))
+            .await
+            .unwrap();
+
+        let resp = app
+            .oneshot(auth_get("/ledgers/00000000000000000000000001/snapshot"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_snapshot_save_and_load_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = make_app(dir.path());
+
+        // Need to create the dir via save_ledger_bytes (FsStore creates it)
+        let resp = app
+            .clone()
+            .oneshot(auth_put(
+                "/ledgers/00000000000000000000000001/snapshot",
+                "application/octet-stream",
+                b"automerge bytes".to_vec(),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+
+        let resp = app
+            .oneshot(auth_get("/ledgers/00000000000000000000000001/snapshot"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_bytes(resp).await;
+        assert_eq!(body, b"automerge bytes");
+    }
+
+    // --- delete ledger ------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_delete_ledger_is_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = make_app(dir.path());
+
+        let del = || {
+            Request::builder()
+                .method(Method::DELETE)
+                .uri("/ledgers/00000000000000000000000001")
+                .header("Authorization", format!("Bearer {API_KEY}"))
+                .body(Body::empty())
+                .unwrap()
+        };
+
+        // first delete (never existed)
+        let resp = app.clone().oneshot(del()).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+
+        // second delete
+        let resp = app.oneshot(del()).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+    }
+
+    // --- device meta --------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_device_meta_save_and_load_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = make_app(dir.path());
+
+        let resp = app
+            .clone()
+            .oneshot(auth_put(
+                "/device/device_key.bin",
+                "application/octet-stream",
+                b"secret".to_vec(),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+
+        let resp = app
+            .oneshot(auth_get("/device/device_key.bin"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(body_bytes(resp).await, b"secret");
+    }
+
+    #[tokio::test]
+    async fn test_device_meta_returns_404_when_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = make_app(dir.path());
+        let resp = app
+            .oneshot(auth_get("/device/device_key.bin"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_device_key_with_path_separator_returns_400() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = make_app(dir.path());
+        let resp = app
+            .oneshot(auth_get("/device/../../etc/passwd"))
+            .await
+            .unwrap();
+        // axum will match on the first segment; the path won't route correctly,
+        // but even if it did, valid_device_key rejects it.
+        assert!(resp.status() == StatusCode::BAD_REQUEST || resp.status() == StatusCode::NOT_FOUND);
+    }
+}

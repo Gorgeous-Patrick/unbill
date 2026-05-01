@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "apps/unbill-cli",
+    "apps/unbill-server",
     "apps/unbill-tui",
     "apps/unbill-ui-leptos",
     "crates/unbill-core",
@@ -54,8 +55,17 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 dashmap = "6"
 directories = "6.0.0"
 
+# HTTP client
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# HTTP server
+axum = "0.8"
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["trace"] }
+
 # Testing
 proptest = "1"
+wiremock = "0.6"
 
 [profile.release]
 lto = true

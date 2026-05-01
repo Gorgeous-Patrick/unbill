@@ -24,8 +24,10 @@ thiserror.workspace = true
 tracing.workspace = true
 dashmap.workspace = true
 directories.workspace = true
+reqwest.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = "3"
+wiremock.workspace = true
