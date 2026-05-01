@@ -6,7 +6,4 @@ mod inner;
 pub use crate::conflict::ConflictGroup;
 pub use crate::settlement::{Settlement, Transaction as SettlementTransaction};
 pub use inner::UnbillService;
-pub(crate) use inner::{
-    load_device_labels, load_pending_invitations, save_device_labels, save_pending_invitations,
-};
 pub use unbill_event::ServiceEvent;

@@ -10,12 +10,11 @@ use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::broadcast;
 
-use crate::doc::LedgerDoc;
-use crate::model::NodeId;
-use crate::storage::LedgerStore;
 use unbill_event::ServiceEvent;
+use unbill_model::NodeId;
+use unbill_storage::{LedgerDoc, LedgerStore};
 
-use super::protocol::{Hello, HelloAck, SyncDone, SyncFrame, SyncMsg, read_msg, write_msg};
+use crate::protocol::{Hello, HelloAck, SyncDone, SyncFrame, SyncMsg, read_msg, write_msg};
 
 struct LedgerSyncState {
     sync_state: automerge::sync::State,
@@ -228,10 +227,9 @@ mod tests {
 
     use tokio::sync::broadcast;
 
-    use crate::doc::LedgerDoc;
-    use crate::model::{Currency, NewBill, NewDevice, NodeId, Share, Timestamp, Ulid};
-    use crate::storage::LedgerStore;
     use unbill_event::ServiceEvent;
+    use unbill_model::{Currency, NewBill, NewDevice, NodeId, Share, Timestamp, Ulid};
+    use unbill_storage::{LedgerDoc, LedgerStore};
     use unbill_store_memory::InMemoryStore;
 
     use super::run_sync_session;
@@ -252,7 +250,7 @@ mod tests {
     async fn save_doc(store: &dyn LedgerStore, doc: &mut LedgerDoc) {
         let ledger = doc.get_ledger().unwrap();
         let id = ledger.ledger_id.to_string();
-        let meta = crate::model::LedgerMeta {
+        let meta = unbill_model::LedgerMeta {
             ledger_id: ledger.ledger_id,
             name: ledger.name.clone(),
             currency: ledger.currency,
@@ -344,7 +342,7 @@ mod tests {
         .unwrap();
         let payer = Ulid::from_u128(99);
         base.add_user(
-            crate::model::NewUser {
+            unbill_model::NewUser {
                 user_id: payer,
                 display_name: "Payer".to_string(),
             },

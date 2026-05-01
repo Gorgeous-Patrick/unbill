@@ -12,15 +12,14 @@ use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::broadcast;
 
-use crate::doc::LedgerDoc;
-use crate::model::{LedgerMeta, NewDevice, NodeId, Timestamp};
-use crate::service::{
+use unbill_event::ServiceEvent;
+use unbill_model::{LedgerMeta, NewDevice, NodeId, Timestamp};
+use unbill_storage::{LedgerDoc, LedgerStore};
+
+use crate::protocol::{JoinError, JoinReply, JoinRequest, JoinResponse, read_msg, write_msg};
+use crate::store_helpers::{
     load_device_labels, load_pending_invitations, save_device_labels, save_pending_invitations,
 };
-use crate::storage::LedgerStore;
-use unbill_event::ServiceEvent;
-
-use super::protocol::{JoinError, JoinReply, JoinRequest, JoinResponse, read_msg, write_msg};
 
 // ---------------------------------------------------------------------------
 // Host side
@@ -181,16 +180,16 @@ mod tests {
 
     use tokio::sync::broadcast;
 
-    use crate::doc::LedgerDoc;
-    use crate::model::{
+    use unbill_event::ServiceEvent;
+    use unbill_model::{
         Currency, Invitation, InviteToken, LedgerMeta, NewDevice, NodeId, Timestamp, Ulid,
     };
-    use crate::service::save_pending_invitations;
-    use unbill_event::ServiceEvent;
+    use unbill_storage::{LedgerDoc, LedgerStore};
     use unbill_store_memory::InMemoryStore;
 
-    use super::super::protocol::JoinRequest;
     use super::{run_join_host, run_join_requester};
+    use crate::protocol::JoinRequest;
+    use crate::store_helpers::save_pending_invitations;
 
     fn make_store() -> Arc<InMemoryStore> {
         Arc::new(InMemoryStore::default())
@@ -232,7 +231,7 @@ mod tests {
         let ledger_id = doc.get_ledger().unwrap().ledger_id;
         let ledger_id_str = ledger_id.to_string();
 
-        let host_store: Arc<dyn crate::storage::LedgerStore> = make_store();
+        let host_store: Arc<dyn LedgerStore> = make_store();
 
         // Save ledger doc and meta to the store.
         let meta = LedgerMeta {
@@ -258,7 +257,7 @@ mod tests {
         .await
         .unwrap();
 
-        let joiner_store: Arc<dyn crate::storage::LedgerStore> = make_store();
+        let joiner_store: Arc<dyn LedgerStore> = make_store();
 
         let (stream_host, stream_joiner) = tokio::io::duplex(64 * 1024);
         let (host_read, host_write) = tokio::io::split(stream_host);
@@ -324,7 +323,7 @@ mod tests {
             "host device entry should still be present without relying on a synced label"
         );
 
-        let device_labels = crate::service::load_device_labels(&*joiner_store)
+        let device_labels = crate::store_helpers::load_device_labels(&*joiner_store)
             .await
             .unwrap();
         assert_eq!(
@@ -335,7 +334,7 @@ mod tests {
         );
 
         // Token was consumed.
-        let remaining = crate::service::load_pending_invitations(&*host_store)
+        let remaining = crate::store_helpers::load_pending_invitations(&*host_store)
             .await
             .unwrap();
         assert!(remaining.is_empty(), "token should have been consumed");
@@ -350,13 +349,13 @@ mod tests {
         let ledger_id_str = doc.get_ledger().unwrap().ledger_id.to_string();
 
         // No invitations saved to store.
-        let host_store: Arc<dyn crate::storage::LedgerStore> = make_store();
+        let host_store: Arc<dyn LedgerStore> = make_store();
         host_store
             .save_ledger(&ledger_id_str, &mut doc)
             .await
             .unwrap();
 
-        let joiner_store: Arc<dyn crate::storage::LedgerStore> = make_store();
+        let joiner_store: Arc<dyn LedgerStore> = make_store();
 
         let (stream_host, stream_joiner) = tokio::io::duplex(64 * 1024);
         let (host_read, host_write) = tokio::io::split(stream_host);

@@ -7,6 +7,7 @@ members = [
     "apps/unbill-ui-leptos",
     "crates/unbill-core",
     "crates/unbill-event",
+    "crates/unbill-network",
     "crates/unbill-model",
     "crates/unbill-storage",
     "crates/unbill-store-fs",

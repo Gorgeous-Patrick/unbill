@@ -1,4 +1,4 @@
-use crate::model::NodeId;
+use unbill_model::NodeId;
 
 /// Extension trait on `NodeId` to convert to the network-layer type.
 pub trait NodeIdExt {
