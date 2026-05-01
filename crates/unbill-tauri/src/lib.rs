@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 use unbill_core::model::{NewBill, NewUser, NodeId, Share, Ulid};
 use unbill_core::service::UnbillService;
-use unbill_core::storage::FsStore;
+use unbill_store_fs::FsStore;
 
 struct AppState {
     service: Arc<UnbillService>,
@@ -669,7 +669,7 @@ mod tests {
     use serde_json::Value;
     use unbill_core::model::{NewDevice, Ulid};
     use unbill_core::service::UnbillService;
-    use unbill_core::storage::InMemoryStore;
+    use unbill_store_memory::InMemoryStore;
 
     fn tauri_config() -> Value {
         serde_json::from_str(include_str!("../tauri.conf.json"))

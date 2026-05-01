@@ -16,6 +16,10 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 unbill-core = { path = "../unbill-core" }
+unbill-store-fs = { path = "../unbill-store-fs" }
+
+[dev-dependencies]
+unbill-store-memory = { path = "../unbill-store-memory" }
 tokio.workspace = true
 anyhow.workspace = true
 tracing.workspace = true

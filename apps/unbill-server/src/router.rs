@@ -13,7 +13,8 @@ use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 
 use unbill_core::doc::LedgerDoc;
-use unbill_core::storage::{FsStore, LedgerStore};
+use unbill_core::storage::LedgerStore;
+use unbill_store_fs::FsStore;
 
 // ---------------------------------------------------------------------------
 // Shared state
@@ -408,7 +409,8 @@ mod tests {
         )
         .unwrap();
         {
-            use unbill_core::storage::{FsStore, LedgerStore as _};
+            use unbill_core::storage::LedgerStore as _;
+            use unbill_store_fs::FsStore;
             let store = FsStore::new(dir.path().to_path_buf());
             store.save_ledger(&id_str, &mut server_doc).await.unwrap();
         }

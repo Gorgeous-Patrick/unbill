@@ -7,7 +7,7 @@ use anyhow::bail;
 use clap::Parser;
 use unbill_core::path::UNBILL_PATH;
 use unbill_core::service::UnbillService;
-use unbill_core::storage::FsStore;
+use unbill_store_fs::FsStore;
 
 mod commands;
 mod output;
