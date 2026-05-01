@@ -499,9 +499,17 @@ button {
   font-weight: 650;
 }
 
+.safe-content-area {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .settings-overlay,
 .sheet-overlay {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 50;
   display: grid;
@@ -522,8 +530,8 @@ button {
   display: flex;
   flex-direction: column;
   width: min(980px, 100%);
-  max-height: min(760px, calc(100vh - 36px));
-  min-height: min(620px, calc(100vh - 36px));
+  max-height: min(760px, calc(100% - 36px));
+  min-height: min(620px, calc(100% - 36px));
   border: 1px solid var(--line-strong);
   border-radius: 8px;
   background: var(--bg-surface);
