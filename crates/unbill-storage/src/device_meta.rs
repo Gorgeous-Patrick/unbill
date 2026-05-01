@@ -1,10 +1,11 @@
 // Helpers for reading and writing service-level metadata blobs via the store.
-// Used by both the join protocol and the service layer.
+// These are JSON-encoded values stored under well-known device metadata keys.
 
 use std::collections::HashMap;
 
 use unbill_model::{Invitation, UnbillError};
-use unbill_storage::LedgerStore;
+
+use crate::LedgerStore;
 
 type Result<T> = std::result::Result<T, UnbillError>;
 

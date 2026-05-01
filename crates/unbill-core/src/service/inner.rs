@@ -16,9 +16,8 @@ use crate::model::{
 use crate::settlement;
 use crate::storage::LedgerStore;
 use unbill_event::ServiceEvent;
-use unbill_network::{
-    EndpointIdExt, load_device_labels, load_pending_invitations, save_device_labels,
-    save_pending_invitations,
+use unbill_storage::{
+    load_device_labels, load_pending_invitations, save_device_labels, save_pending_invitations,
 };
 
 pub struct UnbillService {
@@ -291,6 +290,7 @@ impl UnbillService {
     ///
     /// URL format: `unbill://join/<ledger_id>/<host_node_id>/<token_hex>`
     /// `label` is an optional device-local nickname for the host device.
+    #[cfg(feature = "network")]
     pub async fn join_ledger(self: &Arc<Self>, url: &str, label: String) -> Result<()> {
         use crate::net::{JoinRequest, UnbillEndpoint};
         let (ledger_id, host, token) = parse_join_url(url)?;
@@ -307,6 +307,7 @@ impl UnbillService {
     }
 
     /// Dial `peer` and run the full sync exchange for all shared ledgers.
+    #[cfg(feature = "network")]
     pub async fn sync_once(self: &Arc<Self>, peer: NodeId) -> Result<()> {
         use crate::net::UnbillEndpoint;
         let ep = UnbillEndpoint::bind(self.secret_key.clone())
@@ -321,6 +322,7 @@ impl UnbillService {
     /// an error occurs or the process is interrupted.
     ///
     /// Prints the local `NodeId` to stdout so peers know what to dial.
+    #[cfg(feature = "network")]
     pub async fn accept_loop(self: &Arc<Self>) -> Result<()> {
         use crate::net::UnbillEndpoint;
         let ep = UnbillEndpoint::bind(self.secret_key.clone())
@@ -382,7 +384,7 @@ async fn load_or_create_device_key(store: &dyn LedgerStore) -> Result<(NodeId, i
             .try_into()
             .map_err(|_| UnbillError::Other(anyhow::anyhow!("device_key.bin: wrong length")))?;
         let secret = iroh::SecretKey::from(arr);
-        Ok((secret.public().to_node_id(), secret))
+        Ok((NodeId::new(secret.public().to_string()), secret))
     } else {
         let mut arr = [0u8; 32];
         rand::rngs::SysRng
@@ -390,7 +392,7 @@ async fn load_or_create_device_key(store: &dyn LedgerStore) -> Result<(NodeId, i
             .expect("system RNG should generate device keys");
         let secret = iroh::SecretKey::from(arr);
         store.save_device_meta("device_key.bin", &arr).await?;
-        Ok((secret.public().to_node_id(), secret))
+        Ok((NodeId::new(secret.public().to_string()), secret))
     }
 }
 

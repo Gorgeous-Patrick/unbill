@@ -16,10 +16,11 @@ use unbill_event::ServiceEvent;
 use unbill_model::{LedgerMeta, NewDevice, NodeId, Timestamp};
 use unbill_storage::{LedgerDoc, LedgerStore};
 
-use crate::protocol::{JoinError, JoinReply, JoinRequest, JoinResponse, read_msg, write_msg};
-use crate::store_helpers::{
+use unbill_storage::{
     load_device_labels, load_pending_invitations, save_device_labels, save_pending_invitations,
 };
+
+use crate::protocol::{JoinError, JoinReply, JoinRequest, JoinResponse, read_msg, write_msg};
 
 // ---------------------------------------------------------------------------
 // Host side
@@ -187,9 +188,10 @@ mod tests {
     use unbill_storage::{LedgerDoc, LedgerStore};
     use unbill_store_memory::InMemoryStore;
 
+    use unbill_storage::{load_device_labels, load_pending_invitations, save_pending_invitations};
+
     use super::{run_join_host, run_join_requester};
     use crate::protocol::JoinRequest;
-    use crate::store_helpers::save_pending_invitations;
 
     fn make_store() -> Arc<InMemoryStore> {
         Arc::new(InMemoryStore::default())
@@ -323,9 +325,7 @@ mod tests {
             "host device entry should still be present without relying on a synced label"
         );
 
-        let device_labels = crate::store_helpers::load_device_labels(&*joiner_store)
-            .await
-            .unwrap();
+        let device_labels = load_device_labels(&*joiner_store).await.unwrap();
         assert_eq!(
             device_labels
                 .get(&host_node.to_string())
@@ -334,9 +334,7 @@ mod tests {
         );
 
         // Token was consumed.
-        let remaining = crate::store_helpers::load_pending_invitations(&*host_store)
-            .await
-            .unwrap();
+        let remaining = load_pending_invitations(&*host_store).await.unwrap();
         assert!(remaining.is_empty(), "token should have been consumed");
     }
 

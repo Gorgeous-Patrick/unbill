@@ -7870,6 +7870,7 @@ dependencies = [
  "async-trait",
  "automerge",
  "autosurgeon",
+ "serde_json",
  "tokio",
  "unbill-model",
 ]

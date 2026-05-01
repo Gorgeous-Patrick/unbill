@@ -6,6 +6,7 @@ pub mod doc;
 pub mod error;
 pub use unbill_event as event;
 pub use unbill_model as model;
+#[cfg(feature = "network")]
 pub mod net;
 pub mod path;
 pub mod service;
