@@ -181,10 +181,10 @@ async fn sync_ledger(
         return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
     }
 
-    if !doc.is_empty() {
-        if let Err(e) = state.store.save_ledger(&id, &mut doc).await {
-            return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
-        }
+    if !doc.is_empty()
+        && let Err(e) = state.store.save_ledger(&id, &mut doc).await
+    {
+        return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
     }
 
     match doc.generate_sync_message(&mut sync_state) {
