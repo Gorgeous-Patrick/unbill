@@ -34,9 +34,8 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - name: cargo clippy (core + cli + tui)
-        # unbill-tauri requires GTK system libraries; excluded until M5.
-        run: cargo clippy -p unbill-core -p unbill-cli -p unbill-tui
+      - name: cargo clippy
+        run: cargo clippy --workspace --exclude unbill-tauri
 
   test:
     name: Test
@@ -45,5 +44,5 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: cargo test (core + cli)
-        run: cargo test -p unbill-core -p unbill-cli
+      - name: cargo test
+        run: cargo test --workspace --exclude unbill-tauri
