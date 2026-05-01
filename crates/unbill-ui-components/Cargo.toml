@@ -1,0 +1,14 @@
+[package]
+name = "unbill-ui-components"
+description = "Reusable Leptos UI components for unbill frontends."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+leptos = { version = "0.8.14", features = ["csr"] }
+serde = { workspace = true, features = ["derive"] }
+iso_currency = { workspace = true, features = ["iterator"] }
+web-sys = { version = "0.3", features = ["Element", "DomRect", "HtmlInputElement"] }
