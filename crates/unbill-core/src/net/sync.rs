@@ -12,8 +12,8 @@ use tokio::sync::broadcast;
 
 use crate::doc::LedgerDoc;
 use crate::model::NodeId;
-use crate::service::ServiceEvent;
 use crate::storage::LedgerStore;
+use unbill_event::ServiceEvent;
 
 use super::protocol::{Hello, HelloAck, SyncDone, SyncFrame, SyncMsg, read_msg, write_msg};
 
@@ -230,8 +230,8 @@ mod tests {
 
     use crate::doc::LedgerDoc;
     use crate::model::{Currency, NewBill, NewDevice, NodeId, Share, Timestamp, Ulid};
-    use crate::service::ServiceEvent;
     use crate::storage::{InMemoryStore, LedgerStore};
+    use unbill_event::ServiceEvent;
 
     use super::run_sync_session;
 

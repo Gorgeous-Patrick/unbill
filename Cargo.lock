@@ -7668,9 +7668,14 @@ dependencies = [
  "tokio",
  "tracing",
  "ulid",
+ "unbill-event",
  "unbill-model",
  "wiremock",
 ]
+
+[[package]]
+name = "unbill-event"
+version = "0.0.1"
 
 [[package]]
 name = "unbill-model"

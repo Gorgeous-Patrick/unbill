@@ -16,32 +16,13 @@ use crate::model::{
 use crate::net::EndpointIdExt;
 use crate::settlement;
 use crate::storage::LedgerStore;
+use unbill_event::ServiceEvent;
 
 pub struct UnbillService {
     pub(crate) store: Arc<dyn LedgerStore>,
     pub(crate) device_id: NodeId,
     pub(crate) secret_key: iroh::SecretKey,
     pub(crate) events: broadcast::Sender<ServiceEvent>,
-}
-
-#[derive(Clone, Debug)]
-pub enum ServiceEvent {
-    LedgerUpdated {
-        ledger_id: String,
-    },
-    PeerConnected {
-        ledger_id: String,
-        peer: String,
-    },
-    PeerDisconnected {
-        ledger_id: String,
-        peer: String,
-    },
-    SyncError {
-        ledger_id: String,
-        peer: String,
-        error: String,
-    },
 }
 
 impl UnbillService {
