@@ -56,7 +56,6 @@ impl LedgerDoc {
 
     /// Returns `true` if no changes have been applied to this document.
     pub fn is_empty(&mut self) -> bool {
-        use automerge::ReadDoc as _;
         self.doc.get_heads().is_empty()
     }
 
