@@ -130,7 +130,8 @@ async fn check(resp: reqwest::Response) -> Result<reqwest::Response> {
 // LedgerStore impl
 // ---------------------------------------------------------------------------
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl LedgerStore for HttpStore {
     async fn save_ledger_meta(&self, meta: &LedgerMeta) -> Result<()> {
         let url = format!("{}/ledgers/{}/meta", self.base_url, meta.ledger_id);

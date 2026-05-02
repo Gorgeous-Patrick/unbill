@@ -6,7 +6,8 @@ use crate::LedgerDoc;
 
 pub type StorageResult<T> = std::result::Result<T, StorageError>;
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 pub trait LedgerStore: Send + Sync {
     /// Create or update the per-ledger metadata cache.
     async fn save_ledger_meta(&self, meta: &LedgerMeta) -> StorageResult<()>;
