@@ -60,7 +60,7 @@ impl HttpStore {
     pub fn new(base_url: impl Into<String>, api_key: impl Into<String>) -> Self {
         Self {
             client: Client::new(),
-            base_url: base_url.into().trim_end_matches('/').to_owned(),
+            base_url: format!("{}/api/v1", base_url.into().trim_end_matches('/')),
             api_key: api_key.into(),
         }
     }

@@ -55,7 +55,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .with_state(state);
 
     Router::new()
-        .merge(protected)
+        .nest("/api/v1", protected)
         .layer(TraceLayer::new_for_http())
 }
 
