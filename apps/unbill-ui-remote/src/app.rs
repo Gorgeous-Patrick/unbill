@@ -313,10 +313,9 @@ pub fn App() -> impl IntoView {
 
                     if selected_ledger_id.get_untracked().as_deref() == Some(ledger_id.as_str())
                         && bill_editor.get_untracked().is_none()
+                        && let Ok(detail) = api::load_ledger_detail(&ledger_id).await
                     {
-                        if let Ok(detail) = api::load_ledger_detail(&ledger_id).await {
-                            ledger_detail.set(Some(detail));
-                        }
+                        ledger_detail.set(Some(detail));
                     }
 
                     if settings_popup
@@ -324,10 +323,9 @@ pub fn App() -> impl IntoView {
                         .and_then(|p| p.selected_ledger_id)
                         .as_deref()
                         == Some(ledger_id.as_str())
+                        && let Ok(detail) = api::load_ledger_detail(&ledger_id).await
                     {
-                        if let Ok(detail) = api::load_ledger_detail(&ledger_id).await {
-                            settings_ledger_detail.set(Some(detail));
-                        }
+                        settings_ledger_detail.set(Some(detail));
                     }
                 }
                 Ok(_) => {}
