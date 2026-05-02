@@ -25,4 +25,5 @@ jobs:
       homebrew_packages: '["unbill-cli","unbill-tui"]'
     permissions:
       contents: write
+      actions: read
     secrets: inherit
