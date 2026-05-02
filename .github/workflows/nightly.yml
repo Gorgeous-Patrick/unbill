@@ -34,4 +34,5 @@ jobs:
       aur_packages: '["unbill-cli-nightly-bin","unbill-tui-nightly-bin","unbill-nightly-bin"]'
     permissions:
       contents: write
+      actions: read
     secrets: inherit
