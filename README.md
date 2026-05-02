@@ -59,7 +59,6 @@ That structure is deliberate. The core owns the rules. Shells adapt the core to 
 
 The repo is design-first and test-first. Non-trivial changes are expected to update the relevant docs and land with tests close to the code they protect.
 
-
 ## Installation
 
 Unbill is published through GitHub Releases, GHCR Docker images, AUR packages, and Homebrew formulas.
