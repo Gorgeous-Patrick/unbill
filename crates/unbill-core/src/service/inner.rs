@@ -3,7 +3,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use rand::TryRng as _;
 use tokio::sync::broadcast;
 
 use crate::conflict::{self, ConflictGroup};
@@ -23,22 +22,21 @@ use unbill_storage::{
 pub struct UnbillService {
     pub(crate) store: Arc<dyn LedgerStore>,
     pub(crate) device_id: NodeId,
-    pub(crate) secret_key: iroh::SecretKey,
     pub(crate) events: broadcast::Sender<ServiceEvent>,
 }
 
 impl UnbillService {
-    /// Open the service: load or create the device key.
+    /// Open the service: initialize device identity via the store, then open.
     ///
     /// All store-backed data (ledgers, pending invitations, pending user
     /// tokens, local users) is loaded on demand and never cached in memory.
     pub async fn open(store: Arc<dyn LedgerStore>) -> Result<Arc<Self>> {
-        let (device_id, secret_key) = load_or_create_device_key(&*store).await?;
+        store.create_secret_key().await?;
+        let device_id = store.get_device_id().await?;
         let (events, _) = broadcast::channel(256);
         Ok(Arc::new(Self {
             store,
             device_id,
-            secret_key,
             events,
         }))
     }
@@ -296,7 +294,8 @@ impl UnbillService {
         let (ledger_id, host, token) = parse_join_url(url)?;
         let local_label = (!label.trim().is_empty()).then_some(label.trim().to_owned());
         let request = JoinRequest { token, ledger_id };
-        let ep = UnbillEndpoint::bind(self.secret_key.clone())
+        let key = self.store.get_secret_key().await?;
+        let ep = UnbillEndpoint::bind(&key)
             .await
             .map_err(UnbillError::Other)?;
         let result = ep
@@ -310,7 +309,8 @@ impl UnbillService {
     #[cfg(feature = "network")]
     pub async fn sync_once(self: &Arc<Self>, peer: NodeId) -> Result<()> {
         use crate::net::UnbillEndpoint;
-        let ep = UnbillEndpoint::bind(self.secret_key.clone())
+        let key = self.store.get_secret_key().await?;
+        let ep = UnbillEndpoint::bind(&key)
             .await
             .map_err(UnbillError::Other)?;
         let result = ep.sync_once_inner(peer, &self.store, &self.events).await;
@@ -325,7 +325,8 @@ impl UnbillService {
     #[cfg(feature = "network")]
     pub async fn accept_loop(self: &Arc<Self>) -> Result<()> {
         use crate::net::UnbillEndpoint;
-        let ep = UnbillEndpoint::bind(self.secret_key.clone())
+        let key = self.store.get_secret_key().await?;
+        let ep = UnbillEndpoint::bind(&key)
             .await
             .map_err(UnbillError::Other)?;
         ep.wait_for_ready().await;
@@ -377,24 +378,6 @@ impl UnbillService {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-async fn load_or_create_device_key(store: &dyn LedgerStore) -> Result<(NodeId, iroh::SecretKey)> {
-    if let Some(bytes) = store.load_device_meta("device_key.bin").await? {
-        let arr: [u8; 32] = bytes
-            .try_into()
-            .map_err(|_| UnbillError::Other(anyhow::anyhow!("device_key.bin: wrong length")))?;
-        let secret = iroh::SecretKey::from(arr);
-        Ok((NodeId::new(secret.public().to_string()), secret))
-    } else {
-        let mut arr = [0u8; 32];
-        rand::rngs::SysRng
-            .try_fill_bytes(&mut arr)
-            .expect("system RNG should generate device keys");
-        let secret = iroh::SecretKey::from(arr);
-        store.save_device_meta("device_key.bin", &arr).await?;
-        Ok((NodeId::new(secret.public().to_string()), secret))
-    }
-}
 
 fn parse_ulid(s: &str) -> Result<Ulid> {
     Ulid::from_string(s).map_err(|e| UnbillError::Other(anyhow::anyhow!("invalid ULID {s:?}: {e}")))

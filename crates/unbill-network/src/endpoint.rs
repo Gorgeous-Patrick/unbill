@@ -12,7 +12,9 @@ use tokio::sync::broadcast;
 use tracing::{info, warn};
 
 use unbill_event::ServiceEvent;
-use unbill_model::NodeId;
+use unbill_model::{NodeId, SecretKey};
+
+use crate::node_id_ext::SecretKeyExt;
 use unbill_storage::LedgerStore;
 
 use crate::join::{run_join_host, run_join_requester};
@@ -27,9 +29,9 @@ pub struct UnbillEndpoint {
 impl UnbillEndpoint {
     /// Bind a new Iroh endpoint using the given device secret key.
     /// Uses the N0 preset: pkarr publishing + DNS address lookup + relay servers.
-    pub async fn bind(secret_key: iroh::SecretKey) -> anyhow::Result<Self> {
+    pub async fn bind(key: &SecretKey) -> anyhow::Result<Self> {
         let inner = iroh::Endpoint::builder(iroh::endpoint::presets::N0)
-            .secret_key(secret_key)
+            .secret_key(key.to_iroh_key())
             .alpns(vec![ALPN_SYNC.to_vec(), ALPN_JOIN.to_vec()])
             .bind()
             .await?;

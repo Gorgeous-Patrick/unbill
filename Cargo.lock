@@ -7788,10 +7788,8 @@ dependencies = [
  "ciborium",
  "dashmap",
  "directories",
- "iroh",
  "iso_currency",
  "proptest",
- "rand 0.10.1",
  "serde",
  "serde_json",
  "tempfile",
@@ -7880,6 +7878,8 @@ name = "unbill-store-fs"
 version = "0.0.1"
 dependencies = [
  "async-trait",
+ "iroh",
+ "rand 0.10.1",
  "serde",
  "serde_json",
  "tempfile",
@@ -7910,6 +7910,8 @@ name = "unbill-store-memory"
 version = "0.0.1"
 dependencies = [
  "async-trait",
+ "iroh",
+ "rand 0.10.1",
  "unbill-model",
  "unbill-storage",
 ]

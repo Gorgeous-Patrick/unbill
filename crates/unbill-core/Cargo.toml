@@ -14,7 +14,6 @@ unbill-storage = { path = "../unbill-storage" }
 unbill-network = { path = "../unbill-network", optional = true }
 automerge.workspace = true
 autosurgeon.workspace = true
-iroh.workspace = true
 tokio.workspace = true
 async-trait.workspace = true
 serde.workspace = true
@@ -22,7 +21,6 @@ serde_json.workspace = true
 ciborium.workspace = true
 ulid.workspace = true
 iso_currency.workspace = true
-rand.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

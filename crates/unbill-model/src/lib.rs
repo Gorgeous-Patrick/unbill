@@ -9,6 +9,7 @@ mod currency;
 mod id;
 mod invite_token;
 mod node_id;
+mod secret_key;
 mod timestamp;
 mod user;
 
@@ -18,5 +19,6 @@ pub use currency::Currency;
 pub use id::Ulid;
 pub use invite_token::{InvalidInviteToken, InviteToken};
 pub use node_id::NodeId;
+pub use secret_key::SecretKey;
 pub use timestamp::Timestamp;
 pub use user::{Device, Invitation, Ledger, LedgerMeta, NewDevice, NewUser, User};

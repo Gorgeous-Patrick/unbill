@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 
-use unbill_model::{Currency, LedgerMeta, StorageError, Timestamp, Ulid};
+use unbill_model::{Currency, LedgerMeta, NodeId, SecretKey, StorageError, Timestamp, Ulid};
 use unbill_storage::{LedgerDoc, LedgerStore, StorageResult as Result};
 
 // ---------------------------------------------------------------------------
@@ -227,6 +227,50 @@ impl LedgerStore for HttpStore {
             .map_err(|e| StorageError::Network(e.to_string()))?;
         check(resp).await?;
         Ok(())
+    }
+
+    async fn create_secret_key(&self) -> Result<()> {
+        let url = format!("{}/device/key", self.base_url);
+        let resp = self
+            .auth(self.client.post(&url))
+            .send()
+            .await
+            .map_err(|e| StorageError::Network(e.to_string()))?;
+        check(resp).await?;
+        Ok(())
+    }
+
+    async fn is_device_initialized(&self) -> Result<bool> {
+        let url = format!("{}/device/id", self.base_url);
+        let resp = self
+            .auth(self.client.get(&url))
+            .send()
+            .await
+            .map_err(|e| StorageError::Network(e.to_string()))?;
+        if resp.status() == StatusCode::NOT_FOUND {
+            return Ok(false);
+        }
+        check(resp).await?;
+        Ok(true)
+    }
+
+    async fn get_device_id(&self) -> Result<NodeId> {
+        let url = format!("{}/device/id", self.base_url);
+        let resp = self
+            .auth(self.client.get(&url))
+            .send()
+            .await
+            .map_err(|e| StorageError::Network(e.to_string()))?;
+        let resp = check(resp).await?;
+        let s = resp
+            .text()
+            .await
+            .map_err(|e| StorageError::Network(e.to_string()))?;
+        Ok(NodeId::new(s))
+    }
+
+    async fn get_secret_key(&self) -> Result<SecretKey> {
+        Err(StorageError::Unauthorized)
     }
 }
 

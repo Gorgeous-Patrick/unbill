@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 
-use unbill_model::LedgerMeta;
-use unbill_model::StorageError;
+use unbill_model::{LedgerMeta, NodeId, SecretKey, StorageError};
 
 use crate::LedgerDoc;
 
@@ -25,4 +24,20 @@ pub trait LedgerStore: Send + Sync {
 
     async fn load_device_meta(&self, key: &str) -> StorageResult<Option<Vec<u8>>>;
     async fn save_device_meta(&self, key: &str, value: &[u8]) -> StorageResult<()>;
+
+    /// Generate a new random secret key and persist it.
+    /// Idempotent: no-op if a key already exists.
+    async fn create_secret_key(&self) -> StorageResult<()>;
+
+    /// Returns `true` if a secret key (and thus a device identity) exists.
+    async fn is_device_initialized(&self) -> StorageResult<bool>;
+
+    /// Return the device's public `NodeId` derived from the stored secret key.
+    async fn get_device_id(&self) -> StorageResult<NodeId>;
+
+    /// Return the raw secret key bytes.
+    ///
+    /// Returns `Err(StorageError::Unauthorized)` on stores that cannot expose
+    /// key material (e.g. `HttpStore`).
+    async fn get_secret_key(&self) -> StorageResult<SecretKey>;
 }
