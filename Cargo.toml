@@ -33,7 +33,7 @@ automerge = "0.8"
 autosurgeon = "0.11"
 
 # Networking
-iroh = "0.98.0"
+iroh = "0.98"
 
 # Async
 tokio = { version = "1.52.1", features = ["full"] }
@@ -65,7 +65,7 @@ dashmap = "6"
 directories = "6.0.0"
 
 # HTTP client
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 
 # HTTP server
 axum = "0.8"
