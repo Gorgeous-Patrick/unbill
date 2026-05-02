@@ -20,6 +20,7 @@ jobs:
     with:
       tag: ${{ needs.prepare.outputs.tag }}
     permissions:
+      contents: read
       packages: write
     secrets: inherit
 
