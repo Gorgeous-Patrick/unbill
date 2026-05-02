@@ -76,6 +76,13 @@ button {
 }
 
 @media (max-width: 1199px) {
+  html,
+  body {
+    height: 100dvh;
+    min-height: unset;
+    overflow: hidden;
+  }
+
   .app-shell {
     height: 100dvh;
     min-height: unset;
