@@ -318,7 +318,7 @@ mod tests {
     async fn test_save_ledger_meta_sends_put_with_bearer_and_json() {
         let server = MockServer::start().await;
         Mock::given(method("PUT"))
-            .and(path("/ledgers/00000000000000000000000001/meta"))
+            .and(path("/api/v1/ledgers/00000000000000000000000001/meta"))
             .and(bearer_token(API_KEY))
             .and(header("content-type", "application/json"))
             .respond_with(ResponseTemplate::new(204))
@@ -343,7 +343,7 @@ mod tests {
         }])
         .unwrap();
         Mock::given(method("GET"))
-            .and(path("/ledgers"))
+            .and(path("/api/v1/ledgers"))
             .and(bearer_token(API_KEY))
             .respond_with(
                 ResponseTemplate::new(200)
@@ -361,7 +361,7 @@ mod tests {
     async fn test_load_ledger_returns_none_when_server_responds_404() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path("/ledgers/00000000000000000000000001/sync"))
+            .and(path("/api/v1/ledgers/00000000000000000000000001/sync"))
             .and(bearer_token(API_KEY))
             .respond_with(ResponseTemplate::new(404))
             .mount(&server)
@@ -397,7 +397,7 @@ mod tests {
         }
 
         Mock::given(method("POST"))
-            .and(path("/ledgers/00000000000000000000000001/sync"))
+            .and(path("/api/v1/ledgers/00000000000000000000000001/sync"))
             .and(bearer_token(API_KEY))
             .respond_with(SyncResponder(server_doc))
             .mount(&server)
@@ -415,7 +415,7 @@ mod tests {
     async fn test_401_surfaces_as_unauthorized_error() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
-            .and(path("/ledgers"))
+            .and(path("/api/v1/ledgers"))
             .respond_with(ResponseTemplate::new(401))
             .mount(&server)
             .await;
@@ -427,7 +427,7 @@ mod tests {
     async fn test_500_surfaces_as_http_status_error() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
-            .and(path("/ledgers"))
+            .and(path("/api/v1/ledgers"))
             .respond_with(ResponseTemplate::new(500).set_body_string("internal error"))
             .mount(&server)
             .await;
