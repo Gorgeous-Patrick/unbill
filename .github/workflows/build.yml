@@ -210,6 +210,9 @@ jobs:
         with:
           key: ios
 
+      - name: Install binaryen (wasm-opt)
+        run: brew install binaryen
+
       - name: Install Trunk
         uses: jetli/trunk-action@v0.5.0
         with:
