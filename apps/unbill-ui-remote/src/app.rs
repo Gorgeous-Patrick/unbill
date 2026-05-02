@@ -762,6 +762,36 @@ pub(crate) fn surface_mode_from_width(width: f64) -> SurfaceMode {
     }
 }
 
+fn install_surface_mode_resize_listener(surface_mode: RwSignal<SurfaceMode>) {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    // matchMedia only fires when the breakpoint is actually crossed — never on
+    // keyboard open or other height-only resize events.
+    let Some(mql) = window
+        .match_media(&format!("(min-width: {RANGER_BREAKPOINT}px)"))
+        .ok()
+        .flatten()
+    else {
+        return;
+    };
+    let change_listener = Closure::<dyn FnMut(web_sys::MediaQueryListEvent)>::wrap(Box::new(
+        move |ev: web_sys::MediaQueryListEvent| {
+            surface_mode.set(if ev.matches() {
+                SurfaceMode::Ranger
+            } else {
+                SurfaceMode::Compact
+            });
+        },
+    ));
+    if mql
+        .add_event_listener_with_callback("change", change_listener.as_ref().unchecked_ref())
+        .is_ok()
+    {
+        change_listener.forget();
+    }
+}
+
 fn sort_ledgers(ledgers: &mut [LedgerSummary]) {
     ledgers.sort_by(
         |left, right| match (left.latest_bill_at_ms, right.latest_bill_at_ms) {
