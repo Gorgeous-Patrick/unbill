@@ -76,13 +76,50 @@ button {
 }
 
 @media (max-width: 1199px) {
-  .app-shell {
+  html,
+  body {
     height: 100dvh;
     min-height: unset;
     overflow: hidden;
+  }
+
+  .app-shell {
+    height: 100dvh;
+    min-height: unset;
+    overflow: clip;
     padding: max(8px, var(--sat))
              max(8px, var(--sar))
              max(8px, var(--sab))
              max(8px, var(--sal));
   }
+}
+
+/* Login */
+
+.login-shell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: 16px;
+  background: var(--bg-app);
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 320px;
+  padding: 24px;
+  background: var(--bg-surface);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+}
+
+.login-title {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-strong);
 }
