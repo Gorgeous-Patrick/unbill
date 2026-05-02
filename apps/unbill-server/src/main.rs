@@ -12,13 +12,15 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     let api_key = std::env::var("API_KEY").context("API_KEY must be set")?;
-    let data_dir = std::env::var("DATA_DIR").unwrap_or_else(|_| "./data".to_owned());
     let port: u16 = std::env::var("PORT")
         .unwrap_or_else(|_| "8080".to_owned())
         .parse()
         .context("PORT must be a valid port number")?;
 
-    let store = FsStore::new(data_dir.into());
+    let data_dir = unbill_store_fs::UNBILL_PATH
+        .ensure_data_dir()
+        .context("failed to resolve data directory")?;
+    let store = FsStore::new(data_dir);
     let state = Arc::new(AppState { store, api_key });
     let router = build_router(state);
 
