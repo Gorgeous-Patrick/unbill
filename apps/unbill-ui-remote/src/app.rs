@@ -770,23 +770,29 @@ fn install_surface_mode_resize_listener(surface_mode: RwSignal<SurfaceMode>) {
     let Some(window) = web_sys::window() else {
         return;
     };
-    let listener_window = window.clone();
-    let resize_listener = Closure::<dyn FnMut(web_sys::Event)>::wrap(Box::new(move |_| {
-        if let Ok(width) = listener_window.inner_width()
-            && let Some(width) = width.as_f64()
-        {
-            surface_mode.set(surface_mode_after_resize(
-                surface_mode.get_untracked(),
-                width,
-            ));
-        }
-    }));
-
-    if window
-        .add_event_listener_with_callback("resize", resize_listener.as_ref().unchecked_ref())
+    // matchMedia only fires when the breakpoint is actually crossed — never on
+    // keyboard open, scroll, or other resize events that don't change the width.
+    let Some(mql) = window
+        .match_media(&format!("(min-width: {RANGER_BREAKPOINT}px)"))
+        .ok()
+        .flatten()
+    else {
+        return;
+    };
+    let change_listener = Closure::<dyn FnMut(web_sys::MediaQueryListEvent)>::wrap(Box::new(
+        move |ev: web_sys::MediaQueryListEvent| {
+            surface_mode.set(if ev.matches() {
+                SurfaceMode::Ranger
+            } else {
+                SurfaceMode::Compact
+            });
+        },
+    ));
+    if mql
+        .add_event_listener_with_callback("change", change_listener.as_ref().unchecked_ref())
         .is_ok()
     {
-        resize_listener.forget();
+        change_listener.forget();
     }
 }
 

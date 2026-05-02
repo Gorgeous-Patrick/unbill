@@ -79,7 +79,7 @@ button {
   .app-shell {
     height: 100dvh;
     min-height: unset;
-    overflow: hidden;
+    overflow: clip;
     padding: max(8px, var(--sat))
              max(8px, var(--sar))
              max(8px, var(--sab))
