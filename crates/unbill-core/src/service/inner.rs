@@ -6,7 +6,6 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 
 use crate::conflict::{self, ConflictGroup};
-use crate::doc::LedgerDoc;
 use crate::error::{Result, UnbillError};
 use crate::model::{
     Currency, Device, EffectiveBills, Invitation, InviteToken, LedgerMeta, NewBill, NewDevice,
@@ -15,6 +14,7 @@ use crate::model::{
 use crate::settlement;
 use crate::storage::LedgerStore;
 use unbill_event::ServiceEvent;
+use unbill_storage::LedgerDoc;
 use unbill_storage::{
     load_device_labels, load_pending_invitations, save_device_labels, save_pending_invitations,
 };

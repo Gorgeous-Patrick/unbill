@@ -12,7 +12,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 
-use unbill_core::doc::LedgerDoc;
+use unbill_core::LedgerDoc;
 use unbill_core::storage::LedgerStore;
 use unbill_store_fs::FsStore;
 
@@ -418,7 +418,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_sync_converges_with_server() {
-        use unbill_core::doc::LedgerDoc;
+        use unbill_core::LedgerDoc;
         use unbill_core::model::{Currency, Timestamp, Ulid};
 
         let dir = tempfile::tempdir().unwrap();
