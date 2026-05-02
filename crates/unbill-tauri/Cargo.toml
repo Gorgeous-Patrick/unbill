@@ -17,15 +17,15 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 unbill-core = { path = "../unbill-core", features = ["network"] }
 unbill-store-fs = { path = "../unbill-store-fs" }
+anyhow.workspace = true
+serde.workspace = true
+tracing.workspace = true
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+rustls = { version = "0.23", features = ["ring"] }
 
 [dev-dependencies]
 unbill-store-memory = { path = "../unbill-store-memory" }
 tokio.workspace = true
-anyhow.workspace = true
-tracing.workspace = true
 tracing-subscriber.workspace = true
-serde.workspace = true
 serde_json.workspace = true
-tauri = { version = "2", features = [] }
-tauri-plugin-shell = "2"
-rustls = { version = "0.23", features = ["ring"] }
