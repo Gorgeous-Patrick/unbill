@@ -7,7 +7,7 @@
   border: 1px solid var(--line-soft);
   border-radius: 8px;
   background: var(--bg-surface);
-  overflow: hidden;
+  overflow: clip;
 }
 
 .screen-topbar {
@@ -172,7 +172,7 @@
   border: 1px solid var(--line-soft);
   border-radius: 8px;
   background: var(--bg-surface);
-  overflow: hidden;
+  overflow: clip;
 }
 
 .section-header {
@@ -459,7 +459,7 @@
   border-radius: 8px;
   background: var(--bg-surface);
   box-shadow: var(--shadow-overlay);
-  overflow: hidden;
+  overflow: clip;
 }
 
 .sheet-panel {

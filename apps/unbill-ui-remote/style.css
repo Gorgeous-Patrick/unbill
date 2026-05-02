@@ -76,10 +76,17 @@ button {
 }
 
 @media (max-width: 1199px) {
-  .app-shell {
+  html,
+  body {
     height: 100dvh;
     min-height: unset;
     overflow: hidden;
+  }
+
+  .app-shell {
+    height: 100dvh;
+    min-height: unset;
+    overflow: clip;
     padding: max(8px, var(--sat))
              max(8px, var(--sar))
              max(8px, var(--sab))
