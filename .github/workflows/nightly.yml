@@ -17,6 +17,11 @@ jobs:
   build:
     needs: prepare
     uses: ./.github/workflows/build.yml
+    with:
+      tag: ${{ needs.prepare.outputs.tag }}
+    permissions:
+      packages: write
+    secrets: inherit
 
   release:
     needs: [prepare, build]

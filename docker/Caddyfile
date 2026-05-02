@@ -1,0 +1,13 @@
+:80 {
+    # Proxy the REST API to unbill-server
+    handle /api/* {
+        reverse_proxy 127.0.0.1:8080
+    }
+
+    # Serve the SPA, falling back to index.html for client-side routing
+    handle {
+        root * /app/static
+        try_files {path} /index.html
+        file_server
+    }
+}
