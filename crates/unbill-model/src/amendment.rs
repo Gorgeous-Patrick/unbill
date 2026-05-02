@@ -1,4 +1,4 @@
-use super::bill::Bill;
+use crate::bill::Bill;
 
 /// The set of bills that are currently effective in a ledger.
 ///

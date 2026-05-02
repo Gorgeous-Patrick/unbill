@@ -4,12 +4,10 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use async_trait::async_trait;
+use rand::TryRng as _;
 
-use crate::doc::LedgerDoc;
-use crate::error::StorageError;
-use crate::model::LedgerMeta;
-
-use super::traits::{LedgerStore, Result};
+use unbill_model::{Currency, LedgerMeta, NodeId, SecretKey, StorageError, Timestamp, Ulid};
+use unbill_storage::{LedgerDoc, LedgerStore, StorageResult as Result};
 
 #[derive(Default)]
 pub struct InMemoryStore {
@@ -68,11 +66,11 @@ impl LedgerStore for InMemoryStore {
             .and_modify(|s| s.bytes = bytes.clone())
             .or_insert_with(|| StoredLedger {
                 meta: LedgerMeta {
-                    ledger_id: crate::model::Ulid::from_u128(0),
+                    ledger_id: Ulid::from_u128(0),
                     name: String::new(),
-                    currency: crate::model::Currency::from_code("USD").unwrap(),
-                    created_at: crate::model::Timestamp::from_millis(0),
-                    updated_at: crate::model::Timestamp::from_millis(0),
+                    currency: Currency::from_code("USD").unwrap(),
+                    created_at: Timestamp::from_millis(0),
+                    updated_at: Timestamp::from_millis(0),
                 },
                 bytes,
             });
@@ -94,5 +92,43 @@ impl LedgerStore for InMemoryStore {
         let mut inner = self.inner.lock().unwrap();
         inner.device_meta.insert(key.to_owned(), value.to_vec());
         Ok(())
+    }
+
+    async fn create_secret_key(&self) -> Result<()> {
+        if self.load_device_meta("device_key.bin").await?.is_some() {
+            return Ok(());
+        }
+        let mut arr = [0u8; 32];
+        rand::rngs::SysRng
+            .try_fill_bytes(&mut arr)
+            .expect("system RNG should generate device keys");
+        self.save_device_meta("device_key.bin", &arr).await
+    }
+
+    async fn is_device_initialized(&self) -> Result<bool> {
+        Ok(self.load_device_meta("device_key.bin").await?.is_some())
+    }
+
+    async fn get_device_id(&self) -> Result<NodeId> {
+        let bytes = self
+            .load_device_meta("device_key.bin")
+            .await?
+            .ok_or_else(|| StorageError::Serialization("device not initialized".into()))?;
+        let arr: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| StorageError::Serialization("device_key.bin: wrong length".into()))?;
+        let secret = iroh::SecretKey::from(arr);
+        Ok(NodeId::new(secret.public().to_string()))
+    }
+
+    async fn get_secret_key(&self) -> Result<SecretKey> {
+        let bytes = self
+            .load_device_meta("device_key.bin")
+            .await?
+            .ok_or_else(|| StorageError::Serialization("device not initialized".into()))?;
+        let arr: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| StorageError::Serialization("device_key.bin: wrong length".into()))?;
+        Ok(SecretKey::from_bytes(arr))
     }
 }

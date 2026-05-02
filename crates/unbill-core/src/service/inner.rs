@@ -3,11 +3,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use rand::TryRng as _;
 use tokio::sync::broadcast;
 
 use crate::conflict::{self, ConflictGroup};
-use crate::doc::LedgerDoc;
 use crate::error::{Result, UnbillError};
 use crate::model::{
     Currency, Device, EffectiveBills, Invitation, InviteToken, LedgerMeta, NewBill, NewDevice,
@@ -15,46 +13,30 @@ use crate::model::{
 };
 use crate::settlement;
 use crate::storage::LedgerStore;
+use unbill_event::ServiceEvent;
+use unbill_storage::LedgerDoc;
+use unbill_storage::{
+    load_device_labels, load_pending_invitations, save_device_labels, save_pending_invitations,
+};
 
 pub struct UnbillService {
     pub(crate) store: Arc<dyn LedgerStore>,
     pub(crate) device_id: NodeId,
-    pub(crate) secret_key: iroh::SecretKey,
     pub(crate) events: broadcast::Sender<ServiceEvent>,
 }
 
-#[derive(Clone, Debug)]
-pub enum ServiceEvent {
-    LedgerUpdated {
-        ledger_id: String,
-    },
-    PeerConnected {
-        ledger_id: String,
-        peer: String,
-    },
-    PeerDisconnected {
-        ledger_id: String,
-        peer: String,
-    },
-    SyncError {
-        ledger_id: String,
-        peer: String,
-        error: String,
-    },
-}
-
 impl UnbillService {
-    /// Open the service: load or create the device key.
+    /// Open the service: initialize device identity via the store, then open.
     ///
     /// All store-backed data (ledgers, pending invitations, pending user
     /// tokens, local users) is loaded on demand and never cached in memory.
     pub async fn open(store: Arc<dyn LedgerStore>) -> Result<Arc<Self>> {
-        let (device_id, secret_key) = load_or_create_device_key(&*store).await?;
+        store.create_secret_key().await?;
+        let device_id = store.get_device_id().await?;
         let (events, _) = broadcast::channel(256);
         Ok(Arc::new(Self {
             store,
             device_id,
-            secret_key,
             events,
         }))
     }
@@ -73,7 +55,7 @@ impl UnbillService {
         let mut doc = LedgerDoc::new(ledger_id, name.clone(), currency, now)?;
         doc.add_device(
             NewDevice {
-                node_id: self.device_id,
+                node_id: self.device_id.clone(),
             },
             now,
         )?;
@@ -107,7 +89,7 @@ impl UnbillService {
 
     pub async fn add_bill(&self, ledger_id: &str, input: NewBill) -> Result<String> {
         let mut doc = self.load_doc(ledger_id).await?;
-        let bill_id = doc.add_bill(input, self.device_id, Timestamp::now())?;
+        let bill_id = doc.add_bill(input, self.device_id.clone(), Timestamp::now())?;
         self.store.save_ledger(ledger_id, &mut doc).await?;
         self.touch_meta(ledger_id).await?;
         Ok(bill_id.to_string())
@@ -287,7 +269,7 @@ impl UnbillService {
         let invitation = Invitation {
             token: token.clone(),
             ledger_id: ledger_ulid,
-            created_by_device: self.device_id,
+            created_by_device: self.device_id.clone(),
             created_at: now,
             expires_at: Timestamp::from_millis(now.as_millis() + 24 * 3600 * 1000),
         };
@@ -306,26 +288,32 @@ impl UnbillService {
     ///
     /// URL format: `unbill://join/<ledger_id>/<host_node_id>/<token_hex>`
     /// `label` is an optional device-local nickname for the host device.
+    #[cfg(feature = "network")]
     pub async fn join_ledger(self: &Arc<Self>, url: &str, label: String) -> Result<()> {
         use crate::net::{JoinRequest, UnbillEndpoint};
         let (ledger_id, host, token) = parse_join_url(url)?;
         let local_label = (!label.trim().is_empty()).then_some(label.trim().to_owned());
         let request = JoinRequest { token, ledger_id };
-        let ep = UnbillEndpoint::bind(self.secret_key.clone())
+        let key = self.store.get_secret_key().await?;
+        let ep = UnbillEndpoint::bind(&key)
             .await
             .map_err(UnbillError::Other)?;
-        let result = ep.join_ledger_inner(host, local_label, request, self).await;
+        let result = ep
+            .join_ledger_inner(host, local_label, request, &self.store, &self.events)
+            .await;
         ep.close().await;
         result.map_err(UnbillError::Other)
     }
 
     /// Dial `peer` and run the full sync exchange for all shared ledgers.
+    #[cfg(feature = "network")]
     pub async fn sync_once(self: &Arc<Self>, peer: NodeId) -> Result<()> {
         use crate::net::UnbillEndpoint;
-        let ep = UnbillEndpoint::bind(self.secret_key.clone())
+        let key = self.store.get_secret_key().await?;
+        let ep = UnbillEndpoint::bind(&key)
             .await
             .map_err(UnbillError::Other)?;
-        let result = ep.sync_once_inner(peer, self).await;
+        let result = ep.sync_once_inner(peer, &self.store, &self.events).await;
         ep.close().await;
         result.map_err(UnbillError::Other)
     }
@@ -334,14 +322,18 @@ impl UnbillService {
     /// an error occurs or the process is interrupted.
     ///
     /// Prints the local `NodeId` to stdout so peers know what to dial.
+    #[cfg(feature = "network")]
     pub async fn accept_loop(self: &Arc<Self>) -> Result<()> {
         use crate::net::UnbillEndpoint;
-        let ep = UnbillEndpoint::bind(self.secret_key.clone())
+        let key = self.store.get_secret_key().await?;
+        let ep = UnbillEndpoint::bind(&key)
             .await
             .map_err(UnbillError::Other)?;
         ep.wait_for_ready().await;
         println!("listening on: {}", ep.node_id());
-        let result = ep.accept_loop_inner(Arc::clone(self)).await;
+        let result = ep
+            .accept_loop_inner(Arc::clone(&self.store), self.events.clone())
+            .await;
         ep.close().await;
         result.map_err(UnbillError::Other)
     }
@@ -351,7 +343,7 @@ impl UnbillService {
     // -----------------------------------------------------------------------
 
     pub fn device_id(&self) -> NodeId {
-        self.device_id
+        self.device_id.clone()
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<ServiceEvent> {
@@ -387,68 +379,6 @@ impl UnbillService {
 // Helpers
 // ---------------------------------------------------------------------------
 
-pub(crate) const DEVICE_LABELS_KEY: &str = "device_labels.json";
-
-pub(crate) async fn load_device_labels(store: &dyn LedgerStore) -> Result<HashMap<String, String>> {
-    match store.load_device_meta(DEVICE_LABELS_KEY).await? {
-        None => Ok(HashMap::new()),
-        Some(bytes) => serde_json::from_slice(&bytes)
-            .map_err(|e| UnbillError::Other(anyhow::anyhow!("device_labels.json: {e}"))),
-    }
-}
-
-pub(crate) async fn save_device_labels(
-    store: &dyn LedgerStore,
-    labels: &HashMap<String, String>,
-) -> Result<()> {
-    let bytes = serde_json::to_vec(labels)
-        .map_err(|e| UnbillError::Other(anyhow::anyhow!("serialize device_labels: {e}")))?;
-    store.save_device_meta(DEVICE_LABELS_KEY, &bytes).await?;
-    Ok(())
-}
-
-const PENDING_INVITATIONS_KEY: &str = "pending_invitations.json";
-
-pub(crate) async fn load_pending_invitations(
-    store: &dyn LedgerStore,
-) -> Result<HashMap<String, Invitation>> {
-    match store.load_device_meta(PENDING_INVITATIONS_KEY).await? {
-        None => Ok(HashMap::new()),
-        Some(bytes) => serde_json::from_slice(&bytes)
-            .map_err(|e| UnbillError::Other(anyhow::anyhow!("pending_invitations.json: {e}"))),
-    }
-}
-
-pub(crate) async fn save_pending_invitations(
-    store: &dyn LedgerStore,
-    map: &HashMap<String, Invitation>,
-) -> Result<()> {
-    let bytes = serde_json::to_vec(map)
-        .map_err(|e| UnbillError::Other(anyhow::anyhow!("serialize pending_invitations: {e}")))?;
-    store
-        .save_device_meta(PENDING_INVITATIONS_KEY, &bytes)
-        .await?;
-    Ok(())
-}
-
-async fn load_or_create_device_key(store: &dyn LedgerStore) -> Result<(NodeId, iroh::SecretKey)> {
-    if let Some(bytes) = store.load_device_meta("device_key.bin").await? {
-        let arr: [u8; 32] = bytes
-            .try_into()
-            .map_err(|_| UnbillError::Other(anyhow::anyhow!("device_key.bin: wrong length")))?;
-        let secret = iroh::SecretKey::from(arr);
-        Ok((NodeId::from_node_id(secret.public()), secret))
-    } else {
-        let mut arr = [0u8; 32];
-        rand::rngs::SysRng
-            .try_fill_bytes(&mut arr)
-            .expect("system RNG should generate device keys");
-        let secret = iroh::SecretKey::from(arr);
-        store.save_device_meta("device_key.bin", &arr).await?;
-        Ok((NodeId::from_node_id(secret.public()), secret))
-    }
-}
-
 fn parse_ulid(s: &str) -> Result<Ulid> {
     Ulid::from_string(s).map_err(|e| UnbillError::Other(anyhow::anyhow!("invalid ULID {s:?}: {e}")))
 }
@@ -480,7 +410,7 @@ fn parse_join_url(url: &str) -> Result<(String, NodeId, String)> {
 mod tests {
     use super::*;
     use crate::model::Share;
-    use crate::storage::InMemoryStore;
+    use unbill_store_memory::InMemoryStore;
 
     fn mem_store() -> Arc<dyn LedgerStore> {
         Arc::new(InMemoryStore::default())
@@ -773,7 +703,7 @@ mod tests {
         let peer = NodeId::from_seed(9);
         {
             let svc = UnbillService::open(Arc::clone(&store)).await.unwrap();
-            svc.set_device_label(peer, "Kitchen iPad".into())
+            svc.set_device_label(peer.clone(), "Kitchen iPad".into())
                 .await
                 .unwrap();
         }

@@ -1,10 +1,10 @@
 use autosurgeon::{Hydrate, Reconcile};
 
-use super::currency::Currency;
-use super::id::Ulid;
-use super::invite_token::InviteToken;
-use super::node_id::NodeId;
-use super::timestamp::Timestamp;
+use crate::currency::Currency;
+use crate::id::Ulid;
+use crate::invite_token::InviteToken;
+use crate::node_id::NodeId;
+use crate::timestamp::Timestamp;
 
 #[derive(Clone, Debug, Reconcile, Hydrate)]
 pub struct Ledger {
@@ -14,7 +14,7 @@ pub struct Ledger {
     pub currency: Currency,
     pub created_at: Timestamp,
     pub users: Vec<User>,
-    pub bills: Vec<super::bill::Bill>,
+    pub bills: Vec<crate::bill::Bill>,
     /// Devices authorized to sync this ledger. Any authorized device may record
     /// bills on behalf of any user — there is no per-user device binding.
     pub devices: Vec<Device>,

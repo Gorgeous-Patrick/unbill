@@ -1,0 +1,20 @@
+[package]
+name = "unbill-storage"
+description = "Storage interface and CRDT document layer for unbill — LedgerStore trait and LedgerDoc."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+unbill-model = { path = "../unbill-model" }
+automerge.workspace = true
+autosurgeon.workspace = true
+tokio.workspace = true
+async-trait.workspace = true
+anyhow.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+unbill-model = { path = "../unbill-model", features = ["test-helpers"] }

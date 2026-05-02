@@ -4,8 +4,8 @@ use anyhow::{Context, Result};
 use tokio::net::TcpListener;
 use tracing::info;
 
-use unbill_core::storage::FsStore;
 use unbill_server::{AppState, build_router};
+use unbill_store_fs::FsStore;
 
 #[tokio::main]
 async fn main() -> Result<()> {

@@ -6,6 +6,13 @@ members = [
     "apps/unbill-tui",
     "apps/unbill-ui-leptos",
     "crates/unbill-core",
+    "crates/unbill-event",
+    "crates/unbill-network",
+    "crates/unbill-model",
+    "crates/unbill-storage",
+    "crates/unbill-store-fs",
+    "crates/unbill-store-http",
+    "crates/unbill-store-memory",
     "crates/unbill-tauri",
     "crates/unbill-ui-components",
 ]

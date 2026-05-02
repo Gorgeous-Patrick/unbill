@@ -12,8 +12,9 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 
-use unbill_core::doc::LedgerDoc;
-use unbill_core::storage::{FsStore, LedgerStore};
+use unbill_core::LedgerDoc;
+use unbill_core::storage::LedgerStore;
+use unbill_store_fs::FsStore;
 
 // ---------------------------------------------------------------------------
 // Shared state
@@ -47,6 +48,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/ledgers/{id}/meta", put(save_ledger_meta))
         .route("/ledgers/{id}/sync", post(sync_ledger))
         .route("/ledgers/{id}", delete(delete_ledger))
+        .route("/device/key", post(create_device_key))
+        .route("/device/id", get(get_device_id))
         .route("/device/{key}", get(load_device_meta).put(save_device_meta))
         .layer(middleware::from_fn_with_state(state.clone(), auth))
         .with_state(state);
@@ -201,6 +204,30 @@ async fn sync_ledger(
 async fn delete_ledger(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> Response {
     match state.store.delete_ledger(&id).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+async fn create_device_key(State(state): State<Arc<AppState>>) -> Response {
+    use unbill_core::storage::LedgerStore as _;
+    match state.store.create_secret_key().await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+async fn get_device_id(State(state): State<Arc<AppState>>) -> Response {
+    use unbill_core::storage::LedgerStore as _;
+    match state.store.get_device_id().await {
+        Ok(node_id) => (
+            StatusCode::OK,
+            [("content-type", "text/plain")],
+            node_id.to_string(),
+        )
+            .into_response(),
+        Err(unbill_core::model::StorageError::Serialization(_)) => {
+            StatusCode::NOT_FOUND.into_response()
+        }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
@@ -391,7 +418,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_sync_converges_with_server() {
-        use unbill_core::doc::LedgerDoc;
+        use unbill_core::LedgerDoc;
         use unbill_core::model::{Currency, Timestamp, Ulid};
 
         let dir = tempfile::tempdir().unwrap();
@@ -408,7 +435,8 @@ mod tests {
         )
         .unwrap();
         {
-            use unbill_core::storage::{FsStore, LedgerStore as _};
+            use unbill_core::storage::LedgerStore as _;
+            use unbill_store_fs::FsStore;
             let store = FsStore::new(dir.path().to_path_buf());
             store.save_ledger(&id_str, &mut server_doc).await.unwrap();
         }

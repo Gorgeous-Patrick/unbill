@@ -7,9 +7,9 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
-use unbill_core::path::UNBILL_PATH;
 use unbill_core::service::UnbillService;
-use unbill_core::storage::FsStore;
+use unbill_store_fs::FsStore;
+use unbill_store_fs::UNBILL_PATH;
 
 mod app;
 mod pane;

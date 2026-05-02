@@ -10,12 +10,11 @@ use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::broadcast;
 
-use crate::doc::LedgerDoc;
-use crate::model::NodeId;
-use crate::service::ServiceEvent;
-use crate::storage::LedgerStore;
+use unbill_event::ServiceEvent;
+use unbill_model::NodeId;
+use unbill_storage::{LedgerDoc, LedgerStore};
 
-use super::protocol::{Hello, HelloAck, SyncDone, SyncFrame, SyncMsg, read_msg, write_msg};
+use crate::protocol::{Hello, HelloAck, SyncDone, SyncFrame, SyncMsg, read_msg, write_msg};
 
 struct LedgerSyncState {
     sync_state: automerge::sync::State,
@@ -228,10 +227,10 @@ mod tests {
 
     use tokio::sync::broadcast;
 
-    use crate::doc::LedgerDoc;
-    use crate::model::{Currency, NewBill, NewDevice, NodeId, Share, Timestamp, Ulid};
-    use crate::service::ServiceEvent;
-    use crate::storage::{InMemoryStore, LedgerStore};
+    use unbill_event::ServiceEvent;
+    use unbill_model::{Currency, NewBill, NewDevice, NodeId, Share, Timestamp, Ulid};
+    use unbill_storage::{LedgerDoc, LedgerStore};
+    use unbill_store_memory::InMemoryStore;
 
     use super::run_sync_session;
 
@@ -251,7 +250,7 @@ mod tests {
     async fn save_doc(store: &dyn LedgerStore, doc: &mut LedgerDoc) {
         let ledger = doc.get_ledger().unwrap();
         let id = ledger.ledger_id.to_string();
-        let meta = crate::model::LedgerMeta {
+        let meta = unbill_model::LedgerMeta {
             ledger_id: ledger.ledger_id,
             name: ledger.name.clone(),
             currency: ledger.currency,
@@ -306,7 +305,12 @@ mod tests {
         let mut doc_a =
             LedgerDoc::new(Ulid::new(), "Test".to_string(), usd(), Timestamp::now()).unwrap();
         doc_a
-            .add_device(NewDevice { node_id: node_b }, Timestamp::now())
+            .add_device(
+                NewDevice {
+                    node_id: node_b.clone(),
+                },
+                Timestamp::now(),
+            )
             .unwrap();
         save_doc(&*store_a, &mut doc_a).await;
 
@@ -322,13 +326,23 @@ mod tests {
         // Build a base ledger that both A and B start with.
         let mut base =
             LedgerDoc::new(Ulid::new(), "Trip".to_string(), usd(), Timestamp::now()).unwrap();
-        base.add_device(NewDevice { node_id: node_a }, Timestamp::now())
-            .unwrap();
-        base.add_device(NewDevice { node_id: node_b }, Timestamp::now())
-            .unwrap();
+        base.add_device(
+            NewDevice {
+                node_id: node_a.clone(),
+            },
+            Timestamp::now(),
+        )
+        .unwrap();
+        base.add_device(
+            NewDevice {
+                node_id: node_b.clone(),
+            },
+            Timestamp::now(),
+        )
+        .unwrap();
         let payer = Ulid::from_u128(99);
         base.add_user(
-            crate::model::NewUser {
+            unbill_model::NewUser {
                 user_id: payer,
                 display_name: "Payer".to_string(),
             },
@@ -357,7 +371,7 @@ mod tests {
                     }],
                     prev: vec![],
                 },
-                node_a,
+                node_a.clone(),
                 Timestamp::now(),
             )
             .unwrap();
@@ -377,7 +391,7 @@ mod tests {
                     }],
                     prev: vec![],
                 },
-                node_b,
+                node_b.clone(),
                 Timestamp::now(),
             )
             .unwrap();

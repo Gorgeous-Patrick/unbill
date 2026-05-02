@@ -1,6 +1,6 @@
 [package]
-name = "unbill-core"
-description = "The core library for unbill — CRDT ledger, persistence, and P2P sync."
+name = "unbill-network"
+description = "P2P networking layer for unbill — Iroh endpoint, sync and join protocols."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,28 +9,18 @@ homepage.workspace = true
 
 [dependencies]
 unbill-model = { path = "../unbill-model" }
-unbill-event = { path = "../unbill-event" }
 unbill-storage = { path = "../unbill-storage" }
-unbill-network = { path = "../unbill-network", optional = true }
-automerge.workspace = true
-autosurgeon.workspace = true
+unbill-event = { path = "../unbill-event" }
+iroh.workspace = true
 tokio.workspace = true
-async-trait.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 ciborium.workspace = true
-ulid.workspace = true
-iso_currency.workspace = true
+automerge.workspace = true
 anyhow.workspace = true
-thiserror.workspace = true
 tracing.workspace = true
-
-[features]
-network = ["dep:unbill-network"]
 
 [dev-dependencies]
 unbill-model = { path = "../unbill-model", features = ["test-helpers"] }
 unbill-store-memory = { path = "../unbill-store-memory" }
-proptest.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
-tempfile = "3"

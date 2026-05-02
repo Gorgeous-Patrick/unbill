@@ -2,13 +2,15 @@
 
 use tokio::sync::broadcast;
 
-use crate::error::Result;
-use crate::model::{
+use unbill_model::UnbillError;
+use unbill_model::{
     Currency, Device, EffectiveBills, Ledger, NewBill, NewDevice, NewUser, NodeId, Timestamp, Ulid,
     User,
 };
 
-use super::ops;
+use crate::ops;
+
+type Result<T> = std::result::Result<T, UnbillError>;
 
 /// A CRDT-backed in-memory ledger backed by a single Automerge document.
 pub struct LedgerDoc {
@@ -70,7 +72,7 @@ impl LedgerDoc {
         ops::get_ledger(&self.doc)
     }
 
-    pub fn list_all_bills(&self) -> Result<Vec<crate::model::Bill>> {
+    pub fn list_all_bills(&self) -> Result<Vec<unbill_model::Bill>> {
         ops::list_all_bills(&self.doc)
     }
 
@@ -130,7 +132,7 @@ impl LedgerDoc {
         self.doc
             .sync()
             .receive_sync_message(sync_state, msg)
-            .map_err(|e| crate::error::UnbillError::Other(e.into()))?;
+            .map_err(|e| UnbillError::Other(e.into()))?;
         let _ = self.changes.send(ChangeEvent::RemoteApplied);
         Ok(())
     }

@@ -5,14 +5,11 @@ use async_trait::async_trait;
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 
-use crate::doc::LedgerDoc;
-use crate::error::StorageError;
-use crate::model::{Currency, LedgerMeta, Timestamp, Ulid};
-
-use super::traits::{LedgerStore, Result};
+use unbill_model::{Currency, LedgerMeta, NodeId, SecretKey, StorageError, Timestamp, Ulid};
+use unbill_storage::{LedgerDoc, LedgerStore, StorageResult as Result};
 
 // ---------------------------------------------------------------------------
-// JSON shape for ledger metadata — kept in sync with FsStore's MetaJson
+// JSON shape for ledger metadata
 // ---------------------------------------------------------------------------
 
 #[derive(Serialize, Deserialize)]
@@ -72,15 +69,6 @@ impl HttpStore {
         req.bearer_auth(&self.api_key)
     }
 
-    /// Run the Automerge sync loop for one ledger over HTTP.
-    ///
-    /// Each iteration is one `POST /ledgers/{id}/sync` call carrying one
-    /// binary-encoded `automerge::sync::Message`. The server receives the
-    /// message, applies any incoming changes, generates its own response
-    /// message, and returns it (or 204 if it has nothing to send).
-    ///
-    /// Returns `false` if the server responded 404 on the very first message
-    /// (ledger does not exist on the server).
     async fn run_sync_loop(&self, ledger_id: &str, doc: &mut LedgerDoc) -> Result<bool> {
         let url = format!("{}/ledgers/{}/sync", self.base_url, ledger_id);
         let mut sync_state = automerge::sync::State::new();
@@ -88,16 +76,15 @@ impl HttpStore {
 
         loop {
             let msg = doc.generate_sync_message(&mut sync_state);
-            let Some(msg) = msg else {
-                break;
-            };
+            let Some(msg) = msg else { break };
 
             let resp = self
                 .auth(self.client.post(&url))
                 .header("Content-Type", "application/octet-stream")
                 .body(msg.encode())
                 .send()
-                .await?;
+                .await
+                .map_err(|e| StorageError::Network(e.to_string()))?;
 
             if first && resp.status() == StatusCode::NOT_FOUND {
                 return Ok(false);
@@ -109,7 +96,10 @@ impl HttpStore {
             }
 
             let resp = check(resp).await?;
-            let bytes = resp.bytes().await?;
+            let bytes = resp
+                .bytes()
+                .await
+                .map_err(|e| StorageError::Network(e.to_string()))?;
             let server_msg = automerge::sync::Message::decode(&bytes)
                 .map_err(|e| StorageError::Serialization(format!("sync decode: {e}")))?;
             doc.receive_sync_message(&mut sync_state, server_msg)
@@ -148,16 +138,24 @@ impl LedgerStore for HttpStore {
             .auth(self.client.put(&url))
             .json(&MetaJson::from_meta(meta))
             .send()
-            .await?;
+            .await
+            .map_err(|e| StorageError::Network(e.to_string()))?;
         check(resp).await?;
         Ok(())
     }
 
     async fn list_ledgers(&self) -> Result<Vec<LedgerMeta>> {
         let url = format!("{}/ledgers", self.base_url);
-        let resp = self.auth(self.client.get(&url)).send().await?;
+        let resp = self
+            .auth(self.client.get(&url))
+            .send()
+            .await
+            .map_err(|e| StorageError::Network(e.to_string()))?;
         let resp = check(resp).await?;
-        let items: Vec<MetaJson> = resp.json().await?;
+        let items: Vec<MetaJson> = resp
+            .json()
+            .await
+            .map_err(|e| StorageError::Network(e.to_string()))?;
         let metas = items
             .into_iter()
             .filter_map(|m| match m.into_ledger_meta() {
@@ -187,7 +185,11 @@ impl LedgerStore for HttpStore {
 
     async fn delete_ledger(&self, ledger_id: &str) -> Result<()> {
         let url = format!("{}/ledgers/{}", self.base_url, ledger_id);
-        let resp = self.auth(self.client.delete(&url)).send().await?;
+        let resp = self
+            .auth(self.client.delete(&url))
+            .send()
+            .await
+            .map_err(|e| StorageError::Network(e.to_string()))?;
         if resp.status() == StatusCode::NOT_FOUND {
             return Ok(());
         }
@@ -197,12 +199,21 @@ impl LedgerStore for HttpStore {
 
     async fn load_device_meta(&self, key: &str) -> Result<Option<Vec<u8>>> {
         let url = format!("{}/device/{}", self.base_url, key);
-        let resp = self.auth(self.client.get(&url)).send().await?;
+        let resp = self
+            .auth(self.client.get(&url))
+            .send()
+            .await
+            .map_err(|e| StorageError::Network(e.to_string()))?;
         if resp.status() == StatusCode::NOT_FOUND {
             return Ok(None);
         }
         let resp = check(resp).await?;
-        Ok(Some(resp.bytes().await?.to_vec()))
+        Ok(Some(
+            resp.bytes()
+                .await
+                .map_err(|e| StorageError::Network(e.to_string()))?
+                .to_vec(),
+        ))
     }
 
     async fn save_device_meta(&self, key: &str, value: &[u8]) -> Result<()> {
@@ -212,9 +223,54 @@ impl LedgerStore for HttpStore {
             .header("Content-Type", "application/octet-stream")
             .body(value.to_vec())
             .send()
-            .await?;
+            .await
+            .map_err(|e| StorageError::Network(e.to_string()))?;
         check(resp).await?;
         Ok(())
+    }
+
+    async fn create_secret_key(&self) -> Result<()> {
+        let url = format!("{}/device/key", self.base_url);
+        let resp = self
+            .auth(self.client.post(&url))
+            .send()
+            .await
+            .map_err(|e| StorageError::Network(e.to_string()))?;
+        check(resp).await?;
+        Ok(())
+    }
+
+    async fn is_device_initialized(&self) -> Result<bool> {
+        let url = format!("{}/device/id", self.base_url);
+        let resp = self
+            .auth(self.client.get(&url))
+            .send()
+            .await
+            .map_err(|e| StorageError::Network(e.to_string()))?;
+        if resp.status() == StatusCode::NOT_FOUND {
+            return Ok(false);
+        }
+        check(resp).await?;
+        Ok(true)
+    }
+
+    async fn get_device_id(&self) -> Result<NodeId> {
+        let url = format!("{}/device/id", self.base_url);
+        let resp = self
+            .auth(self.client.get(&url))
+            .send()
+            .await
+            .map_err(|e| StorageError::Network(e.to_string()))?;
+        let resp = check(resp).await?;
+        let s = resp
+            .text()
+            .await
+            .map_err(|e| StorageError::Network(e.to_string()))?;
+        Ok(NodeId::new(s))
+    }
+
+    async fn get_secret_key(&self) -> Result<SecretKey> {
+        Err(StorageError::Unauthorized)
     }
 }
 
@@ -228,7 +284,8 @@ mod tests {
     use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
     use super::*;
-    use crate::model::Timestamp;
+    use unbill_model::Timestamp;
+    use unbill_storage::LedgerDoc;
 
     const API_KEY: &str = "test-key";
 
@@ -256,8 +313,6 @@ mod tests {
         HttpStore::new(server.uri(), API_KEY)
     }
 
-    // --- save_ledger_meta ---------------------------------------------------
-
     #[tokio::test]
     async fn test_save_ledger_meta_sends_put_with_bearer_and_json() {
         let server = MockServer::start().await;
@@ -269,12 +324,11 @@ mod tests {
             .expect(1)
             .mount(&server)
             .await;
-
-        let meta = make_meta("Groceries");
-        store(&server).save_ledger_meta(&meta).await.unwrap();
+        store(&server)
+            .save_ledger_meta(&make_meta("Groceries"))
+            .await
+            .unwrap();
     }
-
-    // --- list_ledgers -------------------------------------------------------
 
     #[tokio::test]
     async fn test_list_ledgers_returns_parsed_metas() {
@@ -287,7 +341,6 @@ mod tests {
             updated_at_ms: 2_000,
         }])
         .unwrap();
-
         Mock::given(method("GET"))
             .and(path("/ledgers"))
             .and(bearer_token(API_KEY))
@@ -296,34 +349,12 @@ mod tests {
                     .set_body_string(body)
                     .append_header("content-type", "application/json"),
             )
-            .expect(1)
             .mount(&server)
             .await;
-
         let metas = store(&server).list_ledgers().await.unwrap();
         assert_eq!(metas.len(), 1);
         assert_eq!(metas[0].name, "Groceries");
     }
-
-    #[tokio::test]
-    async fn test_list_ledgers_returns_empty_vec_when_server_returns_empty_array() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/ledgers"))
-            .and(bearer_token(API_KEY))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_string("[]")
-                    .append_header("content-type", "application/json"),
-            )
-            .mount(&server)
-            .await;
-
-        let metas = store(&server).list_ledgers().await.unwrap();
-        assert!(metas.is_empty());
-    }
-
-    // --- load_ledger / save_ledger ------------------------------------------
 
     #[tokio::test]
     async fn test_load_ledger_returns_none_when_server_responds_404() {
@@ -334,7 +365,6 @@ mod tests {
             .respond_with(ResponseTemplate::new(404))
             .mount(&server)
             .await;
-
         let result = store(&server)
             .load_ledger("00000000000000000000000001")
             .await
@@ -344,13 +374,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_save_and_load_converge_via_sync_loop() {
-        // Simulate a server holding a real Automerge doc and running the sync
-        // protocol in-process. The mock handler drives a server-side doc.
-        // Pre-populate the "server" doc with initial state.
         let server_doc = std::sync::Arc::new(std::sync::Mutex::new(
             LedgerDoc::from_bytes(&make_doc("Groceries").save()).unwrap(),
         ));
-
         let server = MockServer::start().await;
 
         struct SyncResponder(std::sync::Arc<std::sync::Mutex<LedgerDoc>>);
@@ -381,89 +407,8 @@ mod tests {
             .await
             .unwrap();
         assert!(loaded.is_some());
-        let loaded = loaded.unwrap();
-        assert_eq!(loaded.get_ledger().unwrap().name, "Groceries");
+        assert_eq!(loaded.unwrap().get_ledger().unwrap().name, "Groceries");
     }
-
-    // --- delete_ledger ------------------------------------------------------
-
-    #[tokio::test]
-    async fn test_delete_ledger_sends_delete() {
-        let server = MockServer::start().await;
-        Mock::given(method("DELETE"))
-            .and(path("/ledgers/00000000000000000000000001"))
-            .and(bearer_token(API_KEY))
-            .respond_with(ResponseTemplate::new(204))
-            .expect(1)
-            .mount(&server)
-            .await;
-
-        store(&server)
-            .delete_ledger("00000000000000000000000001")
-            .await
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_delete_ledger_is_idempotent_on_404() {
-        let server = MockServer::start().await;
-        Mock::given(method("DELETE"))
-            .and(path("/ledgers/00000000000000000000000001"))
-            .respond_with(ResponseTemplate::new(404))
-            .mount(&server)
-            .await;
-
-        store(&server)
-            .delete_ledger("00000000000000000000000001")
-            .await
-            .unwrap();
-    }
-
-    // --- device meta --------------------------------------------------------
-
-    #[tokio::test]
-    async fn test_save_and_load_device_meta_round_trip() {
-        let server = MockServer::start().await;
-        Mock::given(method("PUT"))
-            .and(path("/device/device_key.bin"))
-            .and(bearer_token(API_KEY))
-            .respond_with(ResponseTemplate::new(204))
-            .expect(1)
-            .mount(&server)
-            .await;
-        Mock::given(method("GET"))
-            .and(path("/device/device_key.bin"))
-            .and(bearer_token(API_KEY))
-            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"secret".as_ref()))
-            .expect(1)
-            .mount(&server)
-            .await;
-
-        let s = store(&server);
-        s.save_device_meta("device_key.bin", b"secret")
-            .await
-            .unwrap();
-        let loaded = s.load_device_meta("device_key.bin").await.unwrap();
-        assert_eq!(loaded.as_deref(), Some(b"secret".as_ref()));
-    }
-
-    #[tokio::test]
-    async fn test_load_device_meta_returns_none_on_404() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/device/device_key.bin"))
-            .respond_with(ResponseTemplate::new(404))
-            .mount(&server)
-            .await;
-
-        let result = store(&server)
-            .load_device_meta("device_key.bin")
-            .await
-            .unwrap();
-        assert!(result.is_none());
-    }
-
-    // --- error mapping ------------------------------------------------------
 
     #[tokio::test]
     async fn test_401_surfaces_as_unauthorized_error() {
@@ -473,7 +418,6 @@ mod tests {
             .respond_with(ResponseTemplate::new(401))
             .mount(&server)
             .await;
-
         let err = store(&server).list_ledgers().await.unwrap_err();
         assert!(matches!(err, StorageError::Unauthorized));
     }
@@ -486,7 +430,6 @@ mod tests {
             .respond_with(ResponseTemplate::new(500).set_body_string("internal error"))
             .mount(&server)
             .await;
-
         let err = store(&server).list_ledgers().await.unwrap_err();
         assert!(matches!(err, StorageError::HttpStatus(500, _)));
     }

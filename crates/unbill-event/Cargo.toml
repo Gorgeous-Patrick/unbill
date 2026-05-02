@@ -1,0 +1,8 @@
+[package]
+name = "unbill-event"
+description = "Event types for unbill — the shared vocabulary for service and network notifications."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
