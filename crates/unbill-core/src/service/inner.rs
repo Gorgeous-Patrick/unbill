@@ -92,6 +92,9 @@ impl UnbillService {
         let bill_id = doc.add_bill(input, self.device_id.clone(), Timestamp::now())?;
         self.store.save_ledger(ledger_id, &mut doc).await?;
         self.touch_meta(ledger_id).await?;
+        let _ = self.events.send(ServiceEvent::LedgerUpdated {
+            ledger_id: ledger_id.to_string(),
+        });
         Ok(bill_id.to_string())
     }
 
@@ -108,6 +111,9 @@ impl UnbillService {
         doc.add_user(input, Timestamp::now())?;
         self.store.save_ledger(ledger_id, &mut doc).await?;
         self.touch_meta(ledger_id).await?;
+        let _ = self.events.send(ServiceEvent::LedgerUpdated {
+            ledger_id: ledger_id.to_string(),
+        });
         Ok(())
     }
 
@@ -129,6 +135,9 @@ impl UnbillService {
         )?;
         self.store.save_ledger(ledger_id, &mut doc).await?;
         self.touch_meta(ledger_id).await?;
+        let _ = self.events.send(ServiceEvent::LedgerUpdated {
+            ledger_id: ledger_id.to_string(),
+        });
         Ok(User {
             user_id,
             display_name,
