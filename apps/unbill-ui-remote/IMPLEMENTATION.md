@@ -8,7 +8,53 @@ The app is a client-side rendered Leptos application compiled to WASM with Trunk
 
 ## State model
 
-The app keeps backend data in signals: bootstrap state for the device ID, ledger list, and all users; selected ledger detail for bills, users, and settlement; settings overlay ledger detail for overlay-only ledger selection; and transient overlay state for create, invite, add-user, and bill editor flows. Mutating actions call `api.rs`, show shared status or error feedback, refresh bootstrap state, and refresh the selected ledger detail when the visible ledger could have changed.
+App-level state in `app.rs` is split into granular `RwSignal`s so that each piece of UI only re-renders when its own data changes.
+
+**Data signals** (populated from the server):
+
+| Signal | Type | Meaning |
+|---|---|---|
+| `device_id` | `String` | Server-assigned device ID. Read-only display. |
+| `ledgers` | `Vec<LedgerSummary>` | All ledgers, sorted by most-recent bill then name. |
+| `all_users` | `Vec<User>` | Union of users across all ledgers. Used by the add-user picker. |
+| `ledger_detail` | `Option<LedgerDetail>` | Bills, users, devices, and settlement for the currently selected ledger. |
+| `settings_ledger_detail` | `Option<LedgerDetail>` | Same shape, but for the ledger selected inside the Settings popup — independent so Settings can browse ledgers without changing the main view. |
+
+**Navigation / overlay signals** (owned entirely by the UI layer):
+
+| Signal | Type | Meaning |
+|---|---|---|
+| `surface_mode` | `SurfaceMode` | Compact vs. Ranger, updated from the window resize listener. |
+| `selected_ledger_id` | `Option<String>` | Which ledger is open in the main column. |
+| `settings_popup` | `Option<SettingsPopupState>` | Whether the Settings popup is open, which tab is active, and which ledger is selected inside it. |
+| `invitation_url` | `Option<String>` | Last generated invitation URL, cleared when the popup closes. |
+| `overlay` | `Option<OverlayKind>` | Which full-screen sheet is open (`CreateLedger` or `AddUser`). |
+| `bill_editor` | `Option<BillEditorSeed>` | The form state for the bill editor. `None` means the editor is closed. |
+
+**Feedback signals**:
+
+| Signal | Type | Meaning |
+|---|---|---|
+| `status_message` | `Option<String>` | Last success message shown in the status strip. |
+| `error_message` | `Option<String>` | Last error message shown in the status strip. |
+| `loading_count` | `usize` | Number of in-flight async operations. Incremented before each `spawn_local`, decremented (saturating) in its completion handler. `loading_count != 0` drives the busy indicator. |
+
+## Service event loop
+
+After the initial bootstrap load, a single `spawn_local` subscribes to `ServiceEvent` via `api::subscribe()`. On `LedgerUpdated { ledger_id }` it:
+
+1. Refreshes the matching entry in `ledgers` (in-place update, preserves order via re-sort).
+1. Refreshes `all_users`.
+1. If `selected_ledger_id == ledger_id` and the bill editor is not open, refreshes `ledger_detail`.
+1. If the Settings popup has `selected_ledger_id == ledger_id`, refreshes `settings_ledger_detail`.
+
+All reads from signals inside the event loop use `get_untracked()` to avoid creating reactive subscriptions on the non-reactive async task.
+
+`ServiceEvent::LedgerUpdated` is emitted by `UnbillService` on both local mutations (`add_bill`, `add_user`, `create_user`) and incoming network sync. Mutation handlers in `app.rs` therefore do not call reload functions themselves — they only set `bill_editor.set(None)` and the status/error messages.
+
+## Bill editor isolation
+
+`BillEditorSeed` carries a snapshot of `currency` and `users` taken at the moment the editor is opened. `BillEditorPage` reads only `bill_editor`, not `ledger_detail`, so background refreshes to `ledger_detail` do not destroy or reset the open form.
 
 ## API layer
 
