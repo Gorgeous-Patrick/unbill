@@ -1,0 +1,8 @@
+[build]
+target = "./index.html"
+dist = "./dist"
+
+[serve]
+port = 8080
+open = false
+ws_protocol = "ws"
