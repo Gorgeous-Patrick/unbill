@@ -320,7 +320,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let app = make_app(dir.path());
         let req = Request::builder()
-            .uri("/ledgers")
+            .uri("/api/v1/ledgers")
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
@@ -332,7 +332,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let app = make_app(dir.path());
         let req = Request::builder()
-            .uri("/ledgers")
+            .uri("/api/v1/ledgers")
             .header("Authorization", "Bearer wrong")
             .body(Body::empty())
             .unwrap();
@@ -346,7 +346,7 @@ mod tests {
     async fn test_list_ledgers_returns_empty_array_initially() {
         let dir = tempfile::tempdir().unwrap();
         let app = make_app(dir.path());
-        let resp = app.oneshot(auth_get("/ledgers")).await.unwrap();
+        let resp = app.oneshot(auth_get("/api/v1/ledgers")).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         let body = body_bytes(resp).await;
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
@@ -372,7 +372,7 @@ mod tests {
         let resp = app
             .clone()
             .oneshot(auth_put(
-                "/ledgers/00000000000000000000000001/meta",
+                "/api/v1/ledgers/00000000000000000000000001/meta",
                 "application/json",
                 serde_json::to_vec(&meta).unwrap(),
             ))
@@ -381,7 +381,7 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 
         // list
-        let resp = app.oneshot(auth_get("/ledgers")).await.unwrap();
+        let resp = app.oneshot(auth_get("/api/v1/ledgers")).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         let body = body_bytes(resp).await;
         let list: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
@@ -407,7 +407,7 @@ mod tests {
         let app = make_app(dir.path());
         let resp = app
             .oneshot(auth_post(
-                "/ledgers/00000000000000000000000001/sync",
+                "/api/v1/ledgers/00000000000000000000000001/sync",
                 "application/octet-stream",
                 b"not a sync message".to_vec(),
             ))
@@ -452,7 +452,7 @@ mod tests {
             let resp = app
                 .clone()
                 .oneshot(auth_post(
-                    &format!("/ledgers/{id_str}/sync"),
+                    &format!("/api/v1/ledgers/{id_str}/sync"),
                     "application/octet-stream",
                     msg.encode(),
                 ))
@@ -482,7 +482,7 @@ mod tests {
         let del = || {
             Request::builder()
                 .method(Method::DELETE)
-                .uri("/ledgers/00000000000000000000000001")
+                .uri("/api/v1/ledgers/00000000000000000000000001")
                 .header("Authorization", format!("Bearer {API_KEY}"))
                 .body(Body::empty())
                 .unwrap()
@@ -507,7 +507,7 @@ mod tests {
         let resp = app
             .clone()
             .oneshot(auth_put(
-                "/device/device_key.bin",
+                "/api/v1/device/device_key.bin",
                 "application/octet-stream",
                 b"secret".to_vec(),
             ))
@@ -516,7 +516,7 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 
         let resp = app
-            .oneshot(auth_get("/device/device_key.bin"))
+            .oneshot(auth_get("/api/v1/device/device_key.bin"))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -528,7 +528,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let app = make_app(dir.path());
         let resp = app
-            .oneshot(auth_get("/device/device_key.bin"))
+            .oneshot(auth_get("/api/v1/device/device_key.bin"))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
@@ -539,7 +539,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let app = make_app(dir.path());
         let resp = app
-            .oneshot(auth_get("/device/../../etc/passwd"))
+            .oneshot(auth_get("/api/v1/device/../../etc/passwd"))
             .await
             .unwrap();
         // axum will match on the first segment; the path won't route correctly,
