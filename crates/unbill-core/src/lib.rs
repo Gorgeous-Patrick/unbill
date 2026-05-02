@@ -8,7 +8,6 @@ pub use unbill_event as event;
 pub use unbill_model as model;
 #[cfg(feature = "network")]
 pub mod net;
-pub mod path;
 pub mod service;
 pub mod settlement;
 pub mod storage;

@@ -624,7 +624,7 @@ pub fn run() {
                         Box::new(std::io::Error::other(error.to_string()))
                     })?;
             #[cfg(not(mobile))]
-            let root = unbill_core::path::UNBILL_PATH.ensure_data_dir().map_err(
+            let root = unbill_store_fs::UNBILL_PATH.ensure_data_dir().map_err(
                 |error| -> Box<dyn std::error::Error> {
                     Box::new(std::io::Error::other(error.to_string()))
                 },

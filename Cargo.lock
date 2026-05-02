@@ -7766,7 +7766,6 @@ dependencies = [
  "automerge",
  "autosurgeon",
  "ciborium",
- "directories",
  "iso_currency",
  "proptest",
  "serde",
@@ -7856,7 +7855,9 @@ dependencies = [
 name = "unbill-store-fs"
 version = "0.0.1"
 dependencies = [
+ "anyhow",
  "async-trait",
+ "directories",
  "iroh",
  "rand 0.10.1",
  "serde",

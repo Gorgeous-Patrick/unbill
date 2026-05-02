@@ -10,7 +10,9 @@ homepage.workspace = true
 [dependencies]
 unbill-storage = { path = "../unbill-storage" }
 unbill-model = { path = "../unbill-model" }
+anyhow.workspace = true
 async-trait.workspace = true
+directories.workspace = true
 iroh.workspace = true
 rand.workspace = true
 serde.workspace = true

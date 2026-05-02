@@ -24,7 +24,6 @@ iso_currency.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-directories.workspace = true
 
 [features]
 network = ["dep:unbill-network"]

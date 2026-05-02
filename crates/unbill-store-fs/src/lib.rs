@@ -1,5 +1,8 @@
 // Flat-file LedgerStore backed by `tokio::fs`.
 
+pub mod path;
+pub use path::{UNBILL_PATH, UnbillPath};
+
 use std::path::PathBuf;
 
 use async_trait::async_trait;
