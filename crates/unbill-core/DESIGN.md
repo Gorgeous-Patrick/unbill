@@ -1,33 +1,30 @@
 # Unbill Core
 
-The core crate defines the shared ledger, persistence boundary, sync boundary, and settlement rules. Every frontend depends on it; none reimplement its domain logic.
+The core crate defines the shared ledger semantics, settlement rules, and conflict detection. Every frontend depends on it; none reimplement its domain logic.
 
 ## Structure
 
 ```mermaid
 flowchart TB
     Service["service/"]
-    Model["model/"]
-    Doc["doc/"]
-    Storage["storage/"]
-    Net["net/"]
     Settlement["settlement/"]
     Conflict["conflict/"]
+    Storage["unbill-storage"]
+    Network["unbill-network"]
+    Model["unbill-model"]
+    Event["unbill-event"]
 
-    Service --> Model
-    Service --> Doc
-    Service --> Storage
-    Service --> Net
     Service --> Settlement
     Service --> Conflict
-    Doc --> Model
-    Net --> Doc
-    Net --> Storage
+    Service --> Storage
+    Service --> Network
+    Service --> Model
+    Service --> Event
     Settlement --> Model
     Conflict --> Model
 ```
 
-`service/` is the public entry point. The other modules are support layers that the service composes.
+`service/` is the public entry point. `settlement/` and `conflict/` are pure logic modules. Storage, networking, domain types, and events live in dedicated crates that this crate composes.
 
 ## Surface
 
@@ -47,5 +44,5 @@ flowchart TB
 ## Boundaries
 
 - no CLI parsing, Tauri wiring, or UI state
-- storage and transport are abstracted at the edges
+- storage and transport are abstracted behind the `LedgerStore` trait and `unbill-network`
 - ledger semantics, projection, and settlement stay in this crate
