@@ -15,7 +15,7 @@ pub struct Timestamp(i64);
 impl Timestamp {
     /// Current wall-clock time as a `Timestamp`.
     pub fn now() -> Self {
-        use std::time::{SystemTime, UNIX_EPOCH};
+        use web_time::{SystemTime, UNIX_EPOCH};
         let millis = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system clock before Unix epoch")
