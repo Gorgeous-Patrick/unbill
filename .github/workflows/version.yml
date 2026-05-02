@@ -8,6 +8,11 @@ on:
 jobs:
   build:
     uses: ./.github/workflows/build.yml
+    with:
+      tag: ${{ github.ref_name }}
+    permissions:
+      packages: write
+    secrets: inherit
 
   release:
     needs: build

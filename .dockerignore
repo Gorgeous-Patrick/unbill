@@ -1,0 +1,7 @@
+target/
+node_modules/
+.git/
+apps/*/dist/
+data/
+apps/unbill-ui-remote/data/
+.android/
