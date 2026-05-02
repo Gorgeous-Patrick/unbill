@@ -393,6 +393,7 @@ fn parse_ulid(s: &str) -> Result<Ulid> {
 }
 
 /// Parse `unbill://join/<ledger_id>/<host_node_id>/<token_hex>`.
+#[cfg(feature = "network")]
 fn parse_join_url(url: &str) -> Result<(String, NodeId, String)> {
     let path = url
         .strip_prefix("unbill://join/")
