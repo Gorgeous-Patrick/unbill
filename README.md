@@ -59,6 +59,86 @@ That structure is deliberate. The core owns the rules. Shells adapt the core to 
 
 The repo is design-first and test-first. Non-trivial changes are expected to update the relevant docs and land with tests close to the code they protect.
 
+## Installation
+
+Unbill is published through GitHub Releases, GHCR Docker images, AUR packages, and Homebrew formulas.
+
+We support two installation types:
+
+- User-friendly installation (prebuilt binaries/packages, no local compilation)
+- Build-from-source installation (compile locally)
+
+All commands below target the latest stable release only (GitHub "latest"), not pre-releases.
+
+### 1) User-friendly installation (no source build)
+
+#### macOS
+
+- Install CLI binary:
+  - `curl -L -o unbill-cli https://github.com/unbill-project/unbill/releases/latest/download/unbill-cli-macos-aarch64`
+  - `chmod +x unbill-cli && sudo mv unbill-cli /usr/local/bin/unbill-cli`
+- Install TUI binary:
+  - `curl -L -o unbill-tui https://github.com/unbill-project/unbill/releases/latest/download/unbill-tui-macos-aarch64`
+  - `chmod +x unbill-tui && sudo mv unbill-tui /usr/local/bin/unbill-tui`
+- Homebrew:
+  - `brew install unbill-project/tap/unbill-cli`
+  - `brew install unbill-project/tap/unbill-tui`
+- Desktop app: download and open `unbill-macos-aarch64.*` from Releases.
+
+#### Windows
+
+- Install CLI binary (PowerShell):
+  - `Invoke-WebRequest https://github.com/unbill-project/unbill/releases/latest/download/unbill-cli-windows-x86_64.exe -OutFile unbill-cli.exe`
+- Install TUI binary (PowerShell):
+  - `Invoke-WebRequest https://github.com/unbill-project/unbill/releases/latest/download/unbill-tui-windows-x86_64.exe -OutFile unbill-tui.exe`
+- Installer (direct link): `https://github.com/unbill-project/unbill/releases/latest/download/unbill-windows-x86_64.exe`
+- Desktop app: if the installer filename changes by packaging format, open `https://github.com/unbill-project/unbill/releases/latest` and download the Windows installer asset there.
+
+#### Linux
+
+- Install CLI binary:
+  - `curl -L -o unbill-cli https://github.com/unbill-project/unbill/releases/latest/download/unbill-cli-linux-x86_64`
+  - `chmod +x unbill-cli && sudo mv unbill-cli /usr/local/bin/unbill-cli`
+- Install TUI binary:
+  - `curl -L -o unbill-tui https://github.com/unbill-project/unbill/releases/latest/download/unbill-tui-linux-x86_64`
+  - `chmod +x unbill-tui && sudo mv unbill-tui /usr/local/bin/unbill-tui`
+- Homebrew (Linuxbrew):
+  - `brew install unbill-project/tap/unbill-cli`
+  - `brew install unbill-project/tap/unbill-tui`
+- AUR:
+  - `yay -S unbill-cli-bin`
+  - `yay -S unbill-tui-bin`
+  - `yay -S unbill-bin`
+- Desktop app artifact: download `unbill-linux-x86_64.*` from Releases.
+
+#### Container
+
+- Pull image: `docker pull ghcr.io/unbill-project/unbill-server:latest`
+- Run image: `docker run --rm -p 8080:80 ghcr.io/unbill-project/unbill-server:latest`
+- Version-pinned tag example: `docker pull ghcr.io/unbill-project/unbill-server:v0.1.0`
+
+### 2) Build from source
+
+Use source builds for development, custom modifications, or unreleased commits.
+
+#### macOS / Windows / Linux
+
+- Install Rust stable: `rustup toolchain install stable`.
+- Build CLI and TUI from workspace root: `cargo build --release -p unbill-cli -p unbill-tui`.
+- Run directly with Cargo during development:
+  - `cargo run -p unbill-cli -- --help`
+  - `cargo run -p unbill-tui -- --help`
+- Desktop app build (after OS-specific Tauri prerequisites): `cargo tauri build --manifest-path crates/unbill-tauri/Cargo.toml`.
+
+#### Container (build yourself)
+
+- Build: `docker build -t unbill-server:local .`.
+- Run: `docker run --rm -p 8080:80 unbill-server:local`.
+
+### Development container option
+
+For a reproducible source-oriented environment, use the repo’s `devenv.nix` and `devenv.yaml`.
+
 ## Releasing
 
 Releases are managed with `cargo release`. Run from the workspace root.
