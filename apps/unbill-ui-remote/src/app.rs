@@ -139,6 +139,8 @@ pub(crate) struct BillShareDraft {
 
 #[derive(Clone, PartialEq)]
 pub(crate) struct BillEditorSeed {
+    pub(crate) currency: String,
+    pub(crate) users: Vec<User>,
     pub(crate) prev_bill_id: Option<String>,
     pub(crate) description: String,
     pub(crate) payer_mode: ShareMode,
@@ -173,11 +175,11 @@ pub fn App() -> impl IntoView {
     let bill_editor = RwSignal::new(None::<BillEditorSeed>);
     let status_message = RwSignal::new(None::<String>);
     let error_message = RwSignal::new(None::<String>);
-    let busy = RwSignal::new(false);
+    let loading_count = RwSignal::new(0usize);
 
     let load_selected_ledger = move |ledger_id: String| {
         selected_ledger_id.set(Some(ledger_id.clone()));
-        busy.set(true);
+        loading_count.update(|n| *n += 1);
         spawn_local(async move {
             match api::load_ledger_detail(&ledger_id).await {
                 Ok(detail) => {
@@ -186,12 +188,12 @@ pub fn App() -> impl IntoView {
                 }
                 Err(error) => error_message.set(Some(error)),
             }
-            busy.set(false);
+            loading_count.update(|n| *n = n.saturating_sub(1));
         });
     };
 
     let load_settings_ledger = move |ledger_id: String| {
-        busy.set(true);
+        loading_count.update(|n| *n += 1);
         spawn_local(async move {
             match api::load_ledger_detail(&ledger_id).await {
                 Ok(detail) => {
@@ -203,12 +205,12 @@ pub fn App() -> impl IntoView {
                     error_message.set(Some(error));
                 }
             }
-            busy.set(false);
+            loading_count.update(|n| *n = n.saturating_sub(1));
         });
     };
 
     let reload_bootstrap = move || {
-        busy.set(true);
+        loading_count.update(|n| *n += 1);
         spawn_local(async move {
             match api::bootstrap_app().await {
                 Ok(mut data) => {
@@ -282,11 +284,58 @@ pub fn App() -> impl IntoView {
                 }
                 Err(error) => error_message.set(Some(error)),
             }
-            busy.set(false);
+            loading_count.update(|n| *n = n.saturating_sub(1));
         });
     };
 
     reload_bootstrap();
+
+    // Service event loop: on LedgerUpdated, refresh only the affected signals.
+    let mut events = api::subscribe();
+    spawn_local(async move {
+        use tokio::sync::broadcast::error::RecvError;
+        loop {
+            match events.recv().await {
+                Ok(unbill_core::service::ServiceEvent::LedgerUpdated { ledger_id }) => {
+                    if let Ok(summary) = api::load_ledger_summary(&ledger_id).await {
+                        ledgers.update(|list| {
+                            if let Some(entry) = list.iter_mut().find(|l| l.ledger_id == ledger_id)
+                            {
+                                *entry = summary;
+                                sort_ledgers(list);
+                            }
+                        });
+                    }
+
+                    if let Ok(users) = api::load_all_users().await {
+                        all_users.set(users);
+                    }
+
+                    if selected_ledger_id.get_untracked().as_deref() == Some(ledger_id.as_str())
+                        && bill_editor.get_untracked().is_none()
+                    {
+                        if let Ok(detail) = api::load_ledger_detail(&ledger_id).await {
+                            ledger_detail.set(Some(detail));
+                        }
+                    }
+
+                    if settings_popup
+                        .get_untracked()
+                        .and_then(|p| p.selected_ledger_id)
+                        .as_deref()
+                        == Some(ledger_id.as_str())
+                    {
+                        if let Ok(detail) = api::load_ledger_detail(&ledger_id).await {
+                            settings_ledger_detail.set(Some(detail));
+                        }
+                    }
+                }
+                Ok(_) => {}
+                Err(RecvError::Closed) => break,
+                Err(RecvError::Lagged(_)) => continue,
+            }
+        }
+    });
 
     let open_ledger = move |ledger_id: String| {
         settings_popup.set(None);
@@ -304,7 +353,7 @@ pub fn App() -> impl IntoView {
                 ));
                 return;
             }
-            bill_editor.set(Some(new_bill_seed(&detail.users)));
+            bill_editor.set(Some(new_bill_seed(detail.summary.currency, &detail.users)));
             error_message.set(None);
         }
     };
@@ -313,13 +362,17 @@ pub fn App() -> impl IntoView {
         if let Some(detail) = ledger_detail.get()
             && let Some(bill) = detail.bills.iter().find(|item| item.id == bill_id)
         {
-            bill_editor.set(Some(amend_bill_seed(bill, &detail.users)));
+            bill_editor.set(Some(amend_bill_seed(
+                bill,
+                detail.summary.currency,
+                &detail.users,
+            )));
         }
     };
 
     let save_bill = move |request: BillSaveRequest| {
         if let Some(ledger_id) = selected_ledger_id.get() {
-            busy.set(true);
+            loading_count.update(|n| *n += 1);
             spawn_local(async move {
                 match api::save_bill(SaveBillInput {
                     ledger_id: ledger_id.clone(),
@@ -335,13 +388,10 @@ pub fn App() -> impl IntoView {
                         bill_editor.set(None);
                         status_message.set(Some("Bill saved.".to_owned()));
                         error_message.set(None);
-                        load_selected_ledger(ledger_id);
                     }
-                    Err(error) => {
-                        error_message.set(Some(error));
-                        busy.set(false);
-                    }
+                    Err(error) => error_message.set(Some(error)),
                 }
+                loading_count.update(|n| *n = n.saturating_sub(1));
             });
         }
     };
@@ -352,7 +402,7 @@ pub fn App() -> impl IntoView {
             .and_then(|popup| popup.selected_ledger_id)
             .or_else(|| selected_ledger_id.get())
         {
-            busy.set(true);
+            loading_count.update(|n| *n += 1);
             spawn_local(async move {
                 match api::create_invitation(&ledger_id).await {
                     Ok(url) => {
@@ -362,7 +412,7 @@ pub fn App() -> impl IntoView {
                     }
                     Err(error) => error_message.set(Some(error)),
                 }
-                busy.set(false);
+                loading_count.update(|n| *n = n.saturating_sub(1));
             });
         }
     };
@@ -434,7 +484,7 @@ pub fn App() -> impl IntoView {
                     <CreateLedgerSheet
                         on_cancel=Callback::new(move |_| overlay.set(None))
                         on_submit=Callback::new(move |(name, currency): (String, String)| {
-                            busy.set(true);
+                            loading_count.update(|n| *n += 1);
                             spawn_local(async move {
                                 match api::create_ledger(api::CreateLedgerInput { name, currency }).await {
                                     Ok(summary) => {
@@ -447,11 +497,9 @@ pub fn App() -> impl IntoView {
                                         status_message.set(Some("Ledger created.".to_owned()));
                                         error_message.set(None);
                                     }
-                                    Err(error) => {
-                                        error_message.set(Some(error));
-                                        busy.set(false);
-                                    }
+                                    Err(error) => error_message.set(Some(error)),
                                 }
+                                loading_count.update(|n| *n = n.saturating_sub(1));
                             });
                         })
                     />
@@ -469,20 +517,17 @@ pub fn App() -> impl IntoView {
                                 .get()
                                 .and_then(|popup| popup.selected_ledger_id)
                             {
-                                busy.set(true);
+                                loading_count.update(|n| *n += 1);
                                 spawn_local(async move {
                                     match api::add_user(AddUserInput { ledger_id: ledger_id.clone(), user_id }).await {
                                         Ok(_) => {
                                             overlay.set(None);
-                                            reload_bootstrap();
                                             status_message.set(Some("User added to ledger.".to_owned()));
                                             error_message.set(None);
                                         }
-                                        Err(error) => {
-                                            error_message.set(Some(error));
-                                            busy.set(false);
-                                        }
+                                        Err(error) => error_message.set(Some(error)),
                                     }
+                                    loading_count.update(|n| *n = n.saturating_sub(1));
                                 });
                             }
                         })
@@ -491,20 +536,17 @@ pub fn App() -> impl IntoView {
                                 .get()
                                 .and_then(|popup| popup.selected_ledger_id)
                             {
-                                busy.set(true);
+                                loading_count.update(|n| *n += 1);
                                 spawn_local(async move {
                                     match api::create_user(CreateUserInput { ledger_id: ledger_id.clone(), display_name }).await {
                                         Ok(_) => {
                                             overlay.set(None);
-                                            reload_bootstrap();
                                             status_message.set(Some("User created.".to_owned()));
                                             error_message.set(None);
                                         }
-                                        Err(error) => {
-                                            error_message.set(Some(error));
-                                            busy.set(false);
-                                        }
+                                        Err(error) => error_message.set(Some(error)),
                                     }
+                                    loading_count.update(|n| *n = n.saturating_sub(1));
                                 });
                             }
                         })
@@ -524,14 +566,8 @@ pub fn App() -> impl IntoView {
                     } else {
                         "New Bill".to_owned()
                     }
-                    currency=ledger_detail
-                        .get()
-                        .map(|detail| detail.summary.currency)
-                        .unwrap_or_else(|| "USD".to_owned())
-                    users=ledger_detail
-                        .get()
-                        .map(|detail| detail.users)
-                        .unwrap_or_default()
+                    currency=seed.currency.clone()
+                    users=seed.users.clone()
                     seed=seed
                     on_back=Callback::new(move |_| bill_editor.set(None))
                     on_save=Callback::new(save_bill)
@@ -599,7 +635,7 @@ pub fn App() -> impl IntoView {
                     <StatusStrip
                         status=status_message.get()
                         error=error_message.get()
-                        busy=busy.get()
+                        busy={ loading_count.get() != 0 }
                     />
                 }}
 
@@ -657,14 +693,8 @@ pub fn App() -> impl IntoView {
                                         } else {
                                             "New Bill".to_owned()
                                         }
-                                        currency=ledger_detail
-                                            .get()
-                                            .map(|detail| detail.summary.currency)
-                                            .unwrap_or_else(|| "USD".to_owned())
-                                        users=ledger_detail
-                                            .get()
-                                            .map(|detail| detail.users)
-                                            .unwrap_or_default()
+                                        currency=seed.currency.clone()
+                                        users=seed.users.clone()
                                         seed=seed
                                         on_back=Callback::new(move |_| bill_editor.set(None))
                                         on_save=Callback::new(save_bill)
@@ -696,15 +726,17 @@ pub fn App() -> impl IntoView {
             if surface_mode.get() == SurfaceMode::Compact {
                 view! {
                     <main class="app-shell">
-                        <StatusStrip
-                            status=status_message.get()
-                            error=error_message.get()
-                            busy=busy.get()
-                        />
+                        {move || view! {
+                            <StatusStrip
+                                status=status_message.get()
+                                error=error_message.get()
+                                busy={ loading_count.get() != 0 }
+                            />
+                        }}
                         <div class="safe-content-area">
-                            {render_compact_page()}
-                            {render_settings_popup()}
-                            {render_overlay()}
+                            {move || render_compact_page()}
+                            {move || render_settings_popup()}
+                            {move || render_overlay()}
                         </div>
                     </main>
                 }
@@ -773,8 +805,10 @@ fn sort_ledgers(ledgers: &mut [LedgerSummary]) {
     );
 }
 
-fn new_bill_seed(users: &[User]) -> BillEditorSeed {
+fn new_bill_seed(currency: String, users: &[User]) -> BillEditorSeed {
     BillEditorSeed {
+        currency,
+        users: users.to_vec(),
         prev_bill_id: None,
         description: String::new(),
         payer_mode: ShareMode::Equal,
@@ -802,7 +836,7 @@ fn new_bill_seed(users: &[User]) -> BillEditorSeed {
     }
 }
 
-fn amend_bill_seed(bill: &Bill, users: &[User]) -> BillEditorSeed {
+fn amend_bill_seed(bill: &Bill, currency: String, users: &[User]) -> BillEditorSeed {
     let payers_by_user = bill
         .payers
         .iter()
@@ -826,6 +860,8 @@ fn amend_bill_seed(bill: &Bill, users: &[User]) -> BillEditorSeed {
     };
 
     BillEditorSeed {
+        currency,
+        users: users.to_vec(),
         prev_bill_id: Some(bill.id.clone()),
         description: bill.description.clone(),
         payer_mode,

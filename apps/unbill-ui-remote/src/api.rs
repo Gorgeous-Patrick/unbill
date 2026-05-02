@@ -145,6 +145,30 @@ pub struct BillShareInput {
 // API functions
 // ---------------------------------------------------------------------------
 
+pub fn subscribe() -> tokio::sync::broadcast::Receiver<unbill_core::service::ServiceEvent> {
+    get_service().expect("service not initialized").subscribe()
+}
+
+pub async fn load_ledger_summary(ledger_id: &str) -> Result<LedgerSummary, String> {
+    let svc = get_service()?;
+    let meta = svc
+        .list_ledgers()
+        .await
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|item| item.ledger_id.to_string() == ledger_id)
+        .ok_or_else(|| format!("ledger {ledger_id} not found"))?;
+    summarize_ledger(&svc, meta).await
+}
+
+pub async fn load_all_users() -> Result<Vec<User>, String> {
+    let svc = get_service()?;
+    svc.list_all_users()
+        .await
+        .map_err(|e| e.to_string())
+        .map(|users| users.into_iter().map(user_to_dto).collect())
+}
+
 pub async fn bootstrap_app() -> Result<AppBootstrap, String> {
     let svc = get_service()?;
     let metas = svc.list_ledgers().await.map_err(|e| e.to_string())?;
