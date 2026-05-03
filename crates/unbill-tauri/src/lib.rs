@@ -683,7 +683,7 @@ mod tests {
     use std::sync::Arc;
 
     use serde_json::Value;
-    use unbill_core::model::{NewDevice, Ulid};
+    use unbill_core::model::{NewDevice, UserId};
     use unbill_core::service::UnbillService;
     use unbill_store_memory::InMemoryStore;
 
@@ -837,7 +837,7 @@ mod tests {
             &service,
             super::AddUserInput {
                 ledger_id: ledger_id.to_string(),
-                user_id: Ulid::new().to_string(),
+                user_id: UserId::new().to_string(),
             },
         )
         .await
