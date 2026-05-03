@@ -1,0 +1,11 @@
+[package]
+name = "unbill-i18n"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description.workspace = true
+publish.workspace = true
+
+[dependencies]

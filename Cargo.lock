@@ -7731,6 +7731,10 @@ name = "unbill-event"
 version = "0.0.1"
 
 [[package]]
+name = "unbill-i18n"
+version = "0.0.1"
+
+[[package]]
 name = "unbill-model"
 version = "0.0.1"
 dependencies = [

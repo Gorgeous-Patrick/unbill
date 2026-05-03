@@ -8,6 +8,7 @@ members = [
     "apps/unbill-ui-remote",
     "crates/unbill-core",
     "crates/unbill-event",
+    "crates/unbill-i18n",
     "crates/unbill-network",
     "crates/unbill-model",
     "crates/unbill-storage",
