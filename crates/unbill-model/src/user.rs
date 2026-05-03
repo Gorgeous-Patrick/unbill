@@ -35,6 +35,13 @@ pub struct Device {
     pub added_at: Timestamp,
 }
 
+/// Input type for creating a new ledger.
+#[derive(Clone, Debug)]
+pub struct NewLedger {
+    pub name: String,
+    pub currency: crate::Currency,
+}
+
 /// Input type for directly adding a user to a ledger.
 #[derive(Clone, Debug)]
 pub struct NewUser {

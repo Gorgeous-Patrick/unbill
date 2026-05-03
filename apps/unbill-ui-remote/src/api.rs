@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use unbill_core::model::{BillId, LedgerId, NewBill, NewUser, UserId};
+use unbill_core::model::{BillId, Currency, LedgerId, NewBill, NewLedger, NewUser, UserId};
 use unbill_core::service::UnbillService;
 use wasm_bindgen_futures::JsFuture;
 
@@ -194,8 +194,13 @@ pub async fn bootstrap_app() -> Result<AppBootstrap, String> {
 
 pub async fn create_ledger(input: CreateLedgerInput) -> Result<LedgerSummary, String> {
     let svc = get_service()?;
+    let currency = Currency::from_code(&input.currency)
+        .ok_or_else(|| format!("unknown currency code: {}", input.currency))?;
     let ledger_id = svc
-        .create_ledger(input.name, input.currency)
+        .create_ledger(NewLedger {
+            name: input.name,
+            currency,
+        })
         .await
         .map_err(|e| e.to_string())?;
     load_ledger_detail(&ledger_id.to_string())

@@ -4,7 +4,9 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
-use unbill_core::model::{BillId, LedgerId, NewBill, NewUser, NodeId, Share, UserId};
+use unbill_core::model::{
+    BillId, Currency, LedgerId, NewBill, NewLedger, NewUser, NodeId, Share, UserId,
+};
 use unbill_core::service::UnbillService;
 use unbill_store_fs::FsStore;
 
@@ -168,9 +170,14 @@ async fn create_ledger(
     input: CreateLedgerInput,
     state: State<'_, AppState>,
 ) -> std::result::Result<LedgerSummaryDto, String> {
+    let currency = Currency::from_code(&input.currency)
+        .ok_or_else(|| format!("unknown currency code: {}", input.currency))?;
     let ledger_id = state
         .service
-        .create_ledger(input.name, input.currency)
+        .create_ledger(NewLedger {
+            name: input.name,
+            currency,
+        })
         .await
         .map_err(stringify_error)?;
 
@@ -742,11 +749,17 @@ mod tests {
             .unwrap();
 
         let groceries = host
-            .create_ledger("Groceries".to_owned(), "USD".to_owned())
+            .create_ledger(super::NewLedger {
+                name: "Groceries".to_owned(),
+                currency: super::Currency::from_code("USD").unwrap(),
+            })
             .await
             .unwrap();
         let trip = host
-            .create_ledger("Trip".to_owned(), "USD".to_owned())
+            .create_ledger(super::NewLedger {
+                name: "Trip".to_owned(),
+                currency: super::Currency::from_code("USD").unwrap(),
+            })
             .await
             .unwrap();
 
@@ -797,11 +810,17 @@ mod tests {
             .await
             .unwrap();
         let ledger_a = service
-            .create_ledger("Kitchen".to_owned(), "USD".to_owned())
+            .create_ledger(super::NewLedger {
+                name: "Kitchen".to_owned(),
+                currency: super::Currency::from_code("USD").unwrap(),
+            })
             .await
             .unwrap();
         let ledger_b = service
-            .create_ledger("Travel".to_owned(), "USD".to_owned())
+            .create_ledger(super::NewLedger {
+                name: "Travel".to_owned(),
+                currency: super::Currency::from_code("USD").unwrap(),
+            })
             .await
             .unwrap();
         let user = service
@@ -829,7 +848,10 @@ mod tests {
             .await
             .unwrap();
         let ledger_id = service
-            .create_ledger("Kitchen".to_owned(), "USD".to_owned())
+            .create_ledger(super::NewLedger {
+                name: "Kitchen".to_owned(),
+                currency: super::Currency::from_code("USD").unwrap(),
+            })
             .await
             .unwrap();
 
@@ -852,11 +874,17 @@ mod tests {
             .await
             .unwrap();
         let ledger_a = service
-            .create_ledger("Kitchen".to_owned(), "USD".to_owned())
+            .create_ledger(super::NewLedger {
+                name: "Kitchen".to_owned(),
+                currency: super::Currency::from_code("USD").unwrap(),
+            })
             .await
             .unwrap();
         let ledger_b = service
-            .create_ledger("Travel".to_owned(), "USD".to_owned())
+            .create_ledger(super::NewLedger {
+                name: "Travel".to_owned(),
+                currency: super::Currency::from_code("USD").unwrap(),
+            })
             .await
             .unwrap();
         service

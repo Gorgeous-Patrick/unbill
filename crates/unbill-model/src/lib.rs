@@ -21,4 +21,4 @@ pub use invite_token::{InvalidInviteToken, InviteToken};
 pub use node_id::NodeId;
 pub use secret_key::SecretKey;
 pub use timestamp::Timestamp;
-pub use user::{Device, Invitation, Ledger, LedgerMeta, NewDevice, NewUser, User};
+pub use user::{Device, Invitation, Ledger, LedgerMeta, NewDevice, NewLedger, NewUser, User};
