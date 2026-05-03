@@ -15,9 +15,10 @@ use tower_http::trace::TraceLayer;
 use tokio::sync::broadcast;
 use unbill_core::LedgerDoc;
 use unbill_core::event::ServiceEvent;
-use unbill_core::model::NodeId;
-use unbill_core::net::UnbillEndpoint;
+use unbill_core::model::{Invitation, InviteToken, NodeId, Timestamp, Ulid as UnbillUlid};
+use unbill_core::net::{JoinRequest, UnbillEndpoint};
 use unbill_core::storage::LedgerStore;
+use unbill_storage::{load_pending_invitations, save_pending_invitations};
 
 // ---------------------------------------------------------------------------
 // Shared state
@@ -44,6 +45,22 @@ pub struct MetaJson {
 }
 
 // ---------------------------------------------------------------------------
+// Join request / response shapes
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+struct JoinBody {
+    url: String,
+    #[serde(default)]
+    label: String,
+}
+
+#[derive(Debug, Serialize)]
+struct InvitationJson {
+    url: String,
+}
+
+// ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
 
@@ -52,6 +69,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/ledgers", get(list_ledgers))
         .route("/ledgers/{id}/meta", put(save_ledger_meta))
         .route("/ledgers/{id}/sync", post(sync_ledger))
+        .route("/ledgers/{id}/invitations", post(create_invitation))
+        .route("/ledgers/join", post(join_ledger))
         .route("/peers/{node_id}/sync", post(sync_with_peer))
         .route("/ledgers/{id}", delete(delete_ledger))
         .route("/device/key", post(create_device_key))
@@ -261,6 +280,97 @@ async fn save_device_meta(
         return StatusCode::BAD_REQUEST.into_response();
     }
     match state.store.save_device_meta(&key, &body).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// Parse `unbill://join/<ledger_id>/<host_node_id>/<token_hex>`.
+fn parse_join_url(url: &str) -> Result<(String, NodeId, String), String> {
+    let path = url
+        .strip_prefix("unbill://join/")
+        .ok_or_else(|| format!("invalid join URL (expected unbill://join/...): {url:?}"))?;
+    let parts: Vec<&str> = path.splitn(3, '/').collect();
+    if parts.len() != 3 {
+        return Err(format!(
+            "invalid join URL (expected ledger_id/host/token): {url:?}"
+        ));
+    }
+    Ok((
+        parts[0].to_owned(),
+        NodeId::new(parts[1].to_owned()),
+        parts[2].to_owned(),
+    ))
+}
+
+/// `POST /ledgers/{id}/invitations` — Create a join invitation for a ledger.
+///
+/// Returns 201 with `{"url":"unbill://join/..."}`.
+/// Returns 404 if the ledger does not exist.
+/// Returns 503 if this server has no device identity bound yet.
+async fn create_invitation(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> Response {
+    let endpoint = match &state.endpoint {
+        Some(e) => e,
+        None => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    };
+
+    match state.store.load_ledger(&id).await {
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        Ok(Some(_)) => {}
+    }
+
+    let ledger_ulid = match UnbillUlid::from_string(&id) {
+        Ok(u) => u,
+        Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    };
+
+    let host_node_id = endpoint.node_id();
+    let token = InviteToken::generate();
+    let now = Timestamp::now();
+    let invitation = Invitation {
+        token: token.clone(),
+        ledger_id: ledger_ulid,
+        created_by_device: host_node_id.clone(),
+        created_at: now,
+        expires_at: Timestamp::from_millis(now.as_millis() + 24 * 3600 * 1000),
+    };
+
+    let mut map = match load_pending_invitations(&*state.store).await {
+        Ok(m) => m,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    };
+    map.insert(token.to_string(), invitation);
+    if let Err(e) = save_pending_invitations(&*state.store, &map).await {
+        return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+    }
+
+    let url = format!("unbill://join/{}/{}/{}", id, host_node_id, token);
+    (StatusCode::CREATED, Json(InvitationJson { url })).into_response()
+}
+
+/// `POST /ledgers/join` — Join a ledger hosted by another device.
+///
+/// Body: `{"url":"unbill://join/...","label":"optional device nickname"}`.
+/// Returns 204 on success, 400 for a malformed URL, 503 if no endpoint is bound.
+async fn join_ledger(State(state): State<Arc<AppState>>, Json(body): Json<JoinBody>) -> Response {
+    let endpoint = match &state.endpoint {
+        Some(e) => e,
+        None => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    };
+
+    let (ledger_id, host, token) = match parse_join_url(&body.url) {
+        Ok(parts) => parts,
+        Err(msg) => return (StatusCode::BAD_REQUEST, msg).into_response(),
+    };
+
+    let local_label = (!body.label.trim().is_empty()).then_some(body.label.trim().to_owned());
+    let request = JoinRequest { token, ledger_id };
+
+    match endpoint
+        .join_ledger_inner(host, local_label, request, &state.store, &state.events)
+        .await
+    {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
@@ -563,6 +673,41 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    // --- create invitation --------------------------------------------------
+
+    #[tokio::test]
+    async fn test_create_invitation_returns_503_when_no_endpoint() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = make_app(dir.path());
+        let resp = app
+            .oneshot(auth_post(
+                "/api/v1/ledgers/00000000000000000000000001/invitations",
+                "application/json",
+                vec![],
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    // --- join ledger --------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_join_ledger_returns_503_when_no_endpoint() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = make_app(dir.path());
+        let body = serde_json::to_vec(&serde_json::json!({
+            "url": "unbill://join/00000000000000000000000001/nodeid/token",
+            "label": ""
+        }))
+        .unwrap();
+        let resp = app
+            .oneshot(auth_post("/api/v1/ledgers/join", "application/json", body))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
     // --- peer sync ----------------------------------------------------------
