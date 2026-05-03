@@ -25,19 +25,26 @@ pub struct Bill {
     pub created_by_device: NodeId,
 }
 
-#[derive(Clone, Debug, Reconcile, Hydrate)]
+#[derive(Clone, Debug, Reconcile, Hydrate, garde::Validate)]
 pub struct Share {
+    #[garde(skip)]
     pub user_id: UserId,
+    #[garde(range(min = 1))]
     pub shares: u32,
 }
 
 /// Input type for adding a new bill via the service layer.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, garde::Validate)]
 pub struct NewBill {
+    #[garde(range(min = 1))]
     pub amount_cents: i64,
+    #[garde(length(min = 1))]
     pub description: String,
+    #[garde(length(min = 1), dive)]
     pub payers: Vec<Share>,
+    #[garde(length(min = 1), dive)]
     pub payees: Vec<Share>,
     /// IDs of bills superseded by this one. Empty for original (non-amendment) bills.
+    #[garde(skip)]
     pub prev: Vec<BillId>,
 }

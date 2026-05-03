@@ -7,6 +7,8 @@ use tokio::sync::broadcast;
 
 use crate::conflict::{self, ConflictGroup};
 use crate::error::{Result, UnbillError};
+use garde::validate::Validate as _;
+
 use crate::model::{
     BillId, Currency, Device, EffectiveBills, LedgerId, LedgerMeta, NewBill, NewDevice, NewLedger,
     NewUser, NewUserName, NodeId, Timestamp, User, UserId,
@@ -76,6 +78,9 @@ impl UnbillService {
     // -----------------------------------------------------------------------
 
     pub async fn create_ledger(&self, input: NewLedger) -> Result<LedgerId> {
+        input
+            .validate()
+            .map_err(|e| UnbillError::Validation(e.to_string()))?;
         let ledger_id = LedgerId::new();
         let now = Timestamp::now();
 
@@ -116,6 +121,9 @@ impl UnbillService {
     // -----------------------------------------------------------------------
 
     pub async fn add_bill(&self, ledger_id: LedgerId, input: NewBill) -> Result<BillId> {
+        input
+            .validate()
+            .map_err(|e| UnbillError::Validation(e.to_string()))?;
         let mut doc = self.load_doc(ledger_id).await?;
         let bill_id = doc.add_bill(input, self.device_id.clone(), Timestamp::now())?;
         self.store
@@ -137,6 +145,9 @@ impl UnbillService {
     // -----------------------------------------------------------------------
 
     pub async fn add_user(&self, ledger_id: LedgerId, input: NewUser) -> Result<()> {
+        input
+            .validate()
+            .map_err(|e| UnbillError::Validation(e.to_string()))?;
         let mut doc = self.load_doc(ledger_id).await?;
         doc.add_user(input, Timestamp::now())?;
         self.store
@@ -155,6 +166,9 @@ impl UnbillService {
 
     /// Create a brand-new user, add them to the ledger, and return the created `User`.
     pub async fn create_user(&self, ledger_id: LedgerId, input: NewUserName) -> Result<User> {
+        input
+            .validate()
+            .map_err(|e| UnbillError::Validation(e.to_string()))?;
         let user_id = UserId::new();
         let now = Timestamp::now();
         let mut doc = self.load_doc(ledger_id).await?;

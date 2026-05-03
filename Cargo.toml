@@ -53,6 +53,9 @@ ulid = "1"
 iso_currency = "0.5"
 rand = "0.10.1"
 
+# Validation
+garde = { version = "0.22", features = ["derive"] }
+
 # Error handling
 anyhow = "1"
 thiserror = "2"
