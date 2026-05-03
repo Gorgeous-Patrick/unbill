@@ -7,8 +7,8 @@ use automerge::AutoCommit;
 use autosurgeon::{hydrate, reconcile};
 
 use unbill_model::{
-    Bill, Currency, Device, EffectiveBills, Ledger, NewBill, NewDevice, NewUser, NodeId, Timestamp,
-    Ulid, UnbillError, User,
+    Bill, BillId, Currency, Device, EffectiveBills, Ledger, LedgerId, NewBill, NewDevice, NewUser,
+    NodeId, Timestamp, UnbillError, User, UserId,
 };
 
 type Result<T> = std::result::Result<T, UnbillError>;
@@ -22,7 +22,7 @@ const CURRENT_SCHEMA_VERSION: u32 = 1;
 /// Write an empty `Ledger` to a freshly created document.
 pub(super) fn init_ledger(
     doc: &mut AutoCommit,
-    ledger_id: Ulid,
+    ledger_id: LedgerId,
     name: String,
     currency: Currency,
     created_at: Timestamp,
@@ -54,10 +54,10 @@ pub(super) fn add_bill(
     input: NewBill,
     created_by_device: NodeId,
     now: Timestamp,
-) -> Result<Ulid> {
+) -> Result<BillId> {
     let mut ledger = get_ledger(doc)?;
 
-    let user_ids: std::collections::HashSet<Ulid> =
+    let user_ids: std::collections::HashSet<UserId> =
         ledger.users.iter().map(|user| user.user_id).collect();
 
     let all_users = input
@@ -77,7 +77,7 @@ pub(super) fn add_bill(
         }
     }
 
-    let bill_id = Ulid::new();
+    let bill_id = BillId::new();
     ledger.bills.push(Bill {
         id: bill_id,
         amount_cents: input.amount_cents,
@@ -102,7 +102,7 @@ pub(super) fn list_all_bills(doc: &AutoCommit) -> Result<Vec<Bill>> {
 /// bill's `prev`.
 pub(super) fn list_bills(doc: &AutoCommit) -> Result<EffectiveBills> {
     let ledger = get_ledger(doc)?;
-    let superseded: std::collections::HashSet<Ulid> = ledger
+    let superseded: std::collections::HashSet<BillId> = ledger
         .bills
         .iter()
         .flat_map(|b| b.prev.iter().copied())
@@ -180,15 +180,19 @@ mod tests {
         Timestamp::from_millis(ms)
     }
 
-    fn uid(n: u128) -> Ulid {
-        Ulid::from_u128(n)
+    fn uid(n: u128) -> UserId {
+        UserId::from_u128(n)
+    }
+
+    fn lid(n: u128) -> LedgerId {
+        LedgerId::from_u128(n)
     }
 
     fn fresh_doc() -> AutoCommit {
         let mut doc = AutoCommit::new();
         init_ledger(
             &mut doc,
-            uid(1),
+            lid(1),
             "Test Ledger".into(),
             Currency::from_code("USD").unwrap(),
             ts(0),
@@ -197,7 +201,7 @@ mod tests {
         doc
     }
 
-    fn doc_with_users(user_ids: &[Ulid]) -> AutoCommit {
+    fn doc_with_users(user_ids: &[UserId]) -> AutoCommit {
         let mut doc = fresh_doc();
         let mut ledger = get_ledger(&doc).unwrap();
         for &user_id in user_ids {
@@ -211,7 +215,7 @@ mod tests {
         doc
     }
 
-    fn simple_bill(payer: Ulid, payee_users: &[Ulid], amount_cents: i64) -> NewBill {
+    fn simple_bill(payer: UserId, payee_users: &[UserId], amount_cents: i64) -> NewBill {
         NewBill {
             amount_cents,
             description: "Dinner".into(),

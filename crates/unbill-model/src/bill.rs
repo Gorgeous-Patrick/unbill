@@ -1,12 +1,12 @@
 use autosurgeon::{Hydrate, Reconcile};
 
-use crate::id::Ulid;
+use crate::id::{BillId, UserId};
 use crate::node_id::NodeId;
 use crate::timestamp::Timestamp;
 
 #[derive(Clone, Debug, Reconcile, Hydrate)]
 pub struct Bill {
-    pub id: Ulid,
+    pub id: BillId,
     pub amount_cents: i64,
     pub description: String,
     /// Who paid the bill, expressed as relative share weights of the total amount.
@@ -19,7 +19,7 @@ pub struct Bill {
     pub payees: Vec<Share>,
     /// IDs of bills superseded by this one. Empty for original bills.
     /// A bill whose ID appears in any other bill's `prev` is no longer effective.
-    pub prev: Vec<Ulid>,
+    pub prev: Vec<BillId>,
     pub created_at: Timestamp,
     /// The iroh NodeId of the device that created this bill entry.
     pub created_by_device: NodeId,
@@ -27,7 +27,7 @@ pub struct Bill {
 
 #[derive(Clone, Debug, Reconcile, Hydrate)]
 pub struct Share {
-    pub user_id: Ulid,
+    pub user_id: UserId,
     pub shares: u32,
 }
 
@@ -39,5 +39,5 @@ pub struct NewBill {
     pub payers: Vec<Share>,
     pub payees: Vec<Share>,
     /// IDs of bills superseded by this one. Empty for original (non-amendment) bills.
-    pub prev: Vec<Ulid>,
+    pub prev: Vec<BillId>,
 }

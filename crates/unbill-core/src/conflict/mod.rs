@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 
-use crate::model::{Bill, Ulid};
+use crate::model::{Bill, BillId};
 
 /// A set of effective bills that conflict, together with their shared amendment history.
 ///
@@ -21,8 +21,8 @@ pub struct ConflictGroup {
 }
 
 struct UnionFind {
-    parent: HashMap<Ulid, Ulid>,
-    rank: HashMap<Ulid, usize>,
+    parent: HashMap<BillId, BillId>,
+    rank: HashMap<BillId, usize>,
 }
 
 impl UnionFind {
@@ -33,12 +33,12 @@ impl UnionFind {
         }
     }
 
-    fn insert(&mut self, x: Ulid) {
+    fn insert(&mut self, x: BillId) {
         self.parent.entry(x).or_insert(x);
         self.rank.entry(x).or_insert(0);
     }
 
-    fn find(&mut self, x: Ulid) -> Ulid {
+    fn find(&mut self, x: BillId) -> BillId {
         let parent = *self.parent.get(&x).unwrap_or(&x);
         if parent == x {
             return x;
@@ -48,7 +48,7 @@ impl UnionFind {
         root
     }
 
-    fn union(&mut self, x: Ulid, y: Ulid) {
+    fn union(&mut self, x: BillId, y: BillId) {
         let rx = self.find(x);
         let ry = self.find(y);
         if rx == ry {
@@ -91,10 +91,10 @@ pub fn detect(bills: &[Bill]) -> Vec<ConflictGroup> {
         }
     }
 
-    let superseded: HashSet<Ulid> = bills.iter().flat_map(|b| b.prev.iter().copied()).collect();
+    let superseded: HashSet<BillId> = bills.iter().flat_map(|b| b.prev.iter().copied()).collect();
 
     // Group bills by root into (conflicting, ancestors).
-    let mut groups: HashMap<Ulid, (Vec<Bill>, Vec<Bill>)> = HashMap::new();
+    let mut groups: HashMap<BillId, (Vec<Bill>, Vec<Bill>)> = HashMap::new();
     for bill in bills {
         let root = uf.find(bill.id);
         let (conflicting, ancestors) = groups.entry(root).or_default();
@@ -118,19 +118,23 @@ pub fn detect(bills: &[Bill]) -> Vec<ConflictGroup> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{NodeId, Share, Timestamp};
+    use crate::model::{BillId, NodeId, Share, Timestamp, UserId};
 
     fn device() -> NodeId {
         NodeId::from_seed(1)
     }
 
-    fn uid(n: u128) -> Ulid {
-        Ulid::from_u128(n)
+    fn bid(n: u128) -> BillId {
+        BillId::from_u128(n)
+    }
+
+    fn uid(n: u128) -> UserId {
+        UserId::from_u128(n)
     }
 
     fn bill(id: u128, prev: &[u128]) -> Bill {
         Bill {
-            id: uid(id),
+            id: bid(id),
             amount_cents: 100,
             description: String::new(),
             payers: vec![Share {
@@ -141,7 +145,7 @@ mod tests {
                 user_id: uid(99),
                 shares: 1,
             }],
-            prev: prev.iter().map(|&p| uid(p)).collect(),
+            prev: prev.iter().map(|&p| bid(p)).collect(),
             created_at: Timestamp::from_millis(0),
             created_by_device: device(),
         }
@@ -174,7 +178,7 @@ mod tests {
         let group = &groups[0];
         assert_eq!(group.conflicting.len(), 2);
         assert_eq!(group.ancestors.len(), 1);
-        assert_eq!(group.ancestors[0].id, uid(1));
+        assert_eq!(group.ancestors[0].id, bid(1));
     }
 
     #[test]
@@ -202,7 +206,7 @@ mod tests {
         let bills = vec![bill(1, &[]), bill(2, &[1]), bill(3, &[1])];
         let groups = detect(&bills);
         let group = &groups[0];
-        let conflicting_ids: HashSet<Ulid> = group.conflicting.iter().map(|b| b.id).collect();
+        let conflicting_ids: HashSet<BillId> = group.conflicting.iter().map(|b| b.id).collect();
         for ancestor in &group.ancestors {
             assert!(!conflicting_ids.contains(&ancestor.id));
         }
@@ -221,14 +225,14 @@ mod tests {
         let groups = detect(&bills);
         assert_eq!(groups.len(), 1);
         let group = &groups[0];
-        let all_ids: HashSet<Ulid> = group
+        let all_ids: HashSet<BillId> = group
             .conflicting
             .iter()
             .chain(group.ancestors.iter())
             .map(|b| b.id)
             .collect();
-        assert!(!all_ids.contains(&uid(4)));
-        assert!(!all_ids.contains(&uid(5)));
+        assert!(!all_ids.contains(&bid(4)));
+        assert!(!all_ids.contains(&bid(5)));
     }
 
     #[test]

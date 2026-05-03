@@ -5,7 +5,7 @@ use ratatui::{
     style::{Color, Modifier, Style},
     widgets::Paragraph,
 };
-use unbill_core::model::{NewBill, Share, User};
+use unbill_core::model::{LedgerId, NewBill, Share, User};
 
 use super::{
     PopupAction, PopupOutcome, PopupView, TextInput, render_popup_base, render_text_field,
@@ -20,7 +20,7 @@ enum AddBillSection {
 }
 
 pub struct AddBillPopup {
-    ledger_id: String,
+    ledger_id: LedgerId,
     users: Vec<User>,
     description: TextInput,
     amount: TextInput,
@@ -32,7 +32,7 @@ pub struct AddBillPopup {
 }
 
 impl AddBillPopup {
-    pub fn new(ledger_id: String, users: Vec<User>) -> Self {
+    pub fn new(ledger_id: LedgerId, users: Vec<User>) -> Self {
         let payee_selected = vec![false; users.len()];
         Self {
             ledger_id,

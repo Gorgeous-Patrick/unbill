@@ -4,7 +4,7 @@ use ratatui::{
     style::{Color, Modifier, Style},
     widgets::{Block, Paragraph},
 };
-use unbill_core::model::{Share, Ulid, User};
+use unbill_core::model::{BillId, LedgerId, Share, User, UserId};
 use unbill_core::settlement::compute_bill_split;
 
 use crate::app::AppState;
@@ -29,9 +29,9 @@ pub enum EditorSection {
 }
 
 pub struct BillEditor {
-    pub ledger_id: String,
-    pub prev_id: Option<Ulid>,
-    pub bill_id: Ulid,
+    pub ledger_id: LedgerId,
+    pub prev_id: Option<BillId>,
+    pub bill_id: BillId,
     pub description: String,
     pub amount_str: String,
     pub payers: Vec<ParticipantRow>,
@@ -363,10 +363,10 @@ fn build_preview(editor: &BillEditor) -> String {
     parts.join("  ")
 }
 
-fn resolve_user_name(user_id: &Ulid, users: &[User]) -> String {
+fn resolve_user_name(user_id: &UserId, users: &[User]) -> String {
     users
         .iter()
-        .find(|u| &u.user_id == user_id)
+        .find(|u| u.user_id == *user_id)
         .map(|u| u.display_name.clone())
         .unwrap_or_else(|| {
             let s = user_id.to_string();

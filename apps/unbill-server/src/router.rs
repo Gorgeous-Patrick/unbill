@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 
 use unbill_core::LedgerDoc;
-use unbill_core::model::{Currency, LedgerMeta, NodeId, Timestamp, Ulid as UnbillUlid};
+use unbill_core::model::{Currency, LedgerId, LedgerMeta, NodeId, Timestamp};
 use unbill_core::service::UnbillService;
 
 // ---------------------------------------------------------------------------
@@ -131,7 +131,7 @@ async fn save_ledger_meta(
     Path(id): Path<String>,
     Json(body): Json<MetaJson>,
 ) -> Response {
-    let ledger_id = match UnbillUlid::from_string(&body.ledger_id) {
+    let ledger_id = match LedgerId::from_string(&body.ledger_id) {
         Ok(id) => id,
         Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     };
@@ -249,7 +249,11 @@ async fn save_device_meta(
 
 /// `POST /ledgers/{id}/invitations` — Create a join invitation for a ledger.
 async fn create_invitation(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> Response {
-    match state.service.create_invitation(&id).await {
+    let ledger_id = match LedgerId::from_string(&id) {
+        Ok(id) => id,
+        Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    };
+    match state.service.create_invitation(ledger_id).await {
         Ok(url) => (StatusCode::CREATED, Json(InvitationJson { url })).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
@@ -447,12 +451,12 @@ mod tests {
     #[tokio::test]
     async fn test_sync_converges_with_server() {
         use unbill_core::LedgerDoc;
-        use unbill_core::model::{Currency, Timestamp, Ulid};
+        use unbill_core::model::{Currency, LedgerId, Timestamp};
 
         let dir = tempfile::tempdir().unwrap();
         let app = make_app(dir.path()).await;
 
-        let ledger_id = Ulid::from_u128(1);
+        let ledger_id = LedgerId::from_u128(1);
         let id_str = ledger_id.to_string();
         let mut server_doc = LedgerDoc::new(
             ledger_id,

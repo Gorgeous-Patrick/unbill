@@ -79,6 +79,91 @@ impl autosurgeon::Hydrate for Ulid {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Typed ID newtypes
+// ---------------------------------------------------------------------------
+
+/// Generates a typed ULID-based identifier newtype with all required trait
+/// implementations (Clone, Copy, Debug, Ord, Hash, Display, serde, autosurgeon).
+macro_rules! define_id {
+    ($name:ident) => {
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub struct $name(Ulid);
+
+        impl $name {
+            pub fn new() -> Self {
+                Self(Ulid::new())
+            }
+
+            pub fn from_string(s: &str) -> Result<Self, ulid::DecodeError> {
+                Ulid::from_string(s).map(Self)
+            }
+
+            pub fn from_u128(n: u128) -> Self {
+                Self(Ulid::from_u128(n))
+            }
+
+            pub fn as_ulid(self) -> Ulid {
+                self.0
+            }
+        }
+
+        impl Default for $name {
+            fn default() -> Self {
+                Self::new()
+            }
+        }
+
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                fmt::Display::fmt(&self.0, f)
+            }
+        }
+
+        impl serde::Serialize for $name {
+            fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                s.serialize_str(&self.to_string())
+            }
+        }
+
+        impl<'de> serde::Deserialize<'de> for $name {
+            fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                let s = String::deserialize(d)?;
+                Self::from_string(&s).map_err(serde::de::Error::custom)
+            }
+        }
+
+        impl autosurgeon::Reconcile for $name {
+            type Key<'a> = autosurgeon::reconcile::NoKey;
+
+            fn reconcile<R: autosurgeon::Reconciler>(&self, reconciler: R) -> Result<(), R::Error> {
+                self.to_string().reconcile(reconciler)
+            }
+        }
+
+        impl autosurgeon::Hydrate for $name {
+            fn hydrate<'a, D: autosurgeon::ReadDoc>(
+                doc: &'a D,
+                obj: &automerge::ObjId,
+                prop: autosurgeon::Prop<'a>,
+            ) -> Result<Self, autosurgeon::HydrateError> {
+                let s = String::hydrate(doc, obj, prop)?;
+                Self::from_string(&s).map_err(|e| {
+                    autosurgeon::HydrateError::unexpected("ULID string", e.to_string())
+                })
+            }
+        }
+    };
+}
+
+define_id!(LedgerId);
+define_id!(BillId);
+define_id!(UserId);
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -109,5 +194,26 @@ mod tests {
         let a = Ulid::from_u128(1);
         let b = Ulid::from_u128(2);
         assert!(a < b);
+    }
+
+    #[test]
+    fn test_typed_ids_are_distinct_types() {
+        let _: LedgerId = LedgerId::new();
+        let _: BillId = BillId::new();
+        let _: UserId = UserId::new();
+    }
+
+    #[test]
+    fn test_typed_id_round_trip_string() {
+        let id = LedgerId::new();
+        let s = id.to_string();
+        let parsed = LedgerId::from_string(&s).unwrap();
+        assert_eq!(id, parsed);
+    }
+
+    #[test]
+    fn test_typed_id_from_u128_deterministic() {
+        assert_eq!(UserId::from_u128(1), UserId::from_u128(1));
+        assert_ne!(UserId::from_u128(1), UserId::from_u128(2));
     }
 }

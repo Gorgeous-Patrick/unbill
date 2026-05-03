@@ -4,7 +4,7 @@ use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyModifiers};
 use futures::StreamExt as _;
 use ratatui::{Terminal, backend::CrosstermBackend};
 use tokio::time::{Duration, interval};
-use unbill_core::model::{Bill, LedgerMeta, NewBill, NodeId, Share, Ulid, User};
+use unbill_core::model::{Bill, BillId, LedgerId, LedgerMeta, NewBill, NodeId, Share, User};
 use unbill_core::service::{ServiceEvent, SettlementTransaction, UnbillService};
 
 use crate::pane::Pane;
@@ -62,10 +62,8 @@ impl AppState {
         }
     }
 
-    pub fn current_ledger_id(&self) -> Option<String> {
-        self.ledgers
-            .get(self.ledger_cursor)
-            .map(|l| l.ledger_id.to_string())
+    pub fn current_ledger_id(&self) -> Option<LedgerId> {
+        self.ledgers.get(self.ledger_cursor).map(|l| l.ledger_id)
     }
 }
 
@@ -261,7 +259,7 @@ async fn handle_bills_key(key: KeyEvent, state: &mut AppState, svc: &Arc<UnbillS
         }
         KeyCode::Char('a') => {
             if let Some(ledger_id) = state.current_ledger_id() {
-                match svc.list_users(&ledger_id).await {
+                match svc.list_users(ledger_id).await {
                     Ok(users) => {
                         let editor = build_new_editor(ledger_id, users);
                         state.bill_editor = Some(editor);
@@ -275,7 +273,7 @@ async fn handle_bills_key(key: KeyEvent, state: &mut AppState, svc: &Arc<UnbillS
             if let Some(ledger_id) = state.current_ledger_id()
                 && let Some(bill) = state.bills.get(state.bill_cursor).cloned()
             {
-                match svc.list_users(&ledger_id).await {
+                match svc.list_users(ledger_id).await {
                     Ok(users) => {
                         let editor = build_amend_editor(ledger_id, &bill, users);
                         state.bill_editor = Some(editor);
@@ -518,7 +516,7 @@ async fn try_confirm_editor(state: &mut AppState, svc: &Arc<UnbillService>) {
             let prev = editor.prev_id.map(|id| vec![id]).unwrap_or_default();
 
             Ok((
-                editor.ledger_id.clone(),
+                editor.ledger_id,
                 NewBill {
                     amount_cents,
                     description,
@@ -536,7 +534,7 @@ async fn try_confirm_editor(state: &mut AppState, svc: &Arc<UnbillService>) {
                 e.error = Some(msg);
             }
         }
-        Ok((ledger_id, bill)) => match svc.add_bill(&ledger_id, bill).await {
+        Ok((ledger_id, bill)) => match svc.add_bill(ledger_id, bill).await {
             Ok(_) => {
                 state.bill_editor = None;
                 state.focused_pane = Pane::Bills;
@@ -571,7 +569,7 @@ async fn execute_action(action: PopupAction, state: &mut AppState, svc: &Arc<Unb
             }
         }
 
-        PopupAction::DeleteLedger { ledger_id } => match svc.delete_ledger(&ledger_id).await {
+        PopupAction::DeleteLedger { ledger_id } => match svc.delete_ledger(ledger_id).await {
             Ok(_) => {
                 refresh_ledgers(svc, state).await;
                 state.ledger_cursor = state
@@ -584,7 +582,7 @@ async fn execute_action(action: PopupAction, state: &mut AppState, svc: &Arc<Unb
             Err(e) => state.status_message = Some(format!("delete ledger: {e}")),
         },
 
-        PopupAction::AddBill { ledger_id, bill } => match svc.add_bill(&ledger_id, bill).await {
+        PopupAction::AddBill { ledger_id, bill } => match svc.add_bill(ledger_id, bill).await {
             Ok(_) => {
                 refresh_bills(svc, state).await;
                 refresh_users(svc, state).await;
@@ -593,7 +591,7 @@ async fn execute_action(action: PopupAction, state: &mut AppState, svc: &Arc<Unb
             Err(e) => state.status_message = Some(format!("add bill: {e}")),
         },
 
-        PopupAction::AddUser { ledger_id, user } => match svc.add_user(&ledger_id, user).await {
+        PopupAction::AddUser { ledger_id, user } => match svc.add_user(ledger_id, user).await {
             Ok(_) => {
                 refresh_users(svc, state).await;
             }
@@ -603,21 +601,19 @@ async fn execute_action(action: PopupAction, state: &mut AppState, svc: &Arc<Unb
         PopupAction::CreateUser {
             ledger_id,
             display_name,
-        } => match svc.create_user(&ledger_id, display_name).await {
+        } => match svc.create_user(ledger_id, display_name).await {
             Ok(_) => {
                 refresh_users(svc, state).await;
             }
             Err(e) => state.status_message = Some(format!("create user: {e}")),
         },
 
-        PopupAction::GenerateInvite { ledger_id } => {
-            match svc.create_invitation(&ledger_id).await {
-                Ok(url) => {
-                    state.popup = Some(Box::new(InviteResultPopup::new(url)));
-                }
-                Err(e) => state.status_message = Some(format!("invite: {e}")),
+        PopupAction::GenerateInvite { ledger_id } => match svc.create_invitation(ledger_id).await {
+            Ok(url) => {
+                state.popup = Some(Box::new(InviteResultPopup::new(url)));
             }
-        }
+            Err(e) => state.status_message = Some(format!("invite: {e}")),
+        },
 
         PopupAction::JoinLedger { url } => match svc.join_ledger(&url, String::new()).await {
             Ok(_) => {
@@ -663,10 +659,7 @@ async fn open_settings_popup(tab: TopTab, state: &mut AppState, svc: &Arc<Unbill
     let ledgers = state.ledgers.clone();
     let mut ledger_users_map = Vec::with_capacity(ledgers.len());
     for ledger in &ledgers {
-        let users = svc
-            .list_users(&ledger.ledger_id.to_string())
-            .await
-            .unwrap_or_default();
+        let users = svc.list_users(ledger.ledger_id).await.unwrap_or_default();
         ledger_users_map.push(users);
     }
     state.popup = Some(Box::new(SettingsPopup::new(
@@ -697,7 +690,7 @@ pub async fn refresh_ledgers(svc: &Arc<UnbillService>, state: &mut AppState) {
 
 pub async fn refresh_bills(svc: &Arc<UnbillService>, state: &mut AppState) {
     if let Some(ledger_id) = state.current_ledger_id() {
-        match svc.list_bills(&ledger_id).await {
+        match svc.list_bills(ledger_id).await {
             Ok(effective) => {
                 state.bills = effective.into_vec();
                 if state.bill_cursor >= state.bills.len() && !state.bills.is_empty() {
@@ -719,7 +712,7 @@ pub async fn refresh_bills(svc: &Arc<UnbillService>, state: &mut AppState) {
 
 pub async fn refresh_users(svc: &Arc<UnbillService>, state: &mut AppState) {
     if let Some(ledger_id) = state.current_ledger_id() {
-        match svc.list_users(&ledger_id).await {
+        match svc.list_users(ledger_id).await {
             Ok(users) => state.users = users,
             Err(_) => state.users = vec![],
         }
@@ -730,7 +723,7 @@ pub async fn refresh_users(svc: &Arc<UnbillService>, state: &mut AppState) {
 
 pub async fn refresh_settlement(svc: &Arc<UnbillService>, state: &mut AppState) {
     if let Some(ledger_id) = state.current_ledger_id() {
-        match svc.settle_ledger(&ledger_id).await {
+        match svc.settle_ledger(ledger_id).await {
             Ok(s) => state.settlement = s.transactions,
             Err(_) => state.settlement = vec![],
         }
@@ -743,7 +736,7 @@ pub async fn refresh_settlement(svc: &Arc<UnbillService>, state: &mut AppState) 
 // Editor builder helpers
 // ---------------------------------------------------------------------------
 
-fn build_new_editor(ledger_id: String, users: Vec<User>) -> BillEditor {
+fn build_new_editor(ledger_id: LedgerId, users: Vec<User>) -> BillEditor {
     let payers = users
         .iter()
         .map(|u| ParticipantRow {
@@ -763,7 +756,7 @@ fn build_new_editor(ledger_id: String, users: Vec<User>) -> BillEditor {
     BillEditor {
         ledger_id,
         prev_id: None,
-        bill_id: Ulid::new(),
+        bill_id: BillId::new(),
         description: String::new(),
         amount_str: String::new(),
         payers,
@@ -775,7 +768,7 @@ fn build_new_editor(ledger_id: String, users: Vec<User>) -> BillEditor {
     }
 }
 
-fn build_amend_editor(ledger_id: String, bill: &Bill, users: Vec<User>) -> BillEditor {
+fn build_amend_editor(ledger_id: LedgerId, bill: &Bill, users: Vec<User>) -> BillEditor {
     let payer_ids: std::collections::HashSet<_> = bill.payers.iter().map(|s| s.user_id).collect();
     let payer_weights: std::collections::HashMap<_, _> =
         bill.payers.iter().map(|s| (s.user_id, s.shares)).collect();
@@ -809,7 +802,7 @@ fn build_amend_editor(ledger_id: String, bill: &Bill, users: Vec<User>) -> BillE
     BillEditor {
         ledger_id,
         prev_id: Some(bill.id),
-        bill_id: Ulid::new(),
+        bill_id: BillId::new(),
         description: bill.description.clone(),
         amount_str,
         payers,

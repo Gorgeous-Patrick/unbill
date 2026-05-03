@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use unbill_core::model::{NewBill, NewUser, Ulid};
+use unbill_core::model::{BillId, LedgerId, NewBill, NewUser, UserId};
 use unbill_core::service::UnbillService;
 use wasm_bindgen_futures::JsFuture;
 
@@ -198,35 +198,36 @@ pub async fn create_ledger(input: CreateLedgerInput) -> Result<LedgerSummary, St
         .create_ledger(input.name, input.currency)
         .await
         .map_err(|e| e.to_string())?;
-    load_ledger_detail(&ledger_id)
+    load_ledger_detail(&ledger_id.to_string())
         .await
         .map(|detail| detail.summary)
 }
 
 pub async fn load_ledger_detail(ledger_id: &str) -> Result<LedgerDetail, String> {
     let svc = get_service()?;
+    let lid = parse_ledger_id(ledger_id)?;
     let meta = svc
         .list_ledgers()
         .await
         .map_err(|e| e.to_string())?
         .into_iter()
-        .find(|item| item.ledger_id.to_string() == ledger_id)
+        .find(|item| item.ledger_id == lid)
         .ok_or_else(|| format!("ledger {ledger_id} not found"))?;
 
     let summary = summarize_ledger(&svc, meta).await?;
     let local_node_id = svc.device_id().to_string();
     let device_labels = svc.list_device_labels().await.map_err(|e| e.to_string())?;
-    let devices = load_devices_for_ledger(&svc, ledger_id, &local_node_id, &device_labels).await?;
-    let users = svc.list_users(ledger_id).await.map_err(|e| e.to_string())?;
-    let bills = svc.list_bills(ledger_id).await.map_err(|e| e.to_string())?;
+    let devices = load_devices_for_ledger(&svc, lid, &local_node_id, &device_labels).await?;
+    let users = svc.list_users(lid).await.map_err(|e| e.to_string())?;
+    let bills = svc.list_bills(lid).await.map_err(|e| e.to_string())?;
 
-    let user_name_lookup: HashMap<Ulid, String> = users
+    let user_name_lookup: HashMap<UserId, String> = users
         .iter()
         .map(|u| (u.user_id, u.display_name.clone()))
         .collect();
 
     let settlement = svc
-        .settle_ledger(ledger_id)
+        .settle_ledger(lid)
         .await
         .map_err(|e| e.to_string())?
         .transactions
@@ -258,7 +259,8 @@ pub async fn load_ledger_detail(ledger_id: &str) -> Result<LedgerDetail, String>
 
 pub async fn create_user(input: CreateUserInput) -> Result<User, String> {
     let svc = get_service()?;
-    svc.create_user(&input.ledger_id, input.display_name)
+    let lid = parse_ledger_id(&input.ledger_id)?;
+    svc.create_user(lid, input.display_name)
         .await
         .map(user_to_dto)
         .map_err(|e| e.to_string())
@@ -266,7 +268,8 @@ pub async fn create_user(input: CreateUserInput) -> Result<User, String> {
 
 pub async fn add_user(input: AddUserInput) -> Result<User, String> {
     let svc = get_service()?;
-    let user_id = parse_ulid(&input.user_id)?;
+    let lid = parse_ledger_id(&input.ledger_id)?;
+    let user_id = parse_user_id(&input.user_id)?;
     let existing = svc
         .list_all_users()
         .await
@@ -275,7 +278,7 @@ pub async fn add_user(input: AddUserInput) -> Result<User, String> {
         .find(|u| u.user_id == user_id)
         .ok_or_else(|| format!("user not found: {}", input.user_id))?;
     svc.add_user(
-        &input.ledger_id,
+        lid,
         NewUser {
             user_id,
             display_name: existing.display_name,
@@ -284,7 +287,7 @@ pub async fn add_user(input: AddUserInput) -> Result<User, String> {
     .await
     .map_err(|e| e.to_string())?;
     let added = svc
-        .list_users(&input.ledger_id)
+        .list_users(lid)
         .await
         .map_err(|e| e.to_string())?
         .into_iter()
@@ -295,7 +298,7 @@ pub async fn add_user(input: AddUserInput) -> Result<User, String> {
 
 pub async fn create_invitation(ledger_id: &str) -> Result<String, String> {
     let svc = get_service()?;
-    svc.create_invitation(ledger_id)
+    svc.create_invitation(parse_ledger_id(ledger_id)?)
         .await
         .map_err(|e| e.to_string())
 }
@@ -317,11 +320,12 @@ pub async fn sync_device(node_id: String) -> Result<(), String> {
 
 pub async fn save_bill(input: SaveBillInput) -> Result<String, String> {
     let svc = get_service()?;
+    let lid = parse_ledger_id(&input.ledger_id)?;
     let payers = input
         .payers
         .into_iter()
         .map(|item| {
-            parse_ulid(&item.user_id).map(|user_id| unbill_core::model::Share {
+            parse_user_id(&item.user_id).map(|user_id| unbill_core::model::Share {
                 user_id,
                 shares: item.shares,
             })
@@ -331,7 +335,7 @@ pub async fn save_bill(input: SaveBillInput) -> Result<String, String> {
         .payees
         .into_iter()
         .map(|item| {
-            parse_ulid(&item.user_id).map(|user_id| unbill_core::model::Share {
+            parse_user_id(&item.user_id).map(|user_id| unbill_core::model::Share {
                 user_id,
                 shares: item.shares,
             })
@@ -340,10 +344,10 @@ pub async fn save_bill(input: SaveBillInput) -> Result<String, String> {
     let prev = input
         .prev_bill_id
         .into_iter()
-        .map(|id| parse_ulid(&id))
+        .map(|id| parse_bill_id(&id))
         .collect::<Result<Vec<_>, _>>()?;
     svc.add_bill(
-        &input.ledger_id,
+        lid,
         NewBill {
             amount_cents: input.amount_cents,
             description: input.description,
@@ -353,6 +357,7 @@ pub async fn save_bill(input: SaveBillInput) -> Result<String, String> {
         },
     )
     .await
+    .map(|id| id.to_string())
     .map_err(|e| e.to_string())
 }
 
@@ -381,10 +386,9 @@ async fn load_all_sync_devices(
     let device_labels = svc.list_device_labels().await.map_err(|e| e.to_string())?;
     let mut by_node_id: BTreeMap<String, SyncDevice> = BTreeMap::new();
     for meta in metas {
-        let ledger_id = meta.ledger_id.to_string();
         let ledger_name = meta.name.clone();
         let devices = svc
-            .list_devices(&ledger_id)
+            .list_devices(meta.ledger_id)
             .await
             .map_err(|e| e.to_string())?;
         for device in devices {
@@ -420,18 +424,12 @@ async fn summarize_ledger(
     svc: &Arc<UnbillService>,
     meta: unbill_core::model::LedgerMeta,
 ) -> Result<LedgerSummary, String> {
-    let ledger_id = meta.ledger_id.to_string();
-    let users = svc
-        .list_users(&ledger_id)
-        .await
-        .map_err(|e| e.to_string())?;
-    let bills = svc
-        .list_bills(&ledger_id)
-        .await
-        .map_err(|e| e.to_string())?;
+    let lid = meta.ledger_id;
+    let users = svc.list_users(lid).await.map_err(|e| e.to_string())?;
+    let bills = svc.list_bills(lid).await.map_err(|e| e.to_string())?;
     let latest_bill_at_ms = bills.iter().map(|bill| bill.created_at.as_millis()).max();
     Ok(LedgerSummary {
-        ledger_id,
+        ledger_id: lid.to_string(),
         name: meta.name,
         currency: meta.currency.code().to_owned(),
         created_at_ms: meta.created_at.as_millis(),
@@ -443,7 +441,7 @@ async fn summarize_ledger(
 
 async fn load_devices_for_ledger(
     svc: &Arc<UnbillService>,
-    ledger_id: &str,
+    ledger_id: LedgerId,
     local_node_id: &str,
     device_labels: &HashMap<String, String>,
 ) -> Result<Vec<SyncDevice>, String> {
@@ -469,7 +467,7 @@ async fn load_devices_for_ledger(
 
 fn map_bills(
     bills: unbill_core::model::EffectiveBills,
-    user_lookup: &HashMap<Ulid, String>,
+    user_lookup: &HashMap<UserId, String>,
 ) -> Vec<Bill> {
     let mut items = bills
         .into_vec()
@@ -506,8 +504,16 @@ fn user_to_dto(user: unbill_core::model::User) -> User {
     }
 }
 
-fn parse_ulid(value: &str) -> Result<Ulid, String> {
-    Ulid::from_string(value).map_err(|e| format!("invalid ULID {value:?}: {e}"))
+fn parse_ledger_id(value: &str) -> Result<LedgerId, String> {
+    LedgerId::from_string(value).map_err(|e| format!("invalid ledger ID {value:?}: {e}"))
+}
+
+fn parse_user_id(value: &str) -> Result<UserId, String> {
+    UserId::from_string(value).map_err(|e| format!("invalid user ID {value:?}: {e}"))
+}
+
+fn parse_bill_id(value: &str) -> Result<BillId, String> {
+    BillId::from_string(value).map_err(|e| format!("invalid bill ID {value:?}: {e}"))
 }
 
 pub fn format_money(amount_cents: i64, currency: &str) -> String {

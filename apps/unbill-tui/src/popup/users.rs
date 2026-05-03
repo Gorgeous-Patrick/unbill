@@ -5,7 +5,7 @@ use ratatui::{
     style::{Color, Modifier, Style},
     widgets::Paragraph,
 };
-use unbill_core::model::{NewUser, User};
+use unbill_core::model::{LedgerId, NewUser, User};
 use unbill_core::service::LocalUser;
 
 use super::{PopupAction, PopupOutcome, PopupView, render_popup_base};
@@ -17,7 +17,7 @@ enum UsersTab {
 }
 
 pub struct UsersPopup {
-    ledger_id: String,
+    ledger_id: LedgerId,
     ledger_users: Vec<User>,
     /// Local device users not yet in the ledger.
     local_users: Vec<LocalUser>,
@@ -27,7 +27,7 @@ pub struct UsersPopup {
 
 impl UsersPopup {
     pub fn new(
-        ledger_id: String,
+        ledger_id: LedgerId,
         ledger_users: Vec<User>,
         all_local_users: Vec<LocalUser>,
     ) -> Self {

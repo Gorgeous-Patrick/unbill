@@ -5,7 +5,7 @@ use ratatui::{
     style::{Color, Modifier, Style},
     widgets::{Block, Paragraph},
 };
-use unbill_core::model::{LedgerMeta, NewUser, User};
+use unbill_core::model::{LedgerId, LedgerMeta, NewUser, User};
 
 use super::{
     PopupAction, PopupOutcome, PopupView, TextInput, render_popup_base, render_text_field,
@@ -115,10 +115,8 @@ impl SettingsPopup {
             .collect()
     }
 
-    fn current_ledger_id(&self) -> Option<String> {
-        self.ledgers
-            .get(self.ledger_cursor)
-            .map(|l| l.ledger_id.to_string())
+    fn current_ledger_id(&self) -> Option<LedgerId> {
+        self.ledgers.get(self.ledger_cursor).map(|l| l.ledger_id)
     }
 }
 

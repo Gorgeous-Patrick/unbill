@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use rand::TryRng as _;
-use unbill_model::{Currency, LedgerMeta, NodeId, SecretKey, StorageError, Timestamp, Ulid};
+use unbill_model::{Currency, LedgerId, LedgerMeta, NodeId, SecretKey, StorageError, Timestamp};
 use unbill_storage::{LedgerDoc, LedgerStore, StorageResult as Result};
 
 pub struct FsStore {
@@ -51,7 +51,7 @@ impl MetaJson {
     }
 
     fn into_ledger_meta(self) -> std::result::Result<LedgerMeta, String> {
-        let ledger_id = Ulid::from_string(&self.ledger_id).map_err(|e| e.to_string())?;
+        let ledger_id = LedgerId::from_string(&self.ledger_id).map_err(|e| e.to_string())?;
         let currency = Currency::from_code(&self.currency)
             .ok_or_else(|| format!("unknown currency code {:?}", self.currency))?;
         Ok(LedgerMeta {
@@ -205,7 +205,7 @@ mod tests {
 
     fn make_meta(name: &str) -> LedgerMeta {
         LedgerMeta {
-            ledger_id: Ulid::from_u128(1),
+            ledger_id: LedgerId::from_u128(1),
             name: name.to_owned(),
             currency: Currency::from_code("USD").unwrap(),
             created_at: Timestamp::from_millis(1_000),
@@ -215,7 +215,7 @@ mod tests {
 
     fn make_doc(name: &str) -> LedgerDoc {
         LedgerDoc::new(
-            Ulid::from_u128(1),
+            LedgerId::from_u128(1),
             name.to_owned(),
             Currency::from_code("USD").unwrap(),
             Timestamp::from_millis(1_000),
@@ -239,7 +239,7 @@ mod tests {
     async fn test_save_and_load_ledger_round_trip() {
         let dir = tempfile::tempdir().unwrap();
         let store = FsStore::new(dir.path().to_path_buf());
-        let id = Ulid::from_u128(1).to_string();
+        let id = LedgerId::from_u128(1).to_string();
         assert!(store.load_ledger(&id).await.unwrap().is_none());
         let mut doc = make_doc("Test");
         store.save_ledger(&id, &mut doc).await.unwrap();

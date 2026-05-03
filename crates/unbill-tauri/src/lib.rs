@@ -4,7 +4,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
-use unbill_core::model::{NewBill, NewUser, NodeId, Share, Ulid};
+use unbill_core::model::{BillId, LedgerId, NewBill, NewUser, NodeId, Share, UserId};
 use unbill_core::service::UnbillService;
 use unbill_store_fs::FsStore;
 
@@ -174,7 +174,7 @@ async fn create_ledger(
         .await
         .map_err(stringify_error)?;
 
-    load_ledger_detail_inner(&state.service, &ledger_id)
+    load_ledger_detail_inner(&state.service, ledger_id)
         .await
         .map(|detail| detail.summary)
         .map_err(stringify_error)
@@ -185,7 +185,8 @@ async fn load_ledger_detail(
     ledger_id: String,
     state: State<'_, AppState>,
 ) -> std::result::Result<LedgerDetailDto, String> {
-    load_ledger_detail_inner(&state.service, &ledger_id)
+    let lid = parse_ledger_id(&ledger_id).map_err(stringify_error)?;
+    load_ledger_detail_inner(&state.service, lid)
         .await
         .map_err(stringify_error)
 }
@@ -195,9 +196,10 @@ async fn create_user(
     input: CreateUserInput,
     state: State<'_, AppState>,
 ) -> std::result::Result<UserDto, String> {
+    let lid = parse_ledger_id(&input.ledger_id).map_err(stringify_error)?;
     state
         .service
-        .create_user(&input.ledger_id, input.display_name)
+        .create_user(lid, input.display_name)
         .await
         .map(UserDto::from)
         .map_err(stringify_error)
@@ -218,9 +220,10 @@ async fn create_invitation(
     ledger_id: String,
     state: State<'_, AppState>,
 ) -> std::result::Result<String, String> {
+    let lid = parse_ledger_id(&ledger_id).map_err(stringify_error)?;
     state
         .service
-        .create_invitation(&ledger_id)
+        .create_invitation(lid)
         .await
         .map_err(stringify_error)
 }
@@ -242,12 +245,14 @@ async fn save_bill(
     input: SaveBillInput,
     state: State<'_, AppState>,
 ) -> std::result::Result<String, String> {
+    let lid = parse_ledger_id(&input.ledger_id).map_err(stringify_error)?;
+
     let payers = input
         .payers
         .into_iter()
         .map(|item| {
             Ok(Share {
-                user_id: parse_ulid(&item.user_id)?,
+                user_id: parse_user_id(&item.user_id)?,
                 shares: item.shares,
             })
         })
@@ -259,7 +264,7 @@ async fn save_bill(
         .into_iter()
         .map(|item| {
             Ok(Share {
-                user_id: parse_ulid(&item.user_id)?,
+                user_id: parse_user_id(&item.user_id)?,
                 shares: item.shares,
             })
         })
@@ -269,14 +274,14 @@ async fn save_bill(
     let prev = input
         .prev_bill_id
         .into_iter()
-        .map(|bill_id| parse_ulid(&bill_id))
+        .map(|bill_id| parse_bill_id(&bill_id))
         .collect::<Result<Vec<_>>>()
         .map_err(stringify_error)?;
 
     let bill_id = state
         .service
         .add_bill(
-            &input.ledger_id,
+            lid,
             NewBill {
                 amount_cents: input.amount_cents,
                 description: input.description,
@@ -288,20 +293,20 @@ async fn save_bill(
         .await
         .map_err(stringify_error)?;
 
-    Ok(bill_id)
+    Ok(bill_id.to_string())
 }
 
 #[tauri::command]
 fn preview_bill_split(
     input: PreviewBillSplitInput,
 ) -> std::result::Result<BillSplitPreviewDto, String> {
-    let bill_id = parse_ulid(&input.bill_id).map_err(stringify_error)?;
+    let bill_id = parse_bill_id(&input.bill_id).map_err(stringify_error)?;
     let payers = input
         .payers
         .into_iter()
         .map(|item| {
             Ok(Share {
-                user_id: parse_ulid(&item.user_id)?,
+                user_id: parse_user_id(&item.user_id)?,
                 shares: item.shares,
             })
         })
@@ -312,7 +317,7 @@ fn preview_bill_split(
         .into_iter()
         .map(|item| {
             Ok(Share {
-                user_id: parse_ulid(&item.user_id)?,
+                user_id: parse_user_id(&item.user_id)?,
                 shares: item.shares,
             })
         })
@@ -378,7 +383,8 @@ async fn bootstrap_app_inner(service: &Arc<UnbillService>) -> Result<AppBootstra
 }
 
 async fn add_user_inner(service: &Arc<UnbillService>, input: AddUserInput) -> Result<UserDto> {
-    let user_id = parse_ulid(&input.user_id)?;
+    let user_id = parse_user_id(&input.user_id)?;
+    let lid = parse_ledger_id(&input.ledger_id)?;
     let existing = service
         .list_all_users()
         .await?
@@ -388,7 +394,7 @@ async fn add_user_inner(service: &Arc<UnbillService>, input: AddUserInput) -> Re
 
     service
         .add_user(
-            &input.ledger_id,
+            lid,
             NewUser {
                 user_id,
                 display_name: existing.display_name,
@@ -397,7 +403,7 @@ async fn add_user_inner(service: &Arc<UnbillService>, input: AddUserInput) -> Re
         .await?;
 
     let added_user = service
-        .list_users(&input.ledger_id)
+        .list_users(lid)
         .await?
         .into_iter()
         .find(|user| user.user_id == user_id)
@@ -412,11 +418,11 @@ async fn load_sync_devices(service: &Arc<UnbillService>) -> Result<Vec<SyncDevic
     let mut by_node_id = BTreeMap::<String, SyncDeviceDto>::new();
 
     for meta in service.list_ledgers().await? {
-        let ledger_id = meta.ledger_id.to_string();
+        let ledger_id = meta.ledger_id;
         let ledger_name = meta.name.clone();
         for device in load_sync_devices_for_ledger(
             service,
-            &ledger_id,
+            ledger_id,
             &ledger_name,
             &local_node_id,
             &device_labels,
@@ -448,7 +454,7 @@ async fn load_sync_devices(service: &Arc<UnbillService>) -> Result<Vec<SyncDevic
 
 async fn load_sync_devices_for_ledger(
     service: &Arc<UnbillService>,
-    ledger_id: &str,
+    ledger_id: LedgerId,
     ledger_name: &str,
     local_node_id: &str,
     device_labels: &std::collections::HashMap<String, String>,
@@ -482,13 +488,13 @@ async fn load_sync_devices_for_ledger(
 
 async fn load_ledger_detail_inner(
     service: &Arc<UnbillService>,
-    ledger_id: &str,
+    ledger_id: LedgerId,
 ) -> Result<LedgerDetailDto> {
     let meta = service
         .list_ledgers()
         .await?
         .into_iter()
-        .find(|item| item.ledger_id.to_string() == ledger_id)
+        .find(|item| item.ledger_id == ledger_id)
         .with_context(|| format!("ledger {ledger_id} not found"))?;
 
     let summary = summarize_ledger(service, meta).await?;
@@ -505,7 +511,7 @@ async fn load_ledger_detail_inner(
     let users = service.list_users(ledger_id).await?;
     let bills = service.list_bills(ledger_id).await?;
 
-    let user_name_lookup: std::collections::HashMap<Ulid, String> = users
+    let user_name_lookup: std::collections::HashMap<UserId, String> = users
         .iter()
         .map(|u| (u.user_id, u.display_name.clone()))
         .collect();
@@ -544,13 +550,12 @@ async fn summarize_ledger(
     service: &Arc<UnbillService>,
     meta: unbill_core::model::LedgerMeta,
 ) -> Result<LedgerSummaryDto> {
-    let ledger_id = meta.ledger_id.to_string();
-    let users = service.list_users(&ledger_id).await?;
-    let bills = service.list_bills(&ledger_id).await?;
+    let users = service.list_users(meta.ledger_id).await?;
+    let bills = service.list_bills(meta.ledger_id).await?;
     let latest_bill_at_ms = bills.iter().map(|bill| bill.created_at.as_millis()).max();
 
     Ok(LedgerSummaryDto {
-        ledger_id,
+        ledger_id: meta.ledger_id.to_string(),
         name: meta.name,
         currency: meta.currency.code().to_owned(),
         created_at_ms: meta.created_at.as_millis(),
@@ -562,7 +567,7 @@ async fn summarize_ledger(
 
 fn map_bills_from(
     bills: unbill_core::model::EffectiveBills,
-    user_lookup: &std::collections::HashMap<Ulid, String>,
+    user_lookup: &std::collections::HashMap<UserId, String>,
 ) -> Vec<BillDto> {
     let mut items = bills
         .into_vec()
@@ -592,8 +597,19 @@ fn map_bills_from(
     items
 }
 
-fn parse_ulid(value: &str) -> Result<Ulid> {
-    Ulid::from_string(value).map_err(|error| anyhow::anyhow!("invalid ULID {value:?}: {error}"))
+fn parse_ledger_id(value: &str) -> Result<LedgerId> {
+    LedgerId::from_string(value)
+        .map_err(|error| anyhow::anyhow!("invalid ledger ID {value:?}: {error}"))
+}
+
+fn parse_user_id(value: &str) -> Result<UserId> {
+    UserId::from_string(value)
+        .map_err(|error| anyhow::anyhow!("invalid user ID {value:?}: {error}"))
+}
+
+fn parse_bill_id(value: &str) -> Result<BillId> {
+    BillId::from_string(value)
+        .map_err(|error| anyhow::anyhow!("invalid bill ID {value:?}: {error}"))
 }
 
 fn stringify_error(error: impl std::fmt::Display) -> String {
@@ -735,7 +751,7 @@ mod tests {
             .unwrap();
 
         host.add_device(
-            &groceries,
+            groceries,
             NewDevice {
                 node_id: kitchen.device_id(),
             },
@@ -743,7 +759,7 @@ mod tests {
         .await
         .unwrap();
         host.add_device(
-            &trip,
+            trip,
             NewDevice {
                 node_id: travel.device_id(),
             },
@@ -754,7 +770,7 @@ mod tests {
             .await
             .unwrap();
 
-        let detail = super::load_ledger_detail_inner(&host, &groceries)
+        let detail = super::load_ledger_detail_inner(&host, groceries)
             .await
             .unwrap();
 
@@ -789,14 +805,14 @@ mod tests {
             .await
             .unwrap();
         let user = service
-            .create_user(&ledger_a, "Mio".to_owned())
+            .create_user(ledger_a, "Mio".to_owned())
             .await
             .unwrap();
 
         let added_user = super::add_user_inner(
             &service,
             super::AddUserInput {
-                ledger_id: ledger_b.clone(),
+                ledger_id: ledger_b.to_string(),
                 user_id: user.user_id.to_string(),
             },
         )
@@ -820,7 +836,7 @@ mod tests {
         let error = super::add_user_inner(
             &service,
             super::AddUserInput {
-                ledger_id,
+                ledger_id: ledger_id.to_string(),
                 user_id: Ulid::new().to_string(),
             },
         )
@@ -844,11 +860,11 @@ mod tests {
             .await
             .unwrap();
         service
-            .create_user(&ledger_a, "Alice".to_owned())
+            .create_user(ledger_a, "Alice".to_owned())
             .await
             .unwrap();
         service
-            .create_user(&ledger_b, "Bob".to_owned())
+            .create_user(ledger_b, "Bob".to_owned())
             .await
             .unwrap();
 

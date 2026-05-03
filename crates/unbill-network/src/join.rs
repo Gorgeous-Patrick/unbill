@@ -183,7 +183,7 @@ mod tests {
 
     use unbill_event::ServiceEvent;
     use unbill_model::{
-        Currency, Invitation, InviteToken, LedgerMeta, NewDevice, NodeId, Timestamp, Ulid,
+        Currency, Invitation, InviteToken, LedgerId, LedgerMeta, NewDevice, NodeId, Timestamp,
     };
     use unbill_storage::{LedgerDoc, LedgerStore};
     use unbill_store_memory::InMemoryStore;
@@ -205,7 +205,7 @@ mod tests {
         Currency::from_code("USD").unwrap()
     }
 
-    fn make_invitation(ledger_id: Ulid, host_node: NodeId, token: &InviteToken) -> Invitation {
+    fn make_invitation(ledger_id: LedgerId, host_node: NodeId, token: &InviteToken) -> Invitation {
         let now = Timestamp::now();
         Invitation {
             token: token.clone(),
@@ -222,7 +222,7 @@ mod tests {
         let joiner_node = NodeId::from_seed(2);
 
         let mut doc =
-            LedgerDoc::new(Ulid::new(), "Trip".to_string(), usd(), Timestamp::now()).unwrap();
+            LedgerDoc::new(LedgerId::new(), "Trip".to_string(), usd(), Timestamp::now()).unwrap();
         doc.add_device(
             NewDevice {
                 node_id: host_node.clone(),
@@ -251,7 +251,7 @@ mod tests {
 
         // Save the invitation to the store.
         let token = InviteToken::generate();
-        let invitation = make_invitation(ledger_id, host_node.clone(), &token);
+        let invitation = make_invitation(meta.ledger_id, host_node.clone(), &token);
         save_pending_invitations(
             &*host_store,
             &HashMap::from([(token.to_string(), invitation)]),
@@ -343,7 +343,7 @@ mod tests {
         let joiner_node = NodeId::from_seed(2);
 
         let mut doc =
-            LedgerDoc::new(Ulid::new(), "Trip".to_string(), usd(), Timestamp::now()).unwrap();
+            LedgerDoc::new(LedgerId::new(), "Trip".to_string(), usd(), Timestamp::now()).unwrap();
         let ledger_id_str = doc.get_ledger().unwrap().ledger_id.to_string();
 
         // No invitations saved to store.

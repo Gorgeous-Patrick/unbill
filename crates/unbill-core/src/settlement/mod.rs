@@ -3,13 +3,13 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::model::{Currency, EffectiveBills, Ledger, Ulid, User};
+use crate::model::{BillId, Currency, EffectiveBills, Ledger, User, UserId};
 
 /// A single suggested settlement transaction.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Transaction {
-    pub from_user_id: Ulid,
-    pub to_user_id: Ulid,
+    pub from_user_id: UserId,
+    pub to_user_id: UserId,
     pub amount_cents: i64,
 }
 
@@ -24,9 +24,9 @@ pub struct Settlement {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BillSplit {
     /// How much each payer is credited.
-    pub payer_amounts: Vec<(Ulid, i64)>,
+    pub payer_amounts: Vec<(UserId, i64)>,
     /// How much each payee owes.
-    pub payee_amounts: Vec<(Ulid, i64)>,
+    pub payee_amounts: Vec<(UserId, i64)>,
 }
 
 /// Compute the exact cent amounts for each payer and payee of a bill.
@@ -37,7 +37,7 @@ pub fn compute_bill_split(
     payers: &[crate::model::Share],
     payees: &[crate::model::Share],
     total_cents: i64,
-    bill_id: Ulid,
+    bill_id: BillId,
 ) -> BillSplit {
     BillSplit {
         payer_amounts: split_shares(payers, total_cents, bill_id),
@@ -50,12 +50,12 @@ pub fn compute_bill_split(
 /// Derives effective bills from `ledger.bills`, accumulates per-user balances,
 /// and applies the greedy minimum-cash-flow reduction.
 pub fn compute_settlement(ledger: &Ledger) -> Settlement {
-    let superseded: HashSet<Ulid> = ledger
+    let superseded: HashSet<BillId> = ledger
         .bills
         .iter()
         .flat_map(|b| b.prev.iter().copied())
         .collect();
-    let mut balances: HashMap<Ulid, i64> = HashMap::new();
+    let mut balances: HashMap<UserId, i64> = HashMap::new();
     for bill in ledger.bills.iter().filter(|b| !superseded.contains(&b.id)) {
         for (user_id, amount) in split_shares(&bill.payers, bill.amount_cents, bill.id) {
             *balances.entry(user_id).or_default() += amount;
@@ -75,7 +75,7 @@ pub fn compute_settlement(ledger: &Ledger) -> Settlement {
 pub fn accumulate_balances(
     users: &[User],
     bills: &EffectiveBills,
-    balances: &mut HashMap<Ulid, i64>,
+    balances: &mut HashMap<UserId, i64>,
 ) {
     for user in users.iter() {
         balances.entry(user.user_id).or_insert(0);
@@ -91,13 +91,13 @@ pub fn accumulate_balances(
 }
 
 /// Compute minimum-cash-flow settlement from a pre-built balance map.
-pub fn compute_from_balances(currency: Currency, balances: HashMap<Ulid, i64>) -> Settlement {
-    let mut creditors: Vec<(Ulid, i64)> = balances
+pub fn compute_from_balances(currency: Currency, balances: HashMap<UserId, i64>) -> Settlement {
+    let mut creditors: Vec<(UserId, i64)> = balances
         .iter()
         .filter(|&(_, &b)| b > 0)
         .map(|(id, &b)| (*id, b))
         .collect();
-    let mut debtors: Vec<(Ulid, i64)> = balances
+    let mut debtors: Vec<(UserId, i64)> = balances
         .iter()
         .filter(|&(_, &b)| b < 0)
         .map(|(id, &b)| (*id, -b))
@@ -147,8 +147,8 @@ pub fn compute_from_balances(currency: Currency, balances: HashMap<Ulid, i64>) -
 pub fn split_shares(
     shares: &[crate::model::Share],
     total_cents: i64,
-    bill_id: Ulid,
-) -> Vec<(Ulid, i64)> {
+    bill_id: BillId,
+) -> Vec<(UserId, i64)> {
     if shares.is_empty() {
         return vec![];
     }
@@ -156,7 +156,7 @@ pub fn split_shares(
     if total_weight == 0 {
         return shares.iter().map(|s| (s.user_id, 0)).collect();
     }
-    let mut amounts: Vec<(Ulid, i64)> = shares
+    let mut amounts: Vec<(UserId, i64)> = shares
         .iter()
         .map(|s| {
             let amount = (total_cents * s.shares as i64) / total_weight as i64;
@@ -186,27 +186,35 @@ fn fnv1a(data: &[u8]) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Bill, Ledger, NodeId, Share, Timestamp, Ulid, User};
+    use crate::model::{Bill, BillId, LedgerId, NodeId, Share, Timestamp, User, UserId};
 
     fn device() -> NodeId {
         NodeId::from_seed(1)
     }
 
-    fn uid(n: u128) -> Ulid {
-        Ulid::from_u128(n)
+    fn uid(n: u128) -> UserId {
+        UserId::from_u128(n)
     }
 
-    fn alice() -> Ulid {
+    fn bid(n: u128) -> BillId {
+        BillId::from_u128(n)
+    }
+
+    fn lid(n: u128) -> LedgerId {
+        LedgerId::from_u128(n)
+    }
+
+    fn alice() -> UserId {
         uid(1)
     }
-    fn bob() -> Ulid {
+    fn bob() -> UserId {
         uid(2)
     }
-    fn carol() -> Ulid {
+    fn carol() -> UserId {
         uid(3)
     }
 
-    fn user(id: Ulid) -> User {
+    fn user(id: UserId) -> User {
         User {
             user_id: id,
             display_name: String::new(),
@@ -216,7 +224,7 @@ mod tests {
 
     fn make_ledger(users: Vec<User>, bills: Vec<Bill>) -> Ledger {
         Ledger {
-            ledger_id: uid(999),
+            ledger_id: lid(999),
             schema_version: 1,
             name: String::new(),
             currency: Currency::from_code("USD").unwrap(),
@@ -227,9 +235,9 @@ mod tests {
         }
     }
 
-    fn equal_bill(id: u128, payer: Ulid, amount_cents: i64, payee_users: &[Ulid]) -> Bill {
+    fn equal_bill(id: u128, payer: UserId, amount_cents: i64, payee_users: &[UserId]) -> Bill {
         Bill {
-            id: uid(id),
+            id: bid(id),
             amount_cents,
             description: String::new(),
             payers: vec![Share {
@@ -268,7 +276,7 @@ mod tests {
                 shares: 1,
             },
         ];
-        let amounts = split_shares(&shares, 300, uid(1));
+        let amounts = split_shares(&shares, 300, bid(1));
         let total: i64 = amounts.iter().map(|(_, c)| c).sum();
         assert_eq!(total, 300);
         for (_, cents) in &amounts {
@@ -293,7 +301,7 @@ mod tests {
                 shares: 1,
             },
         ];
-        let amounts = split_shares(&shares, 1000, uid(1));
+        let amounts = split_shares(&shares, 1000, bid(1));
         let total: i64 = amounts.iter().map(|(_, c)| c).sum();
         assert_eq!(total, 1000);
         let high_count = amounts.iter().filter(|(_, c)| *c == 334).count();
@@ -322,8 +330,8 @@ mod tests {
                 shares: 1,
             },
         ];
-        let first = split_shares(&shares, 1000, uid(42));
-        let second = split_shares(&shares, 1000, uid(42));
+        let first = split_shares(&shares, 1000, bid(42));
+        let second = split_shares(&shares, 1000, bid(42));
         assert_eq!(first, second);
     }
 
@@ -344,9 +352,9 @@ mod tests {
                 shares: 1,
             },
         ];
-        let recipients: Vec<Ulid> = (0u128..20)
+        let recipients: Vec<UserId> = (0u128..20)
             .map(|n| {
-                let amounts = split_shares(&shares, 1000, uid(n));
+                let amounts = split_shares(&shares, 1000, bid(n));
                 amounts.into_iter().find(|(_, c)| *c == 334).unwrap().0
             })
             .collect();
@@ -369,7 +377,7 @@ mod tests {
                 shares: 1,
             },
         ];
-        let amounts = split_shares(&shares, 300, uid(1));
+        let amounts = split_shares(&shares, 300, bid(1));
         let a = amounts.iter().find(|(id, _)| *id == alice()).unwrap().1;
         let b = amounts.iter().find(|(id, _)| *id == bob()).unwrap().1;
         assert_eq!(a, 200);
@@ -379,15 +387,15 @@ mod tests {
 
     #[test]
     fn test_split_zero_shares_list() {
-        let amounts = split_shares(&[], 1000, uid(1));
+        let amounts = split_shares(&[], 1000, bid(1));
         assert!(amounts.is_empty());
     }
 
     // --- compute_settlement ---
 
-    fn net_transfer_balances(ledger: &Ledger) -> HashMap<Ulid, i64> {
+    fn net_transfer_balances(ledger: &Ledger) -> HashMap<UserId, i64> {
         let s = compute_settlement(ledger);
-        let mut bal: HashMap<Ulid, i64> = ledger.users.iter().map(|u| (u.user_id, 0)).collect();
+        let mut bal: HashMap<UserId, i64> = ledger.users.iter().map(|u| (u.user_id, 0)).collect();
         for t in &s.transactions {
             *bal.entry(t.from_user_id).or_default() -= t.amount_cents;
             *bal.entry(t.to_user_id).or_default() += t.amount_cents;
@@ -429,7 +437,7 @@ mod tests {
 
     #[test]
     fn test_settlement_at_most_n_minus_one_transactions() {
-        let uids: Vec<Ulid> = (0..5u128).map(uid).collect();
+        let uids: Vec<UserId> = (0..5u128).map(uid).collect();
         let users: Vec<User> = uids.iter().map(|&id| user(id)).collect();
         let bill = equal_bill(1, uids[0], 5000, &uids);
         let ledger = make_ledger(users.clone(), vec![bill]);
@@ -474,7 +482,7 @@ mod tests {
         // Bill 2 supersedes bill 1. Only bill 2 should be counted.
         let bill1 = equal_bill(1, alice(), 9000, &[alice(), bob(), carol()]);
         let mut bill2 = equal_bill(2, alice(), 6000, &[alice(), bob()]);
-        bill2.prev = vec![uid(1)];
+        bill2.prev = vec![bid(1)];
         let ledger = make_ledger(
             vec![user(alice()), user(bob()), user(carol())],
             vec![bill1, bill2],
