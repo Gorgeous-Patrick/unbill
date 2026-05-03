@@ -2,8 +2,11 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use tokio::net::TcpListener;
+use tokio::sync::broadcast;
 use tracing::info;
 
+use unbill_core::net::UnbillEndpoint;
+use unbill_core::storage::LedgerStore;
 use unbill_server::{AppState, build_router};
 use unbill_store_fs::FsStore;
 
@@ -20,8 +23,24 @@ async fn main() -> Result<()> {
     let data_dir = unbill_store_fs::UNBILL_PATH
         .ensure_data_dir()
         .context("failed to resolve data directory")?;
-    let store = FsStore::new(data_dir);
-    let state = Arc::new(AppState { store, api_key });
+    let store = Arc::new(FsStore::new(data_dir));
+
+    let endpoint = if store.is_device_initialized().await? {
+        let key = store.get_secret_key().await?;
+        Some(Arc::new(UnbillEndpoint::bind(&key).await?))
+    } else {
+        info!("no device key found; peer sync disabled until POST /device/key is called");
+        None
+    };
+
+    let (events, _) = broadcast::channel(16);
+    let store: Arc<dyn LedgerStore> = store;
+    let state = Arc::new(AppState {
+        store,
+        api_key,
+        endpoint,
+        events,
+    });
     let router = build_router(state);
 
     let addr = format!("0.0.0.0:{port}");

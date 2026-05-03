@@ -12,17 +12,22 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 
+use tokio::sync::broadcast;
 use unbill_core::LedgerDoc;
+use unbill_core::event::ServiceEvent;
+use unbill_core::model::NodeId;
+use unbill_core::net::UnbillEndpoint;
 use unbill_core::storage::LedgerStore;
-use unbill_store_fs::FsStore;
 
 // ---------------------------------------------------------------------------
 // Shared state
 // ---------------------------------------------------------------------------
 
 pub struct AppState {
-    pub store: FsStore,
+    pub store: Arc<dyn LedgerStore>,
     pub api_key: String,
+    pub endpoint: Option<Arc<UnbillEndpoint>>,
+    pub events: broadcast::Sender<ServiceEvent>,
 }
 
 // ---------------------------------------------------------------------------
@@ -47,6 +52,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/ledgers", get(list_ledgers))
         .route("/ledgers/{id}/meta", put(save_ledger_meta))
         .route("/ledgers/{id}/sync", post(sync_ledger))
+        .route("/peers/{node_id}/sync", post(sync_with_peer))
         .route("/ledgers/{id}", delete(delete_ledger))
         .route("/device/key", post(create_device_key))
         .route("/device/id", get(get_device_id))
@@ -209,7 +215,6 @@ async fn delete_ledger(State(state): State<Arc<AppState>>, Path(id): Path<String
 }
 
 async fn create_device_key(State(state): State<Arc<AppState>>) -> Response {
-    use unbill_core::storage::LedgerStore as _;
     match state.store.create_secret_key().await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
@@ -217,7 +222,6 @@ async fn create_device_key(State(state): State<Arc<AppState>>) -> Response {
 }
 
 async fn get_device_id(State(state): State<Arc<AppState>>) -> Response {
-    use unbill_core::storage::LedgerStore as _;
     match state.store.get_device_id().await {
         Ok(node_id) => (
             StatusCode::OK,
@@ -262,6 +266,28 @@ async fn save_device_meta(
     }
 }
 
+/// `POST /peers/{node_id}/sync` — trigger a P2P Iroh sync with the given peer.
+///
+/// Returns 503 if this server has no device identity / endpoint bound yet.
+/// Returns 204 on success, 500 if the sync fails (unreachable peer, etc.).
+async fn sync_with_peer(
+    State(state): State<Arc<AppState>>,
+    Path(node_id): Path<String>,
+) -> Response {
+    let endpoint = match &state.endpoint {
+        Some(e) => e,
+        None => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    };
+    let peer = NodeId::new(node_id);
+    match endpoint
+        .sync_once_inner(peer, &state.store, &state.events)
+        .await
+    {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -278,9 +304,14 @@ mod tests {
     const API_KEY: &str = "secret";
 
     fn make_app(dir: &std::path::Path) -> Router {
+        use unbill_store_fs::FsStore;
+        let store: Arc<dyn LedgerStore> = Arc::new(FsStore::new(dir.to_path_buf()));
+        let (events, _) = broadcast::channel(16);
         let state = Arc::new(AppState {
-            store: FsStore::new(dir.to_path_buf()),
+            store,
             api_key: API_KEY.to_owned(),
+            endpoint: None,
+            events,
         });
         build_router(state)
     }
@@ -532,6 +563,23 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    // --- peer sync ----------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_peer_sync_returns_503_when_no_endpoint() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = make_app(dir.path());
+        let resp = app
+            .oneshot(auth_post(
+                "/api/v1/peers/any-node-id/sync",
+                "application/octet-stream",
+                vec![],
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
     #[tokio::test]
