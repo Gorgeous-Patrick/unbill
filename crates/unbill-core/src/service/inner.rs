@@ -59,7 +59,6 @@ impl UnbillService {
         base_url: String,
         api_key: String,
     ) -> Result<Arc<Self>> {
-        store.create_secret_key().await?;
         let device_id = store.get_device_id().await?;
         let (events, _) = broadcast::channel(256);
         Ok(Arc::new(Self {
@@ -428,6 +427,10 @@ impl UnbillService {
 
     pub fn device_id(&self) -> NodeId {
         self.device_id.clone()
+    }
+
+    pub fn store(&self) -> &Arc<dyn LedgerStore> {
+        &self.store
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<ServiceEvent> {
