@@ -31,7 +31,7 @@ tokio = { workspace = true }
 tokio = { version = "1", default-features = false, features = ["sync"] }
 
 [features]
-network = ["dep:unbill-network"]
+local = ["dep:unbill-network"]
 
 [dev-dependencies]
 unbill-model = { path = "../unbill-model", features = ["test-helpers"] }

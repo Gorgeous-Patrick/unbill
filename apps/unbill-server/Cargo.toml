@@ -16,7 +16,7 @@ name = "unbill_server"
 path = "src/lib.rs"
 
 [dependencies]
-unbill-core = { path = "../../crates/unbill-core", features = ["network"] }
+unbill-core = { path = "../../crates/unbill-core", features = ["local"] }
 unbill-storage = { path = "../../crates/unbill-storage" }
 unbill-store-fs = { path = "../../crates/unbill-store-fs" }
 tokio.workspace = true
