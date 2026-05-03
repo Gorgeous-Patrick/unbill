@@ -228,7 +228,7 @@ mod tests {
     use tokio::sync::broadcast;
 
     use unbill_event::ServiceEvent;
-    use unbill_model::{Currency, NewBill, NewDevice, NodeId, Share, Timestamp, Ulid};
+    use unbill_model::{Currency, LedgerId, NewBill, NewDevice, NodeId, Share, Timestamp, UserId};
     use unbill_storage::{LedgerDoc, LedgerStore};
     use unbill_store_memory::InMemoryStore;
 
@@ -303,7 +303,7 @@ mod tests {
         let store_b: Arc<dyn LedgerStore> = make_store();
 
         let mut doc_a =
-            LedgerDoc::new(Ulid::new(), "Test".to_string(), usd(), Timestamp::now()).unwrap();
+            LedgerDoc::new(LedgerId::new(), "Test".to_string(), usd(), Timestamp::now()).unwrap();
         doc_a
             .add_device(
                 NewDevice {
@@ -325,7 +325,7 @@ mod tests {
 
         // Build a base ledger that both A and B start with.
         let mut base =
-            LedgerDoc::new(Ulid::new(), "Trip".to_string(), usd(), Timestamp::now()).unwrap();
+            LedgerDoc::new(LedgerId::new(), "Trip".to_string(), usd(), Timestamp::now()).unwrap();
         base.add_device(
             NewDevice {
                 node_id: node_a.clone(),
@@ -340,7 +340,7 @@ mod tests {
             Timestamp::now(),
         )
         .unwrap();
-        let payer = Ulid::from_u128(99);
+        let payer = UserId::from_u128(99);
         base.add_user(
             unbill_model::NewUser {
                 user_id: payer,
@@ -429,14 +429,24 @@ mod tests {
         let store_a: Arc<dyn LedgerStore> = make_store();
         let store_b: Arc<dyn LedgerStore> = make_store();
 
-        let mut doc_a =
-            LedgerDoc::new(Ulid::new(), "Private".to_string(), usd(), Timestamp::now()).unwrap();
+        let mut doc_a = LedgerDoc::new(
+            LedgerId::new(),
+            "Private".to_string(),
+            usd(),
+            Timestamp::now(),
+        )
+        .unwrap();
         let id = doc_a.get_ledger().unwrap().ledger_id.to_string();
         save_doc(&*store_a, &mut doc_a).await;
 
         // B has the same ledger ID.
-        let mut doc_b =
-            LedgerDoc::new(Ulid::new(), "Same id?".to_string(), usd(), Timestamp::now()).unwrap();
+        let mut doc_b = LedgerDoc::new(
+            LedgerId::new(),
+            "Same id?".to_string(),
+            usd(),
+            Timestamp::now(),
+        )
+        .unwrap();
         // Manually set the same ID by saving with A's id key.
         store_b.save_ledger(&id, &mut doc_b).await.unwrap();
 

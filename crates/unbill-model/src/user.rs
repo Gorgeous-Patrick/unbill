@@ -1,14 +1,14 @@
 use autosurgeon::{Hydrate, Reconcile};
 
 use crate::currency::Currency;
-use crate::id::Ulid;
+use crate::id::{LedgerId, UserId};
 use crate::invite_token::InviteToken;
 use crate::node_id::NodeId;
 use crate::timestamp::Timestamp;
 
 #[derive(Clone, Debug, Reconcile, Hydrate)]
 pub struct Ledger {
-    pub ledger_id: Ulid,
+    pub ledger_id: LedgerId,
     pub schema_version: u32,
     pub name: String,
     pub currency: Currency,
@@ -23,7 +23,7 @@ pub struct Ledger {
 
 #[derive(Clone, Debug, Reconcile, Hydrate)]
 pub struct User {
-    pub user_id: Ulid,
+    pub user_id: UserId,
     pub display_name: String,
     pub added_at: Timestamp,
 }
@@ -38,7 +38,7 @@ pub struct Device {
 /// Input type for directly adding a user to a ledger.
 #[derive(Clone, Debug)]
 pub struct NewUser {
-    pub user_id: Ulid,
+    pub user_id: UserId,
     pub display_name: String,
 }
 
@@ -56,7 +56,7 @@ pub struct NewDevice {
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Invitation {
     pub token: InviteToken,
-    pub ledger_id: Ulid,
+    pub ledger_id: LedgerId,
     /// The device that issued this invitation.
     pub created_by_device: NodeId,
     pub created_at: Timestamp,
@@ -66,7 +66,7 @@ pub struct Invitation {
 /// Lightweight summary for list views (no CRDT bytes needed).
 #[derive(Clone, Debug)]
 pub struct LedgerMeta {
-    pub ledger_id: Ulid,
+    pub ledger_id: LedgerId,
     pub name: String,
     pub currency: Currency,
     pub created_at: Timestamp,

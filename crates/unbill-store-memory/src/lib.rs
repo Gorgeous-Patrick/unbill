@@ -6,7 +6,7 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use rand::TryRng as _;
 
-use unbill_model::{Currency, LedgerMeta, NodeId, SecretKey, StorageError, Timestamp, Ulid};
+use unbill_model::{Currency, LedgerId, LedgerMeta, NodeId, SecretKey, StorageError, Timestamp};
 use unbill_storage::{LedgerDoc, LedgerStore, StorageResult as Result};
 
 #[derive(Default)]
@@ -66,7 +66,7 @@ impl LedgerStore for InMemoryStore {
             .and_modify(|s| s.bytes = bytes.clone())
             .or_insert_with(|| StoredLedger {
                 meta: LedgerMeta {
-                    ledger_id: Ulid::from_u128(0),
+                    ledger_id: LedgerId::from_u128(0),
                     name: String::new(),
                     currency: Currency::from_code("USD").unwrap(),
                     created_at: Timestamp::from_millis(0),

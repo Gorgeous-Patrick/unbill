@@ -16,7 +16,7 @@ mod user;
 pub use amendment::EffectiveBills;
 pub use bill::{Bill, NewBill, Share};
 pub use currency::Currency;
-pub use id::Ulid;
+pub use id::{BillId, LedgerId, UserId};
 pub use invite_token::{InvalidInviteToken, InviteToken};
 pub use node_id::NodeId;
 pub use secret_key::SecretKey;

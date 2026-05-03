@@ -5,7 +5,7 @@ use ratatui::{
     style::{Color, Modifier, Style},
     widgets::Paragraph,
 };
-use unbill_core::model::{Bill, NewBill, Share, User};
+use unbill_core::model::{Bill, BillId, LedgerId, NewBill, Share, User};
 
 use super::add_bill::{format_cents, parse_amount_cents};
 use super::{
@@ -21,8 +21,8 @@ enum Section {
 }
 
 pub struct AmendBillPopup {
-    ledger_id: String,
-    original_bill_id: unbill_core::model::Ulid,
+    ledger_id: LedgerId,
+    original_bill_id: BillId,
     users: Vec<User>,
     description: TextInput,
     amount: TextInput,
@@ -34,7 +34,7 @@ pub struct AmendBillPopup {
 }
 
 impl AmendBillPopup {
-    pub fn new(ledger_id: String, bill: &Bill, users: Vec<User>) -> Self {
+    pub fn new(ledger_id: LedgerId, bill: &Bill, users: Vec<User>) -> Self {
         // Find payer index
         let payer_user_id = bill.payers.first().map(|s| s.user_id);
         let payer_cursor = payer_user_id

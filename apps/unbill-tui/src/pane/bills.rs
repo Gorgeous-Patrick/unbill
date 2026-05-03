@@ -162,12 +162,12 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
 }
 
 fn resolve_user_name(
-    user_id: &unbill_core::model::Ulid,
+    user_id: &unbill_core::model::UserId,
     users: &[unbill_core::model::User],
 ) -> String {
     users
         .iter()
-        .find(|u| &u.user_id == user_id)
+        .find(|u| u.user_id == *user_id)
         .map(|u| u.display_name.clone())
         .unwrap_or_else(|| {
             let s = user_id.to_string();

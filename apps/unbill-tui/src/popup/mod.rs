@@ -6,7 +6,7 @@ use ratatui::{
     widgets::{Block, Clear, Paragraph},
 };
 
-use unbill_core::model::{NewBill, NewUser};
+use unbill_core::model::{LedgerId, NewBill, NewUser};
 
 pub mod confirm;
 pub mod create_ledger;
@@ -41,22 +41,22 @@ pub enum PopupAction {
         currency: String,
     },
     DeleteLedger {
-        ledger_id: String,
+        ledger_id: LedgerId,
     },
     AddBill {
-        ledger_id: String,
+        ledger_id: LedgerId,
         bill: NewBill,
     },
     AddUser {
-        ledger_id: String,
+        ledger_id: LedgerId,
         user: NewUser,
     },
     CreateUser {
-        ledger_id: String,
+        ledger_id: LedgerId,
         display_name: String,
     },
     GenerateInvite {
-        ledger_id: String,
+        ledger_id: LedgerId,
     },
     JoinLedger {
         url: String,

@@ -4,8 +4,8 @@ use tokio::sync::broadcast;
 
 use unbill_model::UnbillError;
 use unbill_model::{
-    Currency, Device, EffectiveBills, Ledger, NewBill, NewDevice, NewUser, NodeId, Timestamp, Ulid,
-    User,
+    BillId, Currency, Device, EffectiveBills, Ledger, LedgerId, NewBill, NewDevice, NewUser,
+    NodeId, Timestamp, User,
 };
 
 use crate::ops;
@@ -27,7 +27,7 @@ pub enum ChangeEvent {
 impl LedgerDoc {
     /// Create and initialize a new ledger document.
     pub fn new(
-        ledger_id: Ulid,
+        ledger_id: LedgerId,
         name: String,
         currency: Currency,
         created_at: Timestamp,
@@ -91,7 +91,7 @@ impl LedgerDoc {
         input: NewBill,
         created_by_device: NodeId,
         now: Timestamp,
-    ) -> Result<Ulid> {
+    ) -> Result<BillId> {
         let id = ops::add_bill(&mut self.doc, input, created_by_device, now)?;
         let _ = self.changes.send(ChangeEvent::LocalWrite);
         Ok(id)
