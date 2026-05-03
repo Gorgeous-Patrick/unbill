@@ -8,21 +8,25 @@ use tokio::sync::broadcast;
 use crate::conflict::{self, ConflictGroup};
 use crate::error::{Result, UnbillError};
 use crate::model::{
-    Currency, Device, EffectiveBills, Invitation, InviteToken, LedgerMeta, NewBill, NewDevice,
-    NewUser, NodeId, Timestamp, Ulid, User,
+    Currency, Device, EffectiveBills, LedgerMeta, NewBill, NewDevice, NewUser, NodeId, Timestamp,
+    Ulid, User,
 };
+#[cfg(not(feature = "remote"))]
+use crate::model::{Invitation, InviteToken};
 use crate::settlement;
 use crate::storage::LedgerStore;
 use unbill_event::ServiceEvent;
 use unbill_storage::LedgerDoc;
-use unbill_storage::{
-    load_device_labels, load_pending_invitations, save_device_labels, save_pending_invitations,
-};
+use unbill_storage::{load_device_labels, save_device_labels};
+#[cfg(not(feature = "remote"))]
+use unbill_storage::{load_pending_invitations, save_pending_invitations};
 
 pub struct UnbillService {
     pub(crate) store: Arc<dyn LedgerStore>,
     pub(crate) device_id: NodeId,
     pub(crate) events: broadcast::Sender<ServiceEvent>,
+    #[cfg(feature = "remote")]
+    pub(crate) server_client: Option<Arc<unbill_server_client::ServerClient>>,
 }
 
 impl UnbillService {
@@ -38,6 +42,33 @@ impl UnbillService {
             store,
             device_id,
             events,
+            #[cfg(feature = "remote")]
+            server_client: None,
+        }))
+    }
+
+    /// Open the service connected to a remote `unbill-server`.
+    ///
+    /// `base_url` is the server root (e.g. `https://example.com`).
+    /// `api_key` is the Bearer token.
+    /// Network operations (sync, invite, join) are delegated to the server
+    /// via `unbill-server-client`.
+    #[cfg(feature = "remote")]
+    pub async fn open_remote(
+        store: Arc<dyn LedgerStore>,
+        base_url: String,
+        api_key: String,
+    ) -> Result<Arc<Self>> {
+        store.create_secret_key().await?;
+        let device_id = store.get_device_id().await?;
+        let (events, _) = broadcast::channel(256);
+        Ok(Arc::new(Self {
+            store,
+            device_id,
+            events,
+            server_client: Some(Arc::new(unbill_server_client::ServerClient::new(
+                base_url, api_key,
+            ))),
         }))
     }
 
@@ -270,27 +301,42 @@ impl UnbillService {
     ///
     /// URL format: `unbill://join/<ledger_id>/<host_node_id>/<token_hex>`
     pub async fn create_invitation(&self, ledger_id: &str) -> Result<String> {
-        let ledger_ulid = parse_ulid(ledger_id)?;
-        // Check the ledger exists locally.
-        let _ = self.load_doc(ledger_id).await?;
-        let token = InviteToken::generate();
-        let now = Timestamp::now();
-        let invitation = Invitation {
-            token: token.clone(),
-            ledger_id: ledger_ulid,
-            created_by_device: self.device_id.clone(),
-            created_at: now,
-            expires_at: Timestamp::from_millis(now.as_millis() + 24 * 3600 * 1000),
-        };
+        #[cfg(feature = "remote")]
         {
-            let mut map = load_pending_invitations(&*self.store).await?;
-            map.insert(token.to_string(), invitation);
-            save_pending_invitations(&*self.store, &map).await?;
+            let client = self.server_client.as_deref().ok_or_else(|| {
+                UnbillError::Other(anyhow::anyhow!(
+                    "call open_remote to enable remote operations"
+                ))
+            })?;
+            return client
+                .create_invitation(ledger_id)
+                .await
+                .map_err(|e| UnbillError::Other(anyhow::anyhow!("{e}")));
         }
-        Ok(format!(
-            "unbill://join/{}/{}/{}",
-            ledger_id, self.device_id, token
-        ))
+        #[cfg(not(feature = "remote"))]
+        {
+            let ledger_ulid = parse_ulid(ledger_id)?;
+            // Check the ledger exists locally.
+            let _ = self.load_doc(ledger_id).await?;
+            let token = InviteToken::generate();
+            let now = Timestamp::now();
+            let invitation = Invitation {
+                token: token.clone(),
+                ledger_id: ledger_ulid,
+                created_by_device: self.device_id.clone(),
+                created_at: now,
+                expires_at: Timestamp::from_millis(now.as_millis() + 24 * 3600 * 1000),
+            };
+            {
+                let mut map = load_pending_invitations(&*self.store).await?;
+                map.insert(token.to_string(), invitation);
+                save_pending_invitations(&*self.store, &map).await?;
+            }
+            Ok(format!(
+                "unbill://join/{}/{}/{}",
+                ledger_id, self.device_id, token
+            ))
+        }
     }
 
     /// Accept a join invite URL and join the ledger hosted by the inviting device.
@@ -312,6 +358,35 @@ impl UnbillService {
             .await;
         ep.close().await;
         result.map_err(UnbillError::Other)
+    }
+
+    /// Accept a join invite URL and join the ledger hosted by another device via the remote server.
+    #[cfg(feature = "remote")]
+    pub async fn join_ledger(self: &Arc<Self>, url: &str, label: String) -> Result<()> {
+        let client = self.server_client.as_deref().ok_or_else(|| {
+            UnbillError::Other(anyhow::anyhow!(
+                "call open_remote to enable remote operations"
+            ))
+        })?;
+        let local_label = (!label.trim().is_empty()).then_some(label.trim());
+        client
+            .join_ledger(url, local_label)
+            .await
+            .map_err(|e| UnbillError::Other(anyhow::anyhow!("{e}")))
+    }
+
+    /// Dial `peer` and run the full sync exchange for all shared ledgers via the remote server.
+    #[cfg(feature = "remote")]
+    pub async fn sync_once(self: &Arc<Self>, peer: NodeId) -> Result<()> {
+        let client = self.server_client.as_deref().ok_or_else(|| {
+            UnbillError::Other(anyhow::anyhow!(
+                "call open_remote to enable remote operations"
+            ))
+        })?;
+        client
+            .sync_with_peer(peer.as_str())
+            .await
+            .map_err(|e| UnbillError::Other(anyhow::anyhow!("{e}")))
     }
 
     /// Dial `peer` and run the full sync exchange for all shared ledgers.

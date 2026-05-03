@@ -7721,6 +7721,7 @@ dependencies = [
  "unbill-event",
  "unbill-model",
  "unbill-network",
+ "unbill-server-client",
  "unbill-storage",
  "unbill-store-memory",
 ]
