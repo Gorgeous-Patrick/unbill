@@ -11,6 +11,7 @@ homepage.workspace = true
 test-helpers = []
 
 [dependencies]
+garde.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 automerge.workspace = true

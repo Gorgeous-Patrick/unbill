@@ -4,7 +4,9 @@ use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyModifiers};
 use futures::StreamExt as _;
 use ratatui::{Terminal, backend::CrosstermBackend};
 use tokio::time::{Duration, interval};
-use unbill_core::model::{Bill, BillId, LedgerId, LedgerMeta, NewBill, NodeId, Share, User};
+use unbill_core::model::{
+    Bill, BillId, Currency, LedgerId, LedgerMeta, NewBill, NewLedger, NodeId, Share, User,
+};
 use unbill_core::service::{ServiceEvent, SettlementTransaction, UnbillService};
 
 use crate::pane::Pane;
@@ -558,14 +560,20 @@ async fn try_confirm_editor(state: &mut AppState, svc: &Arc<UnbillService>) {
 async fn execute_action(action: PopupAction, state: &mut AppState, svc: &Arc<UnbillService>) {
     match action {
         PopupAction::CreateLedger { name, currency } => {
-            match svc.create_ledger(name, currency).await {
-                Ok(_) => {
-                    refresh_ledgers(svc, state).await;
-                    refresh_bills(svc, state).await;
-                    refresh_users(svc, state).await;
-                    refresh_settlement(svc, state).await;
-                }
+            let result = Currency::from_code(&currency)
+                .ok_or_else(|| anyhow::anyhow!("unknown currency code: {currency}"))
+                .map(|currency| NewLedger { name, currency });
+            match result {
                 Err(e) => state.status_message = Some(format!("create ledger: {e}")),
+                Ok(input) => match svc.create_ledger(input).await {
+                    Ok(_) => {
+                        refresh_ledgers(svc, state).await;
+                        refresh_bills(svc, state).await;
+                        refresh_users(svc, state).await;
+                        refresh_settlement(svc, state).await;
+                    }
+                    Err(e) => state.status_message = Some(format!("create ledger: {e}")),
+                },
             }
         }
 
@@ -598,15 +606,14 @@ async fn execute_action(action: PopupAction, state: &mut AppState, svc: &Arc<Unb
             Err(e) => state.status_message = Some(format!("add user: {e}")),
         },
 
-        PopupAction::CreateUser {
-            ledger_id,
-            display_name,
-        } => match svc.create_user(ledger_id, display_name).await {
-            Ok(_) => {
-                refresh_users(svc, state).await;
+        PopupAction::CreateUser { ledger_id, input } => {
+            match svc.create_user(ledger_id, input).await {
+                Ok(_) => {
+                    refresh_users(svc, state).await;
+                }
+                Err(e) => state.status_message = Some(format!("create user: {e}")),
             }
-            Err(e) => state.status_message = Some(format!("create user: {e}")),
-        },
+        }
 
         PopupAction::GenerateInvite { ledger_id } => match svc.create_invitation(ledger_id).await {
             Ok(url) => {

@@ -7,9 +7,11 @@ use tokio::sync::broadcast;
 
 use crate::conflict::{self, ConflictGroup};
 use crate::error::{Result, UnbillError};
+use garde::validate::Validate as _;
+
 use crate::model::{
-    BillId, Currency, Device, EffectiveBills, LedgerId, LedgerMeta, NewBill, NewDevice, NewUser,
-    NodeId, Timestamp, User, UserId,
+    BillId, Currency, Device, EffectiveBills, LedgerId, LedgerMeta, NewBill, NewDevice, NewLedger,
+    NewUser, NewUserName, NodeId, Timestamp, User, UserId,
 };
 #[cfg(feature = "local")]
 use crate::model::{Invitation, InviteToken};
@@ -75,14 +77,14 @@ impl UnbillService {
     // Ledger lifecycle
     // -----------------------------------------------------------------------
 
-    pub async fn create_ledger(&self, name: String, currency: String) -> Result<LedgerId> {
-        let currency = Currency::from_code(&currency).ok_or_else(|| {
-            UnbillError::Other(anyhow::anyhow!("unknown currency code: {currency}"))
-        })?;
+    pub async fn create_ledger(&self, input: NewLedger) -> Result<LedgerId> {
+        input
+            .validate()
+            .map_err(|e| UnbillError::Validation(e.to_string()))?;
         let ledger_id = LedgerId::new();
         let now = Timestamp::now();
 
-        let mut doc = LedgerDoc::new(ledger_id, name.clone(), currency, now)?;
+        let mut doc = LedgerDoc::new(ledger_id, input.name.clone(), input.currency, now)?;
         doc.add_device(
             NewDevice {
                 node_id: self.device_id.clone(),
@@ -92,8 +94,8 @@ impl UnbillService {
 
         let meta = LedgerMeta {
             ledger_id,
-            name,
-            currency,
+            name: input.name,
+            currency: input.currency,
             created_at: now,
             updated_at: now,
         };
@@ -119,6 +121,9 @@ impl UnbillService {
     // -----------------------------------------------------------------------
 
     pub async fn add_bill(&self, ledger_id: LedgerId, input: NewBill) -> Result<BillId> {
+        input
+            .validate()
+            .map_err(|e| UnbillError::Validation(e.to_string()))?;
         let mut doc = self.load_doc(ledger_id).await?;
         let bill_id = doc.add_bill(input, self.device_id.clone(), Timestamp::now())?;
         self.store
@@ -140,6 +145,9 @@ impl UnbillService {
     // -----------------------------------------------------------------------
 
     pub async fn add_user(&self, ledger_id: LedgerId, input: NewUser) -> Result<()> {
+        input
+            .validate()
+            .map_err(|e| UnbillError::Validation(e.to_string()))?;
         let mut doc = self.load_doc(ledger_id).await?;
         doc.add_user(input, Timestamp::now())?;
         self.store
@@ -157,14 +165,17 @@ impl UnbillService {
     }
 
     /// Create a brand-new user, add them to the ledger, and return the created `User`.
-    pub async fn create_user(&self, ledger_id: LedgerId, display_name: String) -> Result<User> {
+    pub async fn create_user(&self, ledger_id: LedgerId, input: NewUserName) -> Result<User> {
+        input
+            .validate()
+            .map_err(|e| UnbillError::Validation(e.to_string()))?;
         let user_id = UserId::new();
         let now = Timestamp::now();
         let mut doc = self.load_doc(ledger_id).await?;
         doc.add_user(
             NewUser {
                 user_id,
-                display_name: display_name.clone(),
+                display_name: input.display_name.clone(),
             },
             now,
         )?;
@@ -177,7 +188,7 @@ impl UnbillService {
         });
         Ok(User {
             user_id,
-            display_name,
+            display_name: input.display_name,
             added_at: now,
         })
     }
@@ -498,7 +509,7 @@ fn parse_join_url(url: &str) -> Result<(String, NodeId, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{BillId, Share};
+    use crate::model::{BillId, NewLedger, Share};
     use unbill_store_memory::InMemoryStore;
 
     fn mem_store() -> Arc<dyn LedgerStore> {
@@ -509,8 +520,8 @@ mod tests {
         UnbillService::open(mem_store()).await.unwrap()
     }
 
-    fn usd() -> &'static str {
-        "USD"
+    fn usd() -> Currency {
+        Currency::from_code("USD").unwrap()
     }
 
     fn two_way_bill(amount_cents: i64) -> NewBill {
@@ -555,7 +566,10 @@ mod tests {
     async fn test_create_ledger_appears_in_list() {
         let svc = open().await;
         let id = svc
-            .create_ledger("Household".into(), usd().into())
+            .create_ledger(NewLedger {
+                name: "Household".into(),
+                currency: usd(),
+            })
             .await
             .unwrap();
         let ledgers = svc.list_ledgers().await.unwrap();
@@ -569,7 +583,10 @@ mod tests {
     async fn test_delete_ledger_removes_it() {
         let svc = open().await;
         let id = svc
-            .create_ledger("Trip".into(), usd().into())
+            .create_ledger(NewLedger {
+                name: "Trip".into(),
+                currency: usd(),
+            })
             .await
             .unwrap();
         svc.delete_ledger(id).await.unwrap();
@@ -585,20 +602,16 @@ mod tests {
         assert!(matches!(result, Err(UnbillError::LedgerNotFound(_))));
     }
 
-    #[tokio::test]
-    async fn test_invalid_currency_returns_error() {
-        let svc = open().await;
-        let result = svc.create_ledger("Bad".into(), "ZZZ".into()).await;
-        assert!(result.is_err());
-    }
-
     // --- bills ---
 
     #[tokio::test]
     async fn test_add_bill_and_list() {
         let svc = open().await;
         let lid = svc
-            .create_ledger("Test".into(), usd().into())
+            .create_ledger(NewLedger {
+                name: "Test".into(),
+                currency: usd(),
+            })
             .await
             .unwrap();
         seed_users(&svc, lid).await;
@@ -614,7 +627,10 @@ mod tests {
     async fn test_amend_bill_supersedes_original() {
         let svc = open().await;
         let lid = svc
-            .create_ledger("Test".into(), usd().into())
+            .create_ledger(NewLedger {
+                name: "Test".into(),
+                currency: usd(),
+            })
             .await
             .unwrap();
         seed_users(&svc, lid).await;
@@ -658,7 +674,10 @@ mod tests {
     async fn test_compute_settlement_no_bills_is_empty() {
         let svc = open().await;
         let lid = svc
-            .create_ledger("Empty".into(), usd().into())
+            .create_ledger(NewLedger {
+                name: "Empty".into(),
+                currency: usd(),
+            })
             .await
             .unwrap();
         seed_users(&svc, lid).await;
@@ -672,12 +691,24 @@ mod tests {
         let svc = open().await;
 
         // Ledger 1: Alice pays $60, Alice+Bob split → Bob owes Alice $30.
-        let lid1 = svc.create_ledger("L1".into(), usd().into()).await.unwrap();
+        let lid1 = svc
+            .create_ledger(NewLedger {
+                name: "L1".into(),
+                currency: usd(),
+            })
+            .await
+            .unwrap();
         seed_users(&svc, lid1).await;
         svc.add_bill(lid1, two_way_bill(6000)).await.unwrap();
 
         // Ledger 2: Bob pays $20, Alice+Bob split → Alice owes Bob $10.
-        let lid2 = svc.create_ledger("L2".into(), usd().into()).await.unwrap();
+        let lid2 = svc
+            .create_ledger(NewLedger {
+                name: "L2".into(),
+                currency: usd(),
+            })
+            .await
+            .unwrap();
         seed_users(&svc, lid2).await;
         let bob_pays = NewBill {
             amount_cents: 2000,
@@ -718,7 +749,10 @@ mod tests {
 
         // USD ledger: Alice pays $60, Alice+Bob split → Bob owes Alice $30.
         let lid_usd = svc
-            .create_ledger("USD ledger".into(), "USD".into())
+            .create_ledger(NewLedger {
+                name: "USD ledger".into(),
+                currency: usd(),
+            })
             .await
             .unwrap();
         seed_users(&svc, lid_usd).await;
@@ -726,7 +760,10 @@ mod tests {
 
         // EUR ledger: Alice pays €40, Alice+Bob split → Bob owes Alice €20.
         let lid_eur = svc
-            .create_ledger("EUR ledger".into(), "EUR".into())
+            .create_ledger(NewLedger {
+                name: "EUR ledger".into(),
+                currency: Currency::from_code("EUR").unwrap(),
+            })
             .await
             .unwrap();
         seed_users(&svc, lid_eur).await;
@@ -758,7 +795,10 @@ mod tests {
         let lid = {
             let svc = UnbillService::open(Arc::clone(&store)).await.unwrap();
             let lid = svc
-                .create_ledger("Persistent".into(), usd().into())
+                .create_ledger(NewLedger {
+                    name: "Persistent".into(),
+                    currency: usd(),
+                })
                 .await
                 .unwrap();
             seed_users(&svc, lid).await;
@@ -804,10 +844,21 @@ mod tests {
     async fn test_create_user_appears_in_ledger() {
         let svc = open().await;
         let lid = svc
-            .create_ledger("Trip".into(), usd().into())
+            .create_ledger(NewLedger {
+                name: "Trip".into(),
+                currency: usd(),
+            })
             .await
             .unwrap();
-        let user = svc.create_user(lid, "Alice".into()).await.unwrap();
+        let user = svc
+            .create_user(
+                lid,
+                NewUserName {
+                    display_name: "Alice".into(),
+                },
+            )
+            .await
+            .unwrap();
         let list = svc.list_users(lid).await.unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].user_id, user.user_id);
@@ -817,10 +868,36 @@ mod tests {
     #[tokio::test]
     async fn test_list_all_users_aggregates_across_ledgers() {
         let svc = open().await;
-        let lid1 = svc.create_ledger("L1".into(), usd().into()).await.unwrap();
-        let lid2 = svc.create_ledger("L2".into(), usd().into()).await.unwrap();
-        svc.create_user(lid1, "Alice".into()).await.unwrap();
-        svc.create_user(lid2, "Bob".into()).await.unwrap();
+        let lid1 = svc
+            .create_ledger(NewLedger {
+                name: "L1".into(),
+                currency: usd(),
+            })
+            .await
+            .unwrap();
+        let lid2 = svc
+            .create_ledger(NewLedger {
+                name: "L2".into(),
+                currency: usd(),
+            })
+            .await
+            .unwrap();
+        svc.create_user(
+            lid1,
+            NewUserName {
+                display_name: "Alice".into(),
+            },
+        )
+        .await
+        .unwrap();
+        svc.create_user(
+            lid2,
+            NewUserName {
+                display_name: "Bob".into(),
+            },
+        )
+        .await
+        .unwrap();
         let all = svc.list_all_users().await.unwrap();
         assert_eq!(all.len(), 2);
     }
@@ -828,10 +905,30 @@ mod tests {
     #[tokio::test]
     async fn test_list_all_users_deduplicates_by_user_id() {
         let svc = open().await;
-        let lid1 = svc.create_ledger("L1".into(), usd().into()).await.unwrap();
-        let lid2 = svc.create_ledger("L2".into(), usd().into()).await.unwrap();
+        let lid1 = svc
+            .create_ledger(NewLedger {
+                name: "L1".into(),
+                currency: usd(),
+            })
+            .await
+            .unwrap();
+        let lid2 = svc
+            .create_ledger(NewLedger {
+                name: "L2".into(),
+                currency: usd(),
+            })
+            .await
+            .unwrap();
         // Create Alice in L1, then add the same user to L2.
-        let alice = svc.create_user(lid1, "Alice".into()).await.unwrap();
+        let alice = svc
+            .create_user(
+                lid1,
+                NewUserName {
+                    display_name: "Alice".into(),
+                },
+            )
+            .await
+            .unwrap();
         svc.add_user(
             lid2,
             NewUser {

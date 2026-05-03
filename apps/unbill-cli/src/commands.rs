@@ -5,7 +5,9 @@
 use std::sync::Arc;
 
 use anyhow::anyhow;
-use unbill_core::model::{BillId, LedgerId, NewBill, NewUser, NodeId, Share, UserId};
+use unbill_core::model::{
+    BillId, Currency, LedgerId, NewBill, NewLedger, NewUser, NewUserName, NodeId, Share, UserId,
+};
 use unbill_core::service::UnbillService;
 
 use crate::output::{
@@ -69,7 +71,9 @@ pub async fn ledger_create(
     currency: String,
     json: bool,
 ) -> anyhow::Result<()> {
-    let id = svc.create_ledger(name, currency).await?;
+    let currency = Currency::from_code(&currency)
+        .ok_or_else(|| anyhow::anyhow!("unknown currency code: {currency}"))?;
+    let id = svc.create_ledger(NewLedger { name, currency }).await?;
     if json {
         print_json(&serde_json::json!({ "ledger_id": id }))?;
     } else {
@@ -263,7 +267,7 @@ pub async fn user_create(
     json: bool,
 ) -> anyhow::Result<()> {
     let user = svc
-        .create_user(parse_ledger_id(ledger_id)?, display_name)
+        .create_user(parse_ledger_id(ledger_id)?, NewUserName { display_name })
         .await?;
     if json {
         print_json(&user_out(&user))?;

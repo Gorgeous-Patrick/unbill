@@ -23,6 +23,9 @@ pub enum UnbillError {
     #[error("not authorized")]
     NotAuthorized,
 
+    #[error("validation error: {0}")]
+    Validation(String),
+
     #[error("storage error: {0}")]
     Storage(#[from] StorageError),
 
