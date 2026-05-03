@@ -552,7 +552,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let app = make_app(dir.path()).await;
         let resp = app
-            .oneshot(auth_get("/api/v1/device/device_key.bin"))
+            .oneshot(auth_get("/api/v1/device/nonexistent.bin"))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
