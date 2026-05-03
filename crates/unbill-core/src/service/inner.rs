@@ -343,7 +343,7 @@ impl UnbillService {
     ///
     /// URL format: `unbill://join/<ledger_id>/<host_node_id>/<token_hex>`
     /// `label` is an optional device-local nickname for the host device.
-    #[cfg(feature = "local")]
+    #[cfg(all(feature = "local", not(feature = "remote")))]
     pub async fn join_ledger(self: &Arc<Self>, url: &str, label: String) -> Result<()> {
         use crate::net::{JoinRequest, UnbillEndpoint};
         let (ledger_id, host, token) = parse_join_url(url)?;
@@ -390,7 +390,7 @@ impl UnbillService {
     }
 
     /// Dial `peer` and run the full sync exchange for all shared ledgers.
-    #[cfg(feature = "local")]
+    #[cfg(all(feature = "local", not(feature = "remote")))]
     pub async fn sync_once(self: &Arc<Self>, peer: NodeId) -> Result<()> {
         use crate::net::UnbillEndpoint;
         let key = self.store.get_secret_key().await?;
@@ -468,7 +468,7 @@ fn parse_ulid(s: &str) -> Result<Ulid> {
 }
 
 /// Parse `unbill://join/<ledger_id>/<host_node_id>/<token_hex>`.
-#[cfg(feature = "local")]
+#[cfg(all(feature = "local", not(feature = "remote")))]
 fn parse_join_url(url: &str) -> Result<(String, NodeId, String)> {
     let path = url
         .strip_prefix("unbill://join/")

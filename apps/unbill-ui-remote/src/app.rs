@@ -1,10 +1,11 @@
 use crate::api::{
     self, AddUserInput, Bill, BillShareInput, CreateUserInput, LedgerDetail, LedgerSummary,
-    SaveBillInput, User,
+    SaveBillInput, SyncDevice, User,
 };
 use crate::components::{EmptyColumn, StatusStrip};
 use crate::pages::{
-    AddLedgerUserSheet, BillEditorPage, CreateLedgerSheet, LedgerPage, LedgersPage, SettingsPopup,
+    AddLedgerUserSheet, BillEditorPage, CreateLedgerSheet, JoinLedgerSheet, LedgerPage,
+    LedgersPage, SettingsPopup,
 };
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -120,6 +121,7 @@ pub(crate) fn compact_composition(
 #[derive(Clone, PartialEq)]
 pub(crate) enum OverlayKind {
     CreateLedger,
+    JoinLedger { url: String },
     AddUser,
 }
 
@@ -176,6 +178,8 @@ pub fn App() -> impl IntoView {
     let status_message = RwSignal::new(None::<String>);
     let error_message = RwSignal::new(None::<String>);
     let loading_count = RwSignal::new(0usize);
+
+    let devices = RwSignal::new(Vec::<SyncDevice>::new());
 
     let load_selected_ledger = move |ledger_id: String| {
         selected_ledger_id.set(Some(ledger_id.clone()));
@@ -280,6 +284,7 @@ pub fn App() -> impl IntoView {
                     device_id.set(data.device_id);
                     ledgers.set(data.ledgers);
                     all_users.set(data.all_users);
+                    devices.set(data.devices);
                     error_message.set(None);
                 }
                 Err(error) => error_message.set(Some(error)),
@@ -475,6 +480,20 @@ pub fn App() -> impl IntoView {
         load_settings_ledger(ledger_id);
     };
 
+    let sync_device = move |peer_node_id: String| {
+        loading_count.update(|n| *n += 1);
+        spawn_local(async move {
+            match api::sync_device(peer_node_id).await {
+                Ok(()) => {
+                    status_message.set(Some("Sync completed.".to_owned()));
+                    error_message.set(None);
+                }
+                Err(error) => error_message.set(Some(error)),
+            }
+            loading_count.update(|n| *n = n.saturating_sub(1));
+        });
+    };
+
     let render_overlay = move || {
         overlay.get().map(|sheet| match sheet {
             OverlayKind::CreateLedger => {
@@ -493,6 +512,30 @@ pub fn App() -> impl IntoView {
                                         });
                                         open_ledger(summary.ledger_id);
                                         status_message.set(Some("Ledger created.".to_owned()));
+                                        error_message.set(None);
+                                    }
+                                    Err(error) => error_message.set(Some(error)),
+                                }
+                                loading_count.update(|n| *n = n.saturating_sub(1));
+                            });
+                        })
+                    />
+                }
+                .into_any()
+            }
+            OverlayKind::JoinLedger { url } => {
+                view! {
+                    <JoinLedgerSheet
+                        initial_url=url
+                        on_cancel=Callback::new(move |_| overlay.set(None))
+                        on_submit=Callback::new(move |(url, label): (String, String)| {
+                            loading_count.update(|n| *n += 1);
+                            spawn_local(async move {
+                                match api::join_ledger(url, label).await {
+                                    Ok(()) => {
+                                        overlay.set(None);
+                                        reload_bootstrap();
+                                        status_message.set(Some("Ledger joined.".to_owned()));
                                         error_message.set(None);
                                     }
                                     Err(error) => error_message.set(Some(error)),
@@ -608,6 +651,7 @@ pub fn App() -> impl IntoView {
                 <SettingsPopup
                     device_id=device_id.get()
                     ledgers=ledgers.get()
+                    devices=devices.get()
                     active_tab=popup.active_tab
                     selected_ledger_id=popup.selected_ledger_id
                     ledger_detail=settings_ledger_detail.get()
@@ -618,7 +662,9 @@ pub fn App() -> impl IntoView {
                     })
                     on_select_tab=Callback::new(select_settings_tab)
                     on_select_ledger=Callback::new(select_settings_ledger)
+                    on_join_ledger=Callback::new(move |_| overlay.set(Some(OverlayKind::JoinLedger { url: String::new() })))
                     on_add_ledger_user=Callback::new(move |_| overlay.set(Some(OverlayKind::AddUser)))
+                    on_sync_device=Callback::new(sync_device)
                     on_create_invitation=Callback::new(move |_| create_invitation())
                     on_copy_invitation=Callback::new(move |_| copy_invitation_url())
                 />
