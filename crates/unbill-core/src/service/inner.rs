@@ -8,21 +8,25 @@ use tokio::sync::broadcast;
 use crate::conflict::{self, ConflictGroup};
 use crate::error::{Result, UnbillError};
 use crate::model::{
-    Currency, Device, EffectiveBills, Invitation, InviteToken, LedgerMeta, NewBill, NewDevice,
-    NewUser, NodeId, Timestamp, Ulid, User,
+    Currency, Device, EffectiveBills, LedgerMeta, NewBill, NewDevice, NewUser, NodeId, Timestamp,
+    Ulid, User,
 };
+#[cfg(feature = "local")]
+use crate::model::{Invitation, InviteToken};
 use crate::settlement;
 use crate::storage::LedgerStore;
 use unbill_event::ServiceEvent;
 use unbill_storage::LedgerDoc;
-use unbill_storage::{
-    load_device_labels, load_pending_invitations, save_device_labels, save_pending_invitations,
-};
+use unbill_storage::{load_device_labels, save_device_labels};
+#[cfg(feature = "local")]
+use unbill_storage::{load_pending_invitations, save_pending_invitations};
 
 pub struct UnbillService {
     pub(crate) store: Arc<dyn LedgerStore>,
     pub(crate) device_id: NodeId,
     pub(crate) events: broadcast::Sender<ServiceEvent>,
+    #[cfg(feature = "remote")]
+    pub(crate) server_client: Option<Arc<unbill_server_client::ServerClient>>,
 }
 
 impl UnbillService {
@@ -38,6 +42,32 @@ impl UnbillService {
             store,
             device_id,
             events,
+            #[cfg(feature = "remote")]
+            server_client: None,
+        }))
+    }
+
+    /// Open the service connected to a remote `unbill-server`.
+    ///
+    /// `base_url` is the server root (e.g. `https://example.com`).
+    /// `api_key` is the Bearer token.
+    /// Network operations (sync, invite, join) are delegated to the server
+    /// via `unbill-server-client`.
+    #[cfg(feature = "remote")]
+    pub async fn open_remote(
+        store: Arc<dyn LedgerStore>,
+        base_url: String,
+        api_key: String,
+    ) -> Result<Arc<Self>> {
+        let device_id = store.get_device_id().await?;
+        let (events, _) = broadcast::channel(256);
+        Ok(Arc::new(Self {
+            store,
+            device_id,
+            events,
+            server_client: Some(Arc::new(unbill_server_client::ServerClient::new(
+                base_url, api_key,
+            ))),
         }))
     }
 
@@ -270,68 +300,115 @@ impl UnbillService {
     ///
     /// URL format: `unbill://join/<ledger_id>/<host_node_id>/<token_hex>`
     pub async fn create_invitation(&self, ledger_id: &str) -> Result<String> {
-        let ledger_ulid = parse_ulid(ledger_id)?;
-        // Check the ledger exists locally.
-        let _ = self.load_doc(ledger_id).await?;
-        let token = InviteToken::generate();
-        let now = Timestamp::now();
-        let invitation = Invitation {
-            token: token.clone(),
-            ledger_id: ledger_ulid,
-            created_by_device: self.device_id.clone(),
-            created_at: now,
-            expires_at: Timestamp::from_millis(now.as_millis() + 24 * 3600 * 1000),
-        };
-        {
-            let mut map = load_pending_invitations(&*self.store).await?;
-            map.insert(token.to_string(), invitation);
-            save_pending_invitations(&*self.store, &map).await?;
+        #[cfg(feature = "remote")]
+        if let Some(client) = self.server_client.as_deref() {
+            return client
+                .create_invitation(ledger_id)
+                .await
+                .map_err(|e| UnbillError::Other(anyhow::anyhow!("{e}")));
         }
-        Ok(format!(
-            "unbill://join/{}/{}/{}",
-            ledger_id, self.device_id, token
-        ))
+
+        #[cfg(feature = "local")]
+        {
+            let ledger_ulid = parse_ulid(ledger_id)?;
+            // Check the ledger exists locally.
+            let _ = self.load_doc(ledger_id).await?;
+            let token = InviteToken::generate();
+            let now = Timestamp::now();
+            let invitation = Invitation {
+                token: token.clone(),
+                ledger_id: ledger_ulid,
+                created_by_device: self.device_id.clone(),
+                created_at: now,
+                expires_at: Timestamp::from_millis(now.as_millis() + 24 * 3600 * 1000),
+            };
+            {
+                let mut map = load_pending_invitations(&*self.store).await?;
+                map.insert(token.to_string(), invitation);
+                save_pending_invitations(&*self.store, &map).await?;
+            }
+            return Ok(format!(
+                "unbill://join/{}/{}/{}",
+                ledger_id, self.device_id, token
+            ));
+        }
+
+        #[allow(unreachable_code)]
+        Err(UnbillError::Other(anyhow::anyhow!(
+            "no network feature enabled"
+        )))
     }
 
     /// Accept a join invite URL and join the ledger hosted by the inviting device.
     ///
     /// URL format: `unbill://join/<ledger_id>/<host_node_id>/<token_hex>`
     /// `label` is an optional device-local nickname for the host device.
-    #[cfg(feature = "network")]
     pub async fn join_ledger(self: &Arc<Self>, url: &str, label: String) -> Result<()> {
-        use crate::net::{JoinRequest, UnbillEndpoint};
-        let (ledger_id, host, token) = parse_join_url(url)?;
-        let local_label = (!label.trim().is_empty()).then_some(label.trim().to_owned());
-        let request = JoinRequest { token, ledger_id };
-        let key = self.store.get_secret_key().await?;
-        let ep = UnbillEndpoint::bind(&key)
-            .await
-            .map_err(UnbillError::Other)?;
-        let result = ep
-            .join_ledger_inner(host, local_label, request, &self.store, &self.events)
-            .await;
-        ep.close().await;
-        result.map_err(UnbillError::Other)
+        #[cfg(feature = "remote")]
+        if let Some(client) = self.server_client.as_deref() {
+            let local_label = (!label.trim().is_empty()).then_some(label.trim());
+            return client
+                .join_ledger(url, local_label)
+                .await
+                .map_err(|e| UnbillError::Other(anyhow::anyhow!("{e}")));
+        }
+
+        #[cfg(feature = "local")]
+        {
+            use crate::net::{JoinRequest, UnbillEndpoint};
+            let (ledger_id, host, token) = parse_join_url(url)?;
+            let local_label = (!label.trim().is_empty()).then_some(label.trim().to_owned());
+            let request = JoinRequest { token, ledger_id };
+            let key = self.store.get_secret_key().await?;
+            let ep = UnbillEndpoint::bind(&key)
+                .await
+                .map_err(UnbillError::Other)?;
+            let result = ep
+                .join_ledger_inner(host, local_label, request, &self.store, &self.events)
+                .await;
+            ep.close().await;
+            return result.map_err(UnbillError::Other);
+        }
+
+        #[allow(unreachable_code)]
+        Err(UnbillError::Other(anyhow::anyhow!(
+            "no network feature enabled"
+        )))
     }
 
     /// Dial `peer` and run the full sync exchange for all shared ledgers.
-    #[cfg(feature = "network")]
     pub async fn sync_once(self: &Arc<Self>, peer: NodeId) -> Result<()> {
-        use crate::net::UnbillEndpoint;
-        let key = self.store.get_secret_key().await?;
-        let ep = UnbillEndpoint::bind(&key)
-            .await
-            .map_err(UnbillError::Other)?;
-        let result = ep.sync_once_inner(peer, &self.store, &self.events).await;
-        ep.close().await;
-        result.map_err(UnbillError::Other)
+        #[cfg(feature = "remote")]
+        if let Some(client) = self.server_client.as_deref() {
+            return client
+                .sync_with_peer(peer.as_str())
+                .await
+                .map_err(|e| UnbillError::Other(anyhow::anyhow!("{e}")));
+        }
+
+        #[cfg(feature = "local")]
+        {
+            use crate::net::UnbillEndpoint;
+            let key = self.store.get_secret_key().await?;
+            let ep = UnbillEndpoint::bind(&key)
+                .await
+                .map_err(UnbillError::Other)?;
+            let result = ep.sync_once_inner(peer, &self.store, &self.events).await;
+            ep.close().await;
+            return result.map_err(UnbillError::Other);
+        }
+
+        #[allow(unreachable_code)]
+        Err(UnbillError::Other(anyhow::anyhow!(
+            "no network feature enabled"
+        )))
     }
 
     /// Open an endpoint and accept incoming sync/join/user-transfer connections until
     /// an error occurs or the process is interrupted.
     ///
     /// Prints the local `NodeId` to stdout so peers know what to dial.
-    #[cfg(feature = "network")]
+    #[cfg(feature = "local")]
     pub async fn accept_loop(self: &Arc<Self>) -> Result<()> {
         use crate::net::UnbillEndpoint;
         let key = self.store.get_secret_key().await?;
@@ -353,6 +430,10 @@ impl UnbillService {
 
     pub fn device_id(&self) -> NodeId {
         self.device_id.clone()
+    }
+
+    pub fn store(&self) -> &Arc<dyn LedgerStore> {
+        &self.store
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<ServiceEvent> {
@@ -393,7 +474,7 @@ fn parse_ulid(s: &str) -> Result<Ulid> {
 }
 
 /// Parse `unbill://join/<ledger_id>/<host_node_id>/<token_hex>`.
-#[cfg(feature = "network")]
+#[cfg(feature = "local")]
 fn parse_join_url(url: &str) -> Result<(String, NodeId, String)> {
     let path = url
         .strip_prefix("unbill://join/")

@@ -13,15 +13,15 @@ use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 
 use unbill_core::LedgerDoc;
-use unbill_core::storage::LedgerStore;
-use unbill_store_fs::FsStore;
+use unbill_core::model::{Currency, LedgerMeta, NodeId, Timestamp, Ulid as UnbillUlid};
+use unbill_core::service::UnbillService;
 
 // ---------------------------------------------------------------------------
 // Shared state
 // ---------------------------------------------------------------------------
 
 pub struct AppState {
-    pub store: FsStore,
+    pub service: Arc<UnbillService>,
     pub api_key: String,
 }
 
@@ -39,6 +39,22 @@ pub struct MetaJson {
 }
 
 // ---------------------------------------------------------------------------
+// Join request / response shapes
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+struct JoinBody {
+    url: String,
+    #[serde(default)]
+    label: String,
+}
+
+#[derive(Debug, Serialize)]
+struct InvitationJson {
+    url: String,
+}
+
+// ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
 
@@ -47,8 +63,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/ledgers", get(list_ledgers))
         .route("/ledgers/{id}/meta", put(save_ledger_meta))
         .route("/ledgers/{id}/sync", post(sync_ledger))
+        .route("/ledgers/{id}/invitations", post(create_invitation))
+        .route("/ledgers/join", post(join_ledger))
+        .route("/peers/{node_id}/sync", post(sync_with_peer))
         .route("/ledgers/{id}", delete(delete_ledger))
-        .route("/device/key", post(create_device_key))
         .route("/device/id", get(get_device_id))
         .route("/device/{key}", get(load_device_meta).put(save_device_meta))
         .layer(middleware::from_fn_with_state(state.clone(), auth))
@@ -99,18 +117,9 @@ fn valid_device_key(key: &str) -> bool {
 // ---------------------------------------------------------------------------
 
 async fn list_ledgers(State(state): State<Arc<AppState>>) -> Response {
-    match state.store.list_ledgers().await {
+    match state.service.list_ledgers().await {
         Ok(metas) => {
-            let json: Vec<MetaJson> = metas
-                .into_iter()
-                .map(|m| MetaJson {
-                    ledger_id: m.ledger_id.to_string(),
-                    name: m.name,
-                    currency: m.currency.code().to_owned(),
-                    created_at_ms: m.created_at.as_millis(),
-                    updated_at_ms: m.updated_at.as_millis(),
-                })
-                .collect();
+            let json: Vec<MetaJson> = metas.into_iter().map(meta_to_json).collect();
             Json(json).into_response()
         }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
@@ -122,9 +131,7 @@ async fn save_ledger_meta(
     Path(id): Path<String>,
     Json(body): Json<MetaJson>,
 ) -> Response {
-    use unbill_core::model::{Currency, LedgerMeta, Timestamp, Ulid};
-
-    let ledger_id = match Ulid::from_string(&body.ledger_id) {
+    let ledger_id = match UnbillUlid::from_string(&body.ledger_id) {
         Ok(id) => id,
         Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     };
@@ -149,17 +156,13 @@ async fn save_ledger_meta(
         updated_at: Timestamp::from_millis(body.updated_at_ms),
     };
 
-    match state.store.save_ledger_meta(&meta).await {
+    match state.service.store().save_ledger_meta(&meta).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
 
 /// `POST /ledgers/{id}/sync` — Automerge delta sync endpoint.
-///
-/// Receives one binary-encoded `automerge::sync::Message` from the client,
-/// applies it to the server-side document, generates a response message, and
-/// returns it (200) or 204 if the server has nothing to send.
 async fn sync_ledger(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
@@ -170,12 +173,9 @@ async fn sync_ledger(
         Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     };
 
-    let mut doc = match state.store.load_ledger(&id).await {
+    let mut doc = match state.service.store().load_ledger(&id).await {
         Ok(Some(doc)) => doc,
-        Ok(None) => {
-            // Ledger does not exist on the server; treat first sync as a create.
-            LedgerDoc::empty()
-        }
+        Ok(None) => LedgerDoc::empty(),
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     };
 
@@ -185,7 +185,7 @@ async fn sync_ledger(
     }
 
     if !doc.is_empty()
-        && let Err(e) = state.store.save_ledger(&id, &mut doc).await
+        && let Err(e) = state.service.store().save_ledger(&id, &mut doc).await
     {
         return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
     }
@@ -202,41 +202,26 @@ async fn sync_ledger(
 }
 
 async fn delete_ledger(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> Response {
-    match state.store.delete_ledger(&id).await {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
-    }
-}
-
-async fn create_device_key(State(state): State<Arc<AppState>>) -> Response {
-    use unbill_core::storage::LedgerStore as _;
-    match state.store.create_secret_key().await {
+    match state.service.store().delete_ledger(&id).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
 
 async fn get_device_id(State(state): State<Arc<AppState>>) -> Response {
-    use unbill_core::storage::LedgerStore as _;
-    match state.store.get_device_id().await {
-        Ok(node_id) => (
-            StatusCode::OK,
-            [("content-type", "text/plain")],
-            node_id.to_string(),
-        )
-            .into_response(),
-        Err(unbill_core::model::StorageError::Serialization(_)) => {
-            StatusCode::NOT_FOUND.into_response()
-        }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
-    }
+    (
+        StatusCode::OK,
+        [("content-type", "text/plain")],
+        state.service.device_id().to_string(),
+    )
+        .into_response()
 }
 
 async fn load_device_meta(State(state): State<Arc<AppState>>, Path(key): Path<String>) -> Response {
     if !valid_device_key(&key) {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    match state.store.load_device_meta(&key).await {
+    match state.service.store().load_device_meta(&key).await {
         Ok(Some(bytes)) => (
             StatusCode::OK,
             [("content-type", "application/octet-stream")],
@@ -256,9 +241,51 @@ async fn save_device_meta(
     if !valid_device_key(&key) {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    match state.store.save_device_meta(&key, &body).await {
+    match state.service.store().save_device_meta(&key, &body).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// `POST /ledgers/{id}/invitations` — Create a join invitation for a ledger.
+async fn create_invitation(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> Response {
+    match state.service.create_invitation(&id).await {
+        Ok(url) => (StatusCode::CREATED, Json(InvitationJson { url })).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// `POST /ledgers/join` — Join a ledger hosted by another device.
+async fn join_ledger(State(state): State<Arc<AppState>>, Json(body): Json<JoinBody>) -> Response {
+    match state.service.join_ledger(&body.url, body.label).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// `POST /peers/{node_id}/sync` — Trigger a P2P Iroh sync with the given peer.
+async fn sync_with_peer(
+    State(state): State<Arc<AppState>>,
+    Path(node_id): Path<String>,
+) -> Response {
+    let peer = NodeId::new(node_id);
+    match state.service.sync_once(peer).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+fn meta_to_json(m: unbill_core::model::LedgerMeta) -> MetaJson {
+    MetaJson {
+        ledger_id: m.ledger_id.to_string(),
+        name: m.name,
+        currency: m.currency.code().to_owned(),
+        created_at_ms: m.created_at.as_millis(),
+        updated_at_ms: m.updated_at.as_millis(),
     }
 }
 
@@ -277,9 +304,12 @@ mod tests {
 
     const API_KEY: &str = "secret";
 
-    fn make_app(dir: &std::path::Path) -> Router {
+    async fn make_app(dir: &std::path::Path) -> Router {
+        use unbill_store_fs::FsStore;
+        let store = Arc::new(FsStore::new(dir.to_path_buf()));
+        let service = UnbillService::open(store).await.unwrap();
         let state = Arc::new(AppState {
-            store: FsStore::new(dir.to_path_buf()),
+            service,
             api_key: API_KEY.to_owned(),
         });
         build_router(state)
@@ -313,12 +343,22 @@ mod tests {
             .unwrap()
     }
 
+    fn auth_post(uri: &str, content_type: &str, body: Vec<u8>) -> Request<Body> {
+        Request::builder()
+            .method(Method::POST)
+            .uri(uri)
+            .header("Authorization", format!("Bearer {API_KEY}"))
+            .header("content-type", content_type)
+            .body(Body::from(body))
+            .unwrap()
+    }
+
     // --- auth ---------------------------------------------------------------
 
     #[tokio::test]
     async fn test_missing_token_returns_401() {
         let dir = tempfile::tempdir().unwrap();
-        let app = make_app(dir.path());
+        let app = make_app(dir.path()).await;
         let req = Request::builder()
             .uri("/api/v1/ledgers")
             .body(Body::empty())
@@ -330,7 +370,7 @@ mod tests {
     #[tokio::test]
     async fn test_wrong_token_returns_401() {
         let dir = tempfile::tempdir().unwrap();
-        let app = make_app(dir.path());
+        let app = make_app(dir.path()).await;
         let req = Request::builder()
             .uri("/api/v1/ledgers")
             .header("Authorization", "Bearer wrong")
@@ -345,7 +385,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_ledgers_returns_empty_array_initially() {
         let dir = tempfile::tempdir().unwrap();
-        let app = make_app(dir.path());
+        let app = make_app(dir.path()).await;
         let resp = app.oneshot(auth_get("/api/v1/ledgers")).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         let body = body_bytes(resp).await;
@@ -358,7 +398,7 @@ mod tests {
     #[tokio::test]
     async fn test_save_and_list_ledger_meta_round_trip() {
         let dir = tempfile::tempdir().unwrap();
-        let app = make_app(dir.path());
+        let app = make_app(dir.path()).await;
 
         let meta = serde_json::json!({
             "ledger_id": "00000000000000000000000001",
@@ -368,7 +408,6 @@ mod tests {
             "updated_at_ms": 2000
         });
 
-        // save
         let resp = app
             .clone()
             .oneshot(auth_put(
@@ -380,7 +419,6 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 
-        // list
         let resp = app.oneshot(auth_get("/api/v1/ledgers")).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         let body = body_bytes(resp).await;
@@ -391,20 +429,10 @@ mod tests {
 
     // --- sync ---------------------------------------------------------------
 
-    fn auth_post(uri: &str, content_type: &str, body: Vec<u8>) -> Request<Body> {
-        Request::builder()
-            .method(Method::POST)
-            .uri(uri)
-            .header("Authorization", format!("Bearer {API_KEY}"))
-            .header("content-type", content_type)
-            .body(Body::from(body))
-            .unwrap()
-    }
-
     #[tokio::test]
     async fn test_sync_invalid_body_returns_400() {
         let dir = tempfile::tempdir().unwrap();
-        let app = make_app(dir.path());
+        let app = make_app(dir.path()).await;
         let resp = app
             .oneshot(auth_post(
                 "/api/v1/ledgers/00000000000000000000000001/sync",
@@ -422,9 +450,8 @@ mod tests {
         use unbill_core::model::{Currency, Timestamp, Ulid};
 
         let dir = tempfile::tempdir().unwrap();
-        let app = make_app(dir.path());
+        let app = make_app(dir.path()).await;
 
-        // Pre-populate the server's store with a ledger.
         let ledger_id = Ulid::from_u128(1);
         let id_str = ledger_id.to_string();
         let mut server_doc = LedgerDoc::new(
@@ -441,7 +468,6 @@ mod tests {
             store.save_ledger(&id_str, &mut server_doc).await.unwrap();
         }
 
-        // Run the client sync loop against the app.
         let mut client_doc = LedgerDoc::empty();
         let mut sync_state = automerge::sync::State::new();
         loop {
@@ -477,7 +503,7 @@ mod tests {
     #[tokio::test]
     async fn test_delete_ledger_is_idempotent() {
         let dir = tempfile::tempdir().unwrap();
-        let app = make_app(dir.path());
+        let app = make_app(dir.path()).await;
 
         let del = || {
             Request::builder()
@@ -488,11 +514,9 @@ mod tests {
                 .unwrap()
         };
 
-        // first delete (never existed)
         let resp = app.clone().oneshot(del()).await.unwrap();
         assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 
-        // second delete
         let resp = app.oneshot(del()).await.unwrap();
         assert_eq!(resp.status(), StatusCode::NO_CONTENT);
     }
@@ -502,7 +526,7 @@ mod tests {
     #[tokio::test]
     async fn test_device_meta_save_and_load_round_trip() {
         let dir = tempfile::tempdir().unwrap();
-        let app = make_app(dir.path());
+        let app = make_app(dir.path()).await;
 
         let resp = app
             .clone()
@@ -526,24 +550,36 @@ mod tests {
     #[tokio::test]
     async fn test_device_meta_returns_404_when_missing() {
         let dir = tempfile::tempdir().unwrap();
-        let app = make_app(dir.path());
+        let app = make_app(dir.path()).await;
         let resp = app
-            .oneshot(auth_get("/api/v1/device/device_key.bin"))
+            .oneshot(auth_get("/api/v1/device/nonexistent.bin"))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 
+    // --- device id ----------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_get_device_id_returns_node_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = make_app(dir.path()).await;
+        let resp = app.oneshot(auth_get("/api/v1/device/id")).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_bytes(resp).await;
+        assert!(!body.is_empty());
+    }
+
+    // --- path traversal -----------------------------------------------------
+
     #[tokio::test]
     async fn test_device_key_with_path_separator_returns_400() {
         let dir = tempfile::tempdir().unwrap();
-        let app = make_app(dir.path());
+        let app = make_app(dir.path()).await;
         let resp = app
             .oneshot(auth_get("/api/v1/device/../../etc/passwd"))
             .await
             .unwrap();
-        // axum will match on the first segment; the path won't route correctly,
-        // but even if it did, valid_device_key rejects it.
         assert!(resp.status() == StatusCode::BAD_REQUEST || resp.status() == StatusCode::NOT_FOUND);
     }
 }

@@ -1,4 +1,4 @@
-use crate::api::{self, LedgerDetail, LedgerSummary, User};
+use crate::api::{self, LedgerDetail, LedgerSummary, SyncDevice, User};
 use crate::app::{
     BillEditorSeed, BillSaveRequest, SettingsTab, ShareMode, derived_share_preview,
     parse_amount_text, share_lookup_shares,
@@ -140,6 +140,7 @@ pub fn LedgerPage(
 pub fn SettingsPopup(
     device_id: String,
     ledgers: Vec<LedgerSummary>,
+    devices: Vec<SyncDevice>,
     active_tab: SettingsTab,
     selected_ledger_id: Option<String>,
     ledger_detail: Option<LedgerDetail>,
@@ -147,7 +148,9 @@ pub fn SettingsPopup(
     on_close: Callback<()>,
     on_select_tab: Callback<SettingsTab>,
     on_select_ledger: Callback<String>,
+    on_join_ledger: Callback<()>,
     on_add_ledger_user: Callback<()>,
+    on_sync_device: Callback<String>,
     on_create_invitation: Callback<()>,
     on_copy_invitation: Callback<()>,
 ) -> impl IntoView {
@@ -206,6 +209,54 @@ pub fn SettingsPopup(
                                             <p class="row-meta mono-copy">{device_id}</p>
                                         </div>
                                     </div>
+                                </SectionCard>
+
+                                <SectionCard title="Known devices".to_owned()>
+                                    <div class="stack-gap">
+                                        {if devices.is_empty() {
+                                            view! { <div class="empty-copy">"No known devices."</div> }.into_any()
+                                        } else {
+                                            devices
+                                                .into_iter()
+                                                .map(|device| {
+                                                    let node_id = device.node_id.clone();
+                                                    let title = if device.label.trim().is_empty() {
+                                                        "Unnamed device".to_owned()
+                                                    } else {
+                                                        device.label
+                                                    };
+                                                    let detail = if device.ledger_names.is_empty() {
+                                                        "No shared ledgers".to_owned()
+                                                    } else {
+                                                        device.ledger_names.join(", ")
+                                                    };
+                                                    view! {
+                                                        <div class="data-row split-row">
+                                                            <div class="row-copy">
+                                                                <p class="row-title">{title}</p>
+                                                                <p class="row-meta mono-copy">{node_id.clone()}</p>
+                                                                <p class="row-detail">{detail}</p>
+                                                            </div>
+                                                            <IconButton
+                                                                kind=IconButtonKind::Sync
+                                                                tone=ButtonTone::Quiet
+                                                                on_press=Callback::new(move |_| on_sync_device.run(node_id.clone()))
+                                                            />
+                                                        </div>
+                                                    }
+                                                })
+                                                .collect_view()
+                                                .into_any()
+                                        }}
+                                    </div>
+                                </SectionCard>
+
+                                <SectionCard title="Ledger import".to_owned()>
+                                    <ActionButton
+                                        label="Join Ledger".to_owned()
+                                        tone=ButtonTone::Secondary
+                                        on_press=Callback::new(move |_| on_join_ledger.run(()))
+                                    />
                                 </SectionCard>
                             </div>
                         }
@@ -281,17 +332,23 @@ pub fn SettingsPopup(
                                                     authorized_devices
                                                         .into_iter()
                                                         .map(|device| {
+                                                            let node_id = device.node_id.clone();
                                                             let title = if device.label.trim().is_empty() {
                                                                 "Unnamed device".to_owned()
                                                             } else {
                                                                 device.label
                                                             };
                                                             view! {
-                                                                <div class="data-row">
+                                                                <div class="data-row split-row">
                                                                     <div class="row-copy">
                                                                         <p class="row-title">{title}</p>
-                                                                        <p class="row-meta mono-copy">{device.node_id}</p>
+                                                                        <p class="row-meta mono-copy">{node_id.clone()}</p>
                                                                     </div>
+                                                                    <IconButton
+                                                                        kind=IconButtonKind::Sync
+                                                                        tone=ButtonTone::Quiet
+                                                                        on_press=Callback::new(move |_| on_sync_device.run(node_id.clone()))
+                                                                    />
                                                                 </div>
                                                             }
                                                         })
@@ -806,6 +863,45 @@ pub fn AddLedgerUserSheet(
                     }
                     .into_any()
                 }}
+            </div>
+        </ModalSheet>
+    }
+}
+
+#[component]
+pub fn JoinLedgerSheet(
+    initial_url: String,
+    on_cancel: Callback<()>,
+    on_submit: Callback<(String, String)>,
+) -> impl IntoView {
+    let url = RwSignal::new(initial_url);
+    let label = RwSignal::new(String::new());
+
+    view! {
+        <ModalSheet
+            title="Join Ledger".to_owned()
+            on_close=Callback::new(move |_| on_cancel.run(()))
+        >
+            <div class="stack-gap">
+                <FieldBlock label="Invitation URL".to_owned()>
+                    <textarea
+                        class="ui-textarea"
+                        prop:value=move || url.get()
+                        on:input=move |event| url.set(event_target_value(&event))
+                    />
+                </FieldBlock>
+                <FieldBlock label="Local device label".to_owned()>
+                    <input
+                        class="ui-input"
+                        prop:value=move || label.get()
+                        on:input=move |event| label.set(event_target_value(&event))
+                    />
+                </FieldBlock>
+                <ActionButton
+                    label="Join Ledger".to_owned()
+                    full_width=true
+                    on_press=Callback::new(move |_| on_submit.run((url.get(), label.get())))
+                />
             </div>
         </ModalSheet>
     }

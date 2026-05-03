@@ -37,8 +37,9 @@ fn write_stored_key(key: &str) {
 }
 
 async fn init_service(api_key: String) -> Result<(), String> {
-    let store = Arc::new(HttpStore::new(server_base_url(), api_key));
-    let service = UnbillService::open(store)
+    let base_url = server_base_url();
+    let store = Arc::new(HttpStore::new(base_url.clone(), api_key.clone()));
+    let service = UnbillService::open_remote(store, base_url, api_key)
         .await
         .map_err(|e| e.to_string())?;
     api::init(service);

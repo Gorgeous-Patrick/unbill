@@ -7721,6 +7721,7 @@ dependencies = [
  "unbill-event",
  "unbill-model",
  "unbill-network",
+ "unbill-server-client",
  "unbill-storage",
  "unbill-store-memory",
 ]
@@ -7780,6 +7781,19 @@ dependencies = [
  "tracing-subscriber",
  "unbill-core",
  "unbill-store-fs",
+]
+
+[[package]]
+name = "unbill-server-client"
+version = "0.0.1"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "wiremock",
 ]
 
 [[package]]
