@@ -35,6 +35,12 @@ pub struct Device {
     pub added_at: Timestamp,
 }
 
+/// Input type for creating a brand-new user (allocates a new UserId).
+#[derive(Clone, Debug)]
+pub struct NewUserName {
+    pub display_name: String,
+}
+
 /// Input type for creating a new ledger.
 #[derive(Clone, Debug)]
 pub struct NewLedger {

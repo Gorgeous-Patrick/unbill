@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use unbill_core::model::{BillId, Currency, LedgerId, NewBill, NewLedger, NewUser, UserId};
+use unbill_core::model::{
+    BillId, Currency, LedgerId, NewBill, NewLedger, NewUser, NewUserName, UserId,
+};
 use unbill_core::service::UnbillService;
 use wasm_bindgen_futures::JsFuture;
 
@@ -265,10 +267,15 @@ pub async fn load_ledger_detail(ledger_id: &str) -> Result<LedgerDetail, String>
 pub async fn create_user(input: CreateUserInput) -> Result<User, String> {
     let svc = get_service()?;
     let lid = parse_ledger_id(&input.ledger_id)?;
-    svc.create_user(lid, input.display_name)
-        .await
-        .map(user_to_dto)
-        .map_err(|e| e.to_string())
+    svc.create_user(
+        lid,
+        NewUserName {
+            display_name: input.display_name,
+        },
+    )
+    .await
+    .map(user_to_dto)
+    .map_err(|e| e.to_string())
 }
 
 pub async fn add_user(input: AddUserInput) -> Result<User, String> {

@@ -6,7 +6,7 @@ use ratatui::{
     widgets::{Block, Clear, Paragraph},
 };
 
-use unbill_core::model::{LedgerId, NewBill, NewUser};
+use unbill_core::model::{LedgerId, NewBill, NewUser, NewUserName};
 
 pub mod confirm;
 pub mod create_ledger;
@@ -53,7 +53,7 @@ pub enum PopupAction {
     },
     CreateUser {
         ledger_id: LedgerId,
-        display_name: String,
+        input: NewUserName,
     },
     GenerateInvite {
         ledger_id: LedgerId,

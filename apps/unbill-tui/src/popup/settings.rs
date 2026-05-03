@@ -5,7 +5,7 @@ use ratatui::{
     style::{Color, Modifier, Style},
     widgets::{Block, Paragraph},
 };
-use unbill_core::model::{LedgerId, LedgerMeta, NewUser, User};
+use unbill_core::model::{LedgerId, LedgerMeta, NewUser, NewUserName, User};
 
 use super::{
     PopupAction, PopupOutcome, PopupView, TextInput, render_popup_base, render_text_field,
@@ -501,7 +501,7 @@ impl SettingsPopup {
                     self.error = None;
                     return PopupOutcome::Action(PopupAction::CreateUser {
                         ledger_id,
-                        display_name: name,
+                        input: NewUserName { display_name: name },
                     });
                 }
                 KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {

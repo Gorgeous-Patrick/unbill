@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use anyhow::anyhow;
 use unbill_core::model::{
-    BillId, Currency, LedgerId, NewBill, NewLedger, NewUser, NodeId, Share, UserId,
+    BillId, Currency, LedgerId, NewBill, NewLedger, NewUser, NewUserName, NodeId, Share, UserId,
 };
 use unbill_core::service::UnbillService;
 
@@ -267,7 +267,7 @@ pub async fn user_create(
     json: bool,
 ) -> anyhow::Result<()> {
     let user = svc
-        .create_user(parse_ledger_id(ledger_id)?, display_name)
+        .create_user(parse_ledger_id(ledger_id)?, NewUserName { display_name })
         .await?;
     if json {
         print_json(&user_out(&user))?;

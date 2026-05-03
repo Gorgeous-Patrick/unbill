@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 use unbill_core::model::{
-    BillId, Currency, LedgerId, NewBill, NewLedger, NewUser, NodeId, Share, UserId,
+    BillId, Currency, LedgerId, NewBill, NewLedger, NewUser, NewUserName, NodeId, Share, UserId,
 };
 use unbill_core::service::UnbillService;
 use unbill_store_fs::FsStore;
@@ -206,7 +206,12 @@ async fn create_user(
     let lid = parse_ledger_id(&input.ledger_id).map_err(stringify_error)?;
     state
         .service
-        .create_user(lid, input.display_name)
+        .create_user(
+            lid,
+            NewUserName {
+                display_name: input.display_name,
+            },
+        )
         .await
         .map(UserDto::from)
         .map_err(stringify_error)
@@ -824,7 +829,12 @@ mod tests {
             .await
             .unwrap();
         let user = service
-            .create_user(ledger_a, "Mio".to_owned())
+            .create_user(
+                ledger_a,
+                super::NewUserName {
+                    display_name: "Mio".to_owned(),
+                },
+            )
             .await
             .unwrap();
 
@@ -888,11 +898,21 @@ mod tests {
             .await
             .unwrap();
         service
-            .create_user(ledger_a, "Alice".to_owned())
+            .create_user(
+                ledger_a,
+                super::NewUserName {
+                    display_name: "Alice".to_owned(),
+                },
+            )
             .await
             .unwrap();
         service
-            .create_user(ledger_b, "Bob".to_owned())
+            .create_user(
+                ledger_b,
+                super::NewUserName {
+                    display_name: "Bob".to_owned(),
+                },
+            )
             .await
             .unwrap();
 

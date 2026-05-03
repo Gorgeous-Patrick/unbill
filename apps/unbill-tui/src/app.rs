@@ -606,15 +606,14 @@ async fn execute_action(action: PopupAction, state: &mut AppState, svc: &Arc<Unb
             Err(e) => state.status_message = Some(format!("add user: {e}")),
         },
 
-        PopupAction::CreateUser {
-            ledger_id,
-            display_name,
-        } => match svc.create_user(ledger_id, display_name).await {
-            Ok(_) => {
-                refresh_users(svc, state).await;
+        PopupAction::CreateUser { ledger_id, input } => {
+            match svc.create_user(ledger_id, input).await {
+                Ok(_) => {
+                    refresh_users(svc, state).await;
+                }
+                Err(e) => state.status_message = Some(format!("create user: {e}")),
             }
-            Err(e) => state.status_message = Some(format!("create user: {e}")),
-        },
+        }
 
         PopupAction::GenerateInvite { ledger_id } => match svc.create_invitation(ledger_id).await {
             Ok(url) => {

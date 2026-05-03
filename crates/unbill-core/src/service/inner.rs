@@ -9,7 +9,7 @@ use crate::conflict::{self, ConflictGroup};
 use crate::error::{Result, UnbillError};
 use crate::model::{
     BillId, Currency, Device, EffectiveBills, LedgerId, LedgerMeta, NewBill, NewDevice, NewLedger,
-    NewUser, NodeId, Timestamp, User, UserId,
+    NewUser, NewUserName, NodeId, Timestamp, User, UserId,
 };
 #[cfg(feature = "local")]
 use crate::model::{Invitation, InviteToken};
@@ -154,14 +154,14 @@ impl UnbillService {
     }
 
     /// Create a brand-new user, add them to the ledger, and return the created `User`.
-    pub async fn create_user(&self, ledger_id: LedgerId, display_name: String) -> Result<User> {
+    pub async fn create_user(&self, ledger_id: LedgerId, input: NewUserName) -> Result<User> {
         let user_id = UserId::new();
         let now = Timestamp::now();
         let mut doc = self.load_doc(ledger_id).await?;
         doc.add_user(
             NewUser {
                 user_id,
-                display_name: display_name.clone(),
+                display_name: input.display_name.clone(),
             },
             now,
         )?;
@@ -174,7 +174,7 @@ impl UnbillService {
         });
         Ok(User {
             user_id,
-            display_name,
+            display_name: input.display_name,
             added_at: now,
         })
     }
@@ -836,7 +836,15 @@ mod tests {
             })
             .await
             .unwrap();
-        let user = svc.create_user(lid, "Alice".into()).await.unwrap();
+        let user = svc
+            .create_user(
+                lid,
+                NewUserName {
+                    display_name: "Alice".into(),
+                },
+            )
+            .await
+            .unwrap();
         let list = svc.list_users(lid).await.unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].user_id, user.user_id);
@@ -860,8 +868,22 @@ mod tests {
             })
             .await
             .unwrap();
-        svc.create_user(lid1, "Alice".into()).await.unwrap();
-        svc.create_user(lid2, "Bob".into()).await.unwrap();
+        svc.create_user(
+            lid1,
+            NewUserName {
+                display_name: "Alice".into(),
+            },
+        )
+        .await
+        .unwrap();
+        svc.create_user(
+            lid2,
+            NewUserName {
+                display_name: "Bob".into(),
+            },
+        )
+        .await
+        .unwrap();
         let all = svc.list_all_users().await.unwrap();
         assert_eq!(all.len(), 2);
     }
@@ -884,7 +906,15 @@ mod tests {
             .await
             .unwrap();
         // Create Alice in L1, then add the same user to L2.
-        let alice = svc.create_user(lid1, "Alice".into()).await.unwrap();
+        let alice = svc
+            .create_user(
+                lid1,
+                NewUserName {
+                    display_name: "Alice".into(),
+                },
+            )
+            .await
+            .unwrap();
         svc.add_user(
             lid2,
             NewUser {
