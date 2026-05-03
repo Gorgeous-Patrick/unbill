@@ -7784,6 +7784,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "unbill-server-client"
+version = "0.0.1"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "wiremock",
+]
+
+[[package]]
 name = "unbill-storage"
 version = "0.0.1"
 dependencies = [
