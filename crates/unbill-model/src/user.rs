@@ -38,14 +38,14 @@ pub struct Device {
 /// Input type for creating a brand-new user (allocates a new UserId).
 #[derive(Clone, Debug, garde::Validate)]
 pub struct NewUserName {
-    #[garde(length(min = 1))]
+    #[garde(length(min = 1, max = 100))]
     pub display_name: String,
 }
 
 /// Input type for creating a new ledger.
 #[derive(Clone, Debug, garde::Validate)]
 pub struct NewLedger {
-    #[garde(length(min = 1))]
+    #[garde(length(min = 1, max = 100))]
     pub name: String,
     #[garde(skip)]
     pub currency: crate::Currency,

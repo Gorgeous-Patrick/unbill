@@ -38,7 +38,7 @@ pub struct Share {
 pub struct NewBill {
     #[garde(range(min = 1))]
     pub amount_cents: i64,
-    #[garde(length(min = 1))]
+    #[garde(length(min = 1, max = 1000))]
     pub description: String,
     #[garde(length(min = 1), dive)]
     pub payers: Vec<Share>,
