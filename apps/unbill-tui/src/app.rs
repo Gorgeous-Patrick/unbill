@@ -450,7 +450,6 @@ fn retreat_section(s: EditorSection) -> EditorSection {
 }
 
 async fn try_confirm_editor(state: &mut AppState, svc: &Arc<UnbillService>) {
-    // Validate and build NewBill.
     let result = {
         let editor = match state.bill_editor.as_ref() {
             Some(e) => e,
@@ -458,98 +457,65 @@ async fn try_confirm_editor(state: &mut AppState, svc: &Arc<UnbillService>) {
         };
 
         let description = editor.description.trim().to_string();
-        if description.is_empty() {
-            Err("Description must not be empty".to_string())
-        } else {
-            let amount_cents = match parse_amount_cents(&editor.amount_str) {
-                Some(v) if v >= 0 => v,
-                Some(_) => {
-                    return {
-                        if let Some(e) = state.bill_editor.as_mut() {
-                            e.error = Some("Amount must not be negative".to_string());
-                        }
-                    };
-                }
-                None => {
-                    return {
-                        if let Some(e) = state.bill_editor.as_mut() {
-                            e.error = Some("Enter a valid amount (e.g. 12.50)".to_string());
-                        }
-                    };
-                }
-            };
-
-            let payers: Vec<Share> = editor
-                .payers
-                .iter()
-                .filter(|r| r.selected && r.weight >= 1)
-                .map(|r| Share {
-                    user_id: r.user.user_id,
-                    shares: r.weight,
-                })
-                .collect();
-
-            if payers.is_empty() {
+        let amount_cents = match parse_amount_cents(&editor.amount_str) {
+            Some(v) => v,
+            None => {
                 return {
                     if let Some(e) = state.bill_editor.as_mut() {
-                        e.error = Some("Select at least one payer".to_string());
+                        e.error = Some("Enter a valid amount (e.g. 12.50)".to_string());
                     }
                 };
             }
+        };
 
-            let payees: Vec<Share> = editor
-                .payees
-                .iter()
-                .filter(|r| r.selected && r.weight >= 1)
-                .map(|r| Share {
-                    user_id: r.user.user_id,
-                    shares: r.weight,
-                })
-                .collect();
+        let payers: Vec<Share> = editor
+            .payers
+            .iter()
+            .filter(|r| r.selected && r.weight >= 1)
+            .map(|r| Share {
+                user_id: r.user.user_id,
+                shares: r.weight,
+            })
+            .collect();
 
-            if payees.is_empty() {
-                return {
-                    if let Some(e) = state.bill_editor.as_mut() {
-                        e.error = Some("Select at least one payee".to_string());
-                    }
-                };
-            }
+        let payees: Vec<Share> = editor
+            .payees
+            .iter()
+            .filter(|r| r.selected && r.weight >= 1)
+            .map(|r| Share {
+                user_id: r.user.user_id,
+                shares: r.weight,
+            })
+            .collect();
 
-            let prev = editor.prev_id.map(|id| vec![id]).unwrap_or_default();
+        let prev = editor.prev_id.map(|id| vec![id]).unwrap_or_default();
 
-            Ok((
-                editor.ledger_id,
-                NewBill {
-                    amount_cents,
-                    description,
-                    payers,
-                    payees,
-                    prev,
-                },
-            ))
-        }
+        (
+            editor.ledger_id,
+            NewBill {
+                amount_cents,
+                description,
+                payers,
+                payees,
+                prev,
+            },
+        )
     };
 
-    match result {
-        Err(msg) => {
-            if let Some(e) = state.bill_editor.as_mut() {
-                e.error = Some(msg);
+    let (ledger_id, bill) = result;
+    match svc.add_bill(ledger_id, bill).await {
+        Ok(_) => {
+            state.bill_editor = None;
+            state.focused_pane = Pane::Bills;
+            refresh_bills(svc, state).await;
+            refresh_users(svc, state).await;
+            refresh_settlement(svc, state).await;
+        }
+        Err(e) => {
+            if let Some(ed) = state.bill_editor.as_mut() {
+                ed.error = Some(format!("add bill: {e}"));
             }
         }
-        Ok((ledger_id, bill)) => match svc.add_bill(ledger_id, bill).await {
-            Ok(_) => {
-                state.bill_editor = None;
-                state.focused_pane = Pane::Bills;
-                refresh_bills(svc, state).await;
-                refresh_users(svc, state).await;
-                refresh_settlement(svc, state).await;
-            }
-            Err(e) => {
-                if let Some(ed) = state.bill_editor.as_mut() {
-                    ed.error = Some(format!("add bill: {e}"));
-                }
-            }
-        },
     }
 }
 
